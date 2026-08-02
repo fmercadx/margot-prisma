@@ -4,55 +4,49 @@ import { motion, useInView } from 'framer-motion'
 import { ArrowRight, Check } from 'lucide-react'
 import WordsPullUpMultiStyle from './WordsPullUpMultiStyle'
 
-const CARD_VIDEO =
-  'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260406_133058_0504132a-0cf3-4450-a370-8ea3b05c95d4.mp4'
-
-const ICON_STORYBOARD =
-  'https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260405_171918_4a5edc79-d78f-4637-ac8b-53c43c220606.png&w=1280&q=85'
-const ICON_CRITIQUES =
-  'https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260405_171741_ed9845ab-f5b2-4018-8ce7-07cc01823522.png&w=1280&q=85'
-const ICON_CAPSULE =
-  'https://images.higgs.ai/?default=1&output=webp&url=https%3A%2F%2Fd8j0ntlcm91z4.cloudfront.net%2Fuser_38xzZboKViGWJOttwIXH07lWA1P%2Fhf_20260405_171809_f56666dc-c099-4778-ad82-9ad4f209567b.png&w=1280&q=85'
-
 const EASE = [0.22, 1, 0.36, 1] as const
 
-interface FeatureCard {
+interface ServiceCard {
   number: string
   title: string
   icon: string
+  iconAlt: string
   items: string[]
 }
 
-const CARDS: FeatureCard[] = [
+const CARDS: ServiceCard[] = [
   {
     number: '01',
-    title: 'Project Storyboard.',
-    icon: ICON_STORYBOARD,
+    title: 'Smoothing.',
+    icon: '/img/keratin-sleek.jpg',
+    iconAlt: 'Glossy, poker-straight dark hair after a keratin smoothing treatment',
     items: [
-      'Sequence shots on a visual timeline',
-      'Drop reference frames straight into panels',
-      'Version every beat without losing the last cut',
-      'Share a read-only board with your client',
+      'Keratin straightening, frizz gone for up to five months',
+      'Brazilian blowout, smoothing that keeps your movement',
+      'Semi-permanent straightening',
+      'No downtime and no waiting to wash',
     ],
   },
   {
     number: '02',
-    title: 'Smart Critiques.',
-    icon: ICON_CRITIQUES,
+    title: 'Colour & Cutting.',
+    icon: '/img/color-foils.jpg',
+    iconAlt: 'Balayage colour being hand painted onto a section of hair',
     items: [
-      'AI analysis of pacing, framing and colour',
-      'Creative notes written against the timecode',
-      'Integrations with the tools already in your grade',
+      'Hand-painted balayage that grows out softly',
+      'Dimensional colour and colour correction',
+      'Cuts for women, men and kids',
     ],
   },
   {
     number: '03',
-    title: 'Immersion Capsule.',
-    icon: ICON_CAPSULE,
+    title: 'Brows & Makeup.',
+    icon: '/img/brows-groomed.jpg',
+    iconAlt: 'A softly shaped, naturally defined eyebrow in close detail',
     items: [
-      'Notification silencing while a session runs',
-      'Ambient soundscapes tuned to the edit',
-      'Schedule syncing so the studio knows you are deep',
+      'Microblading and powder brows, mapped to your face',
+      'Bridal hair and makeup, she can stay through the day',
+      'Body contouring',
     ],
   },
 ]
@@ -86,7 +80,10 @@ function AnimatedCard({
 
 export default function Features() {
   return (
-    <section className="relative min-h-screen overflow-hidden bg-black px-4 py-20 sm:px-6 sm:py-28">
+    <section
+      id="services"
+      className="relative min-h-screen overflow-hidden bg-black px-4 py-20 sm:px-6 sm:py-28"
+    >
       <div className="bg-noise pointer-events-none absolute inset-0 opacity-[0.15]" />
 
       <div className="relative z-10 mx-auto max-w-7xl">
@@ -94,11 +91,11 @@ export default function Features() {
           className="mx-auto mb-12 max-w-3xl text-center text-xl font-normal sm:mb-16 sm:text-2xl md:text-3xl lg:text-4xl"
           segments={[
             {
-              text: 'Studio-grade workflows for visionary creators.',
+              text: 'Twenty years of hair artistry, in one chair.',
               className: 'text-primary',
             },
             {
-              text: 'Built for pure vision. Powered by art.',
+              text: 'Built on technique. Finished by hand.',
               className: 'text-gray-500',
             },
           ]}
@@ -107,22 +104,19 @@ export default function Features() {
         <div className="grid grid-cols-1 gap-3 sm:gap-2 md:grid-cols-2 md:gap-1 lg:h-[480px] lg:grid-cols-4">
           <AnimatedCard
             index={0}
-            className="relative overflow-hidden rounded-2xl bg-[#212121] min-h-[320px] lg:min-h-0"
+            className="relative min-h-[320px] overflow-hidden rounded-2xl bg-[#212121] lg:min-h-0"
           >
-            <video
+            <img
+              src="/img/hair-waves.jpg"
+              alt="Close detail of soft, dimensional blonde waves"
               className="absolute inset-0 h-full w-full object-cover"
-              src={CARD_VIDEO}
-              autoPlay
-              loop
-              muted
-              playsInline
             />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
             <p
               className="absolute bottom-5 left-5 right-5 z-10 text-base sm:text-lg"
               style={{ color: '#E1E0CC' }}
             >
-              Your creative canvas.
+              Your crowning glory.
             </p>
           </AnimatedCard>
 
@@ -134,13 +128,12 @@ export default function Features() {
             >
               <img
                 src={card.icon}
-                alt=""
+                alt={card.iconAlt}
                 className="h-10 w-10 rounded-lg object-cover sm:h-12 sm:w-12"
               />
 
               <h3 className="mt-5 text-base text-primary sm:text-lg">
-                {card.title}{' '}
-                <span className="text-gray-500">({card.number})</span>
+                {card.title} <span className="text-gray-500">({card.number})</span>
               </h3>
 
               <ul className="mt-5 flex flex-1 flex-col gap-3">
@@ -155,10 +148,10 @@ export default function Features() {
               </ul>
 
               <a
-                href="#"
+                href="tel:+13602815853"
                 className="group mt-6 inline-flex items-center gap-2 text-xs text-primary transition-colors hover:text-primary/70 sm:text-sm"
               >
-                Learn more
+                Ask about pricing
                 <ArrowRight className="h-3.5 w-3.5 -rotate-45 transition-transform duration-300 group-hover:translate-x-0.5" />
               </a>
             </AnimatedCard>

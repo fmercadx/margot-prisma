@@ -4,7 +4,7 @@ import type { MotionValue } from 'framer-motion'
 import WordsPullUpMultiStyle from './WordsPullUpMultiStyle'
 
 const BODY_TEXT =
-  'Over the last seven years, I have worked with Parallax, a Berlin-based production house that crafts cinema, series, and Noir Studio in Paris. Together, we have created work that has earned international acclaim at several major festivals.'
+  'Margot works out of Textures Hair & Nail Salon on NE Fourth Plain Boulevard, just off I-205 in Vancouver. She trained in the treatments that ask the most of a stylist, keratin straightening, Brazilian blowouts, dimensional colour correction and microblading, and her clients drive in from Portland, Beaverton and Aloha for it.'
 
 interface AnimatedLetterProps {
   char: string
@@ -41,19 +41,19 @@ export default function About() {
   const chars = BODY_TEXT.split('')
 
   return (
-    <section className="bg-black px-4 py-20 sm:px-6 sm:py-28 md:py-32">
+    <section id="about" className="bg-black px-4 py-20 sm:px-6 sm:py-28 md:py-32">
       <div className="mx-auto max-w-6xl rounded-2xl bg-[#101010] px-5 py-16 text-center sm:px-8 sm:py-20 md:rounded-[2rem] md:px-12 md:py-28">
         <p className="mb-8 text-[10px] uppercase tracking-widest text-primary sm:mb-10 sm:text-xs">
-          Visual arts
+          Hair artistry
         </p>
 
         <WordsPullUpMultiStyle
           className="mx-auto max-w-3xl text-3xl leading-[0.95] sm:text-4xl sm:leading-[0.9] md:text-5xl lg:text-6xl xl:text-7xl"
           segments={[
-            { text: 'I am Marcus Chen,', className: 'font-normal' },
-            { text: 'a self-taught director.', className: 'italic font-serif' },
+            { text: 'I am Margot,', className: 'font-normal' },
+            { text: 'a hairstylist of twenty years.', className: 'italic font-serif' },
             {
-              text: 'I have skills in color grading, visual effects, and narrative design.',
+              text: 'It is indeed my calling to give my clients a renewed sense of confidence.',
               className: 'font-normal',
             },
           ]}
