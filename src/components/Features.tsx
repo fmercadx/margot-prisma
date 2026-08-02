@@ -6,12 +6,17 @@ import WordsPullUpMultiStyle from './WordsPullUpMultiStyle'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
+interface ServiceItem {
+  name: string
+  price: string
+}
+
 interface ServiceCard {
   number: string
   title: string
   icon: string
   iconAlt: string
-  items: string[]
+  items: ServiceItem[]
 }
 
 const CARDS: ServiceCard[] = [
@@ -21,10 +26,9 @@ const CARDS: ServiceCard[] = [
     icon: '/img/keratin-sleek.jpg',
     iconAlt: 'Glossy, poker-straight dark hair after a keratin smoothing treatment',
     items: [
-      'Keratin straightening, frizz gone for up to five months',
-      'Brazilian blowout, smoothing that keeps your movement',
-      'Semi-permanent straightening',
-      'No downtime and no waiting to wash',
+      { name: 'Keratin hair straightening', price: '$250 to $400' },
+      { name: 'Brazilian blowout', price: 'From $200' },
+      { name: 'Semi-permanent straightening', price: 'On request' },
     ],
   },
   {
@@ -33,9 +37,11 @@ const CARDS: ServiceCard[] = [
     icon: '/img/color-foils.jpg',
     iconAlt: 'Balayage colour being hand painted onto a section of hair',
     items: [
-      'Hand-painted balayage that grows out softly',
-      'Dimensional colour and colour correction',
-      'Cuts for women, men and kids',
+      { name: 'Balayage', price: 'From $250' },
+      { name: 'All-over colour', price: 'From $100' },
+      { name: 'Highlights, full head', price: 'From $200' },
+      { name: "Women's cut & style", price: '$45 to $70' },
+      { name: "Men's cut & style", price: '$35' },
     ],
   },
   {
@@ -44,9 +50,10 @@ const CARDS: ServiceCard[] = [
     icon: '/img/brows-groomed.jpg',
     iconAlt: 'A softly shaped, naturally defined eyebrow in close detail',
     items: [
-      'Microblading and powder brows, mapped to your face',
-      'Bridal hair and makeup, she can stay through the day',
-      'Body contouring',
+      { name: 'Powder brows, microblading', price: '$350' },
+      { name: 'Ombré brows', price: '$550' },
+      { name: 'Makeup application', price: '$100' },
+      { name: 'Bridal hair & makeup', price: 'On request' },
     ],
   },
 ]
@@ -95,7 +102,7 @@ export default function Features() {
               className: 'text-primary',
             },
             {
-              text: 'Built on technique. Finished by hand.',
+              text: 'Every price published. Ranges reflect length and density.',
               className: 'text-gray-500',
             },
           ]}
@@ -138,10 +145,13 @@ export default function Features() {
 
               <ul className="mt-5 flex flex-1 flex-col gap-3">
                 {card.items.map((item) => (
-                  <li key={item} className="flex items-start gap-2.5">
+                  <li key={item.name} className="flex items-start gap-2.5">
                     <Check className="mt-0.5 h-3.5 w-3.5 flex-none text-primary" />
-                    <span className="text-xs leading-snug text-gray-400 sm:text-[13px]">
-                      {item}
+                    <span className="flex flex-1 flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-xs leading-snug sm:text-[13px]">
+                      <span className="text-gray-400">{item.name}</span>
+                      <span className="whitespace-nowrap text-primary/80">
+                        {item.price}
+                      </span>
                     </span>
                   </li>
                 ))}
@@ -151,7 +161,7 @@ export default function Features() {
                 href="tel:+13602815853"
                 className="group mt-6 inline-flex items-center gap-2 text-xs text-primary transition-colors hover:text-primary/70 sm:text-sm"
               >
-                Ask about pricing
+                Book this
                 <ArrowRight className="h-3.5 w-3.5 -rotate-45 transition-transform duration-300 group-hover:translate-x-0.5" />
               </a>
             </AnimatedCard>

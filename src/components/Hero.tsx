@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { ArrowRight } from 'lucide-react'
 import WordsPullUp from './WordsPullUp'
 
-const NAV_ITEMS = ['Services', 'About', 'Gallery', 'Visit']
+const NAV_ITEMS = ['Services', 'About', 'Gallery', 'Reviews', 'Visit']
 
 const EASE = [0.16, 1, 0.3, 1] as const
 
@@ -10,15 +10,21 @@ export default function Hero() {
   return (
     <section className="h-screen w-full p-4 md:p-6">
       <div className="relative h-full w-full overflow-hidden rounded-2xl md:rounded-[2rem]">
-        {/* The salon has no film footage, so the hero is a still under a slow
-            drift. Same cinematic read as a video loop, a fraction of the weight. */}
+        {/* The salon has no film footage, so the hero is a still under a Ken
+            Burns drift. It has to loop forever, not play once: a one-shot
+            settles and the hero reads as a flat photograph from then on. */}
         <motion.img
           src="/img/hero-blonde-balayage.jpg"
           alt="Long blonde balayage worn sleek and straight, coloured and finished by Margot"
           className="absolute inset-0 h-full w-full object-cover"
-          initial={{ scale: 1.08 }}
-          animate={{ scale: 1 }}
-          transition={{ duration: 18, ease: 'linear' }}
+          initial={{ scale: 1.02, x: '-1%', y: '-1%' }}
+          animate={{ scale: 1.12, x: '1.5%', y: '1%' }}
+          transition={{
+            duration: 20,
+            ease: 'easeInOut',
+            repeat: Infinity,
+            repeatType: 'reverse',
+          }}
         />
 
         <div className="noise-overlay pointer-events-none absolute inset-0 opacity-[0.7] mix-blend-overlay" />
