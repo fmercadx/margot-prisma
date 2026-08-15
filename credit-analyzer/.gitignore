@@ -1,0 +1,16 @@
+# Never commit real consumer reports. Git history is permanent, and a credit
+# report in a repo is a breach waiting for the repo to change visibility.
+fixtures/*.PDF
+fixtures/*.pdf
+fixtures/*.xml
+fixtures/*.txt
+!fixtures/synthetic_*.txt
+
+# Analysis output may contain consumer data.
+out/
+*.findings.json
+
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
