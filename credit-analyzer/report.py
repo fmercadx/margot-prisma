@@ -27,6 +27,7 @@ _DISCREPANCY_CODES = {
 }
 _BLOCKER_CODES = {"ACTIVE_LATE", "MIDDLE_SCORE", "ELIGIBILITY", "OVER_LIMIT",
                   "COLLECTIONS", "CHARGEOFF_MATH", "MERGED_SOURCE"}
+_INQUIRY_CODES = {"INQUIRY_CLUSTER", "INQUIRY_UNMATCHED", "INQUIRY_LOAD"}
 
 PLACEHOLDER = '<span class="ph">[ANALYST]</span>'
 
@@ -139,6 +140,14 @@ def build_actions(cf: CreditFile, findings: list[Finding],
             effect="Removes the over-limit penalty and lowers utilization",
             when="Before application", rank=3))
 
+    for f in _by_code(findings, "INQUIRY_UNMATCHED"):
+        who = f.title.split(" inquired")[0]
+        actions.append(Action(
+            text=f"Confirm with the borrower whether the {who} inquiry was authorized",
+            owner="Loan officer", cost=0,
+            effect="The only inquiry category worth disputing; a narrow claim is credible",
+            when="Before any inquiry dispute", rank=1))
+
     if _first(findings, "MERGED_SOURCE"):
         actions.append(Action(
             text="Obtain the unmerged report or individual consumer disclosures",
@@ -151,15 +160,37 @@ def build_actions(cf: CreditFile, findings: list[Finding],
 
 
 def build_do_not(cf: CreditFile, findings: list[Finding]) -> list[str]:
-    """What not to do. Frequently worth more than the action list."""
+    """What not to do. Frequently worth more than the action list.
+
+    The standing rules always appear. Account-specific warnings are capped —
+    a list of twenty-six reads as boilerplate and gets skipped, which defeats
+    the point of the section.
+    """
     out: list[str] = []
-    for f in _by_code(findings, "LATE_ASYMMETRY"):
+    asym = _by_code(findings, "LATE_ASYMMETRY")
+    # Open accounts first: a dispute that adds a mark to a live tradeline costs
+    # more than one that touches an account already written off.
+    asym.sort(key=lambda f: not any(
+        t.is_open for a in cf.accounts if a.creditor == f.title.split(":")[0]
+        for t in a.by_bureau.values()))
+    shown, extra = _cap(asym, 3)
+    for f in shown:
         creditor = f.title.split(":")[0]
         out.append(
             f"<strong>Do not dispute {_e(creditor)} through the bureaus.</strong> The mark "
             "appears on some repositories and not others; a furnisher investigation reaches "
             "all reporting, so the likely outcome is the clean bureaus adding it. Goodwill "
             "request direct to the creditor is the correct instrument.")
+    if extra:
+        out.append(
+            f"<strong>The same caution applies to {extra} further accounts</strong> whose "
+            "delinquency is reported unevenly across repositories — listed in section 4.")
+    for f in _cap(_by_code(findings, "INQUIRY_CLUSTER"), 2)[0]:
+        out.append(
+            f"<strong>Do not dispute the {_e(f.title.split(' on ')[0].split(' ', 1)[1])} "
+            "cluster.</strong> Same-purpose inquiries inside the rate-shopping window "
+            "already score as one, so the raw count overstates the cost — and a blanket "
+            "inquiry claim undermines the disputes that are genuinely winnable.")
     burned = _first(findings, "BURNED_DISPUTES")
     if burned:
         out.append(
@@ -171,7 +202,9 @@ def build_do_not(cf: CreditFile, findings: list[Finding]) -> list[str]:
     out.append(
         "<strong>Do not open new credit</strong> before closing. Lenders re-pull days prior, "
         "and a new tradeline discovered then can kill a funded loan.")
-    return out
+    # The same cluster warning can arrive once per bureau; say it once.
+    seen: set[str] = set()
+    return [x for x in out if not (x in seen or seen.add(x))]
 
 
 def dti_rows(cf: CreditFile) -> list[tuple[str, Tradeline]]:
@@ -351,6 +384,13 @@ def render(cf: CreditFile, findings: list[Finding], prog: ProgramCriteria,
               "zero-balance accounts where the gap changes nothing.</em></p>")
     else:
         w("<p>None detected.</p>")
+    inq = [f for f in findings if f.code in _INQUIRY_CODES]
+    if inq:
+        w('<div class="box brass"><span class="lbl">Inquiries</span><ul>')
+        for f in inq[:8]:
+            w(f"<li>{_e(f.title)}</li>")
+        w("</ul></div>")
+
     if _first(findings, "MERGED_SOURCE"):
         w('<div class="box ox"><span class="lbl">Coverage warning</span>'
           "<p>The source collapsed per-bureau values upstream. The absence of "

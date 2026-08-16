@@ -6,7 +6,7 @@ the suite runs anywhere without consumer data in the repository.
     python -m pytest test_analyzer.py -q
 """
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -402,6 +402,100 @@ def test_merged_source_is_flagged_when_no_per_bureau_variance():
     assert cf.merged_source
     warn = only(rules.run(cf), "MERGED_SOURCE")
     assert warn and "cannot be detected" in warn[0].detail
+
+
+# ------------------------------------------------------------- inquiries
+
+from canonical import BureauReport as _BR, Inquiry
+
+
+def inq(bureau, name, when, btype=""):
+    return Inquiry(bureau=bureau, subscriber=name, inquired_on=when, business_type=btype)
+
+
+def with_inquiries(*inquiries, tradelines=(), pulled=date(2026, 8, 10)):
+    cf = build(*tradelines) if tradelines else CreditFile()
+    for i in inquiries:
+        rep = cf.reports.setdefault(i.bureau, _BR(bureau=i.bureau))
+        rep.pulled_on = pulled
+        rep.inquiries.append(i)
+    for rep in cf.reports.values():
+        rep.pulled_on = pulled
+    cf.merge()
+    return cf
+
+
+def test_as_of_uses_the_pull_date_not_the_clock():
+    cf = with_inquiries(inq("experian", "X", date(2026, 1, 1)))
+    assert cf.as_of == date(2026, 8, 10)
+
+
+def test_auto_shopping_cluster_collapses_to_one():
+    shops = [inq("experian", f"LENDER {n}", date(2024, 8, 24) + timedelta(days=n * 3),
+                 "Auto Financing Companies") for n in range(8)]
+    f = only(rules.run(with_inquiries(*shops)), "INQUIRY_CLUSTER")
+    assert f and "8 auto inquiries" in f[0].title
+    assert "score as one" in f[0].title
+
+
+def test_cluster_splits_when_the_window_is_exceeded():
+    early = [inq("experian", f"A{n}", date(2024, 1, 1) + timedelta(days=n),
+                 "Auto Financing") for n in range(4)]
+    late = [inq("experian", f"B{n}", date(2024, 6, 1) + timedelta(days=n),
+                "Auto Financing") for n in range(4)]
+    found = only(rules.run(with_inquiries(*early, *late)), "INQUIRY_CLUSTER")
+    assert len(found) == 2
+
+
+def test_card_inquiries_are_never_treated_as_rate_shopping():
+    cards = [inq("experian", f"CARD {n}", date(2026, 6, 1) + timedelta(days=n * 2),
+                 "Bank Credit Cards") for n in range(5)]
+    assert not only(rules.run(with_inquiries(*cards)), "INQUIRY_CLUSTER")
+
+
+def test_auto_lender_detected_from_subscriber_when_business_type_misleads():
+    """TransUnion files auto lenders under 'Finance, personal'."""
+    shops = [inq("transunion", "CAPONEAUTO", date(2024, 9, 1) + timedelta(days=n),
+                 "Finance, personal") for n in range(4)]
+    assert only(rules.run(with_inquiries(*shops)), "INQUIRY_CLUSTER")
+
+
+def test_unmatched_inquiry_is_flagged():
+    cf = with_inquiries(inq("experian", "SYNCB/AMAZON", date(2025, 12, 17),
+                            "Bank Credit Cards"))
+    f = only(rules.run(cf), "INQUIRY_UNMATCHED")
+    assert f and "SYNCB/AMAZON" in f[0].title
+
+
+def test_inquiry_matched_to_an_account_is_not_flagged():
+    """An inquiry that produced a tradeline is explained, not suspicious."""
+    cf = with_inquiries(
+        inq("experian", "CREDIT ONE BANK", date(2026, 4, 18), "Bank Credit Cards"),
+        tradelines=[card("experian", "CREDIT ONE BANK", acct="AAA",
+                         opened=date(2026, 4, 23))],
+    )
+    assert not only(rules.run(cf), "INQUIRY_UNMATCHED")
+
+
+def test_stale_inquiries_are_not_flagged_as_unmatched():
+    cf = with_inquiries(inq("experian", "OLD LENDER", date(2024, 1, 1),
+                            "Bank Credit Cards"))
+    assert not only(rules.run(cf), "INQUIRY_UNMATCHED")
+
+
+def test_rate_shop_members_are_never_flagged_unmatched():
+    """Shopping five lenders and signing with one is expected, not suspicious."""
+    shops = [inq("experian", f"AUTO LENDER {n}", date(2026, 6, 1) + timedelta(days=n),
+                 "Auto Financing") for n in range(5)]
+    assert not only(rules.run(with_inquiries(*shops)), "INQUIRY_UNMATCHED")
+
+
+def test_inquiry_load_reports_the_effective_count():
+    recent = [inq("experian", f"AUTO {n}", date(2026, 6, 1) + timedelta(days=n * 2),
+                  "Auto Financing") for n in range(6)]
+    recent.append(inq("experian", "A CARD", date(2026, 5, 1), "Bank Credit Cards"))
+    f = only(rules.run(with_inquiries(*recent)), "INQUIRY_LOAD")
+    assert f and "score as roughly 2" in f[0].title
 
 
 # ------------------------------------------------------- report generation

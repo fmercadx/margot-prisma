@@ -241,11 +241,14 @@ def parse_inquiries(text: str, bureau: str) -> list[Inquiry]:
         return []
     region = text.split("Inquiries", 1)[1].split("Credit scores")[0]
     out: list[Inquiry] = []
-    for m in re.finditer(r"([A-Z0-9][A-Z0-9 ,./&'-]{2,40})\s*\nInquired on ([A-Za-z]+ \d+, \d{4})", region):
+    pattern = (r"([A-Z0-9][A-Z0-9 ,./&'-]{2,40})\s*\nInquired on ([A-Za-z]+ \d+, \d{4})"
+               r"(?:\s*\nBusiness Type:\s*([^\n]*(?:\n(?!\s*[A-Z0-9]{2})[^\n]*)?))?")
+    for m in re.finditer(pattern, region):
         out.append(Inquiry(
             bureau=bureau,
             subscriber=m.group(1).strip(),
             inquired_on=parse_date(m.group(2)),
+            business_type=" ".join((m.group(3) or "").split()),
         ))
     return out
 

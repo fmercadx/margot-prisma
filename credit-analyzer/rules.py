@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from typing import Callable, Optional
 
 from canonical import (
@@ -19,6 +19,7 @@ from canonical import (
     MARKER_CODES,
     ProgramCriteria,
     Tradeline,
+    norm_creditor,
 )
 
 CRITICAL, HIGH, MEDIUM, INFO = "critical", "high", "medium", "info"
@@ -573,6 +574,177 @@ def collections_summary(cf: CreditFile, prog: ProgramCriteria) -> list[Finding]:
         evidence=ev,
         dollars=total,
     )]
+
+
+# --------------------------------------------------------------------------
+# Inquiries
+# --------------------------------------------------------------------------
+
+# FICO 8 collapses same-purpose rate shopping inside a 45-day window into one
+# inquiry. Card inquiries get no such treatment — each one counts.
+RATE_SHOP_WINDOW_DAYS = 45
+SCORING_MONTHS = 12   # inquiries stop affecting the score after a year
+REPORT_MONTHS = 24    # but stay visible on the report for two
+
+_SHOPPABLE = {
+    "auto": ("auto", "automobile", "automotive", "vehicle", "car "),
+    "mortgage": ("mortgage", "real estate", "realestate"),
+    "student": ("student", "education"),
+}
+
+
+def _shop_category(inq) -> Optional[str]:
+    """Which rate-shopping bucket an inquiry falls into, if any.
+
+    Business type is the primary signal, but bureaus classify inconsistently —
+    TransUnion files auto lenders under 'Finance, personal' — so the subscriber
+    name is checked too.
+    """
+    blob = f"{inq.business_type} {inq.subscriber}".lower()
+    for category, hints in _SHOPPABLE.items():
+        if any(h in blob for h in hints):
+            return category
+    return None
+
+
+def _clusters(inquiries: list, window: int = RATE_SHOP_WINDOW_DAYS) -> list[list]:
+    """Group same-purpose inquiries into rate-shopping windows, per bureau."""
+    dated = sorted((i for i in inquiries if i.inquired_on),
+                   key=lambda i: i.inquired_on)
+    groups: list[list] = []
+    for inq in dated:
+        for group in groups:
+            if (inq.inquired_on - group[0].inquired_on).days <= window:
+                group.append(inq)
+                break
+        else:
+            groups.append([inq])
+    return groups
+
+
+@rule
+def inquiry_clusters(cf: CreditFile, prog: ProgramCriteria) -> list[Finding]:
+    """Rate-shopping clusters score as one inquiry, not as many."""
+    out: list[Finding] = []
+    for bureau, report in cf.reports.items():
+        buckets: dict[str, list] = defaultdict(list)
+        for inq in report.inquiries:
+            cat = _shop_category(inq)
+            if cat:
+                buckets[cat].append(inq)
+        for category, items in buckets.items():
+            for group in _clusters(items):
+                if len(group) < 3:
+                    continue
+                start, end = group[0].inquired_on, group[-1].inquired_on
+                span = (end - start).days
+                scoring = (cf.as_of - end).days <= SCORING_MONTHS * 31
+                out.append(Finding(
+                    code="INQUIRY_CLUSTER",
+                    severity=INFO,
+                    title=(f"{len(group)} {category} inquiries on {bureau.title()} "
+                           f"over {span} days score as one"),
+                    detail=(
+                        f"{category.title()} inquiries inside a {RATE_SHOP_WINDOW_DAYS}-day "
+                        "window are collapsed to a single inquiry by the scoring model. "
+                        "This cluster is rate shopping, not repeated credit seeking, and is "
+                        "costing far less than the count suggests. "
+                        + ("It no longer affects the score at all."
+                           if not scoring else
+                           f"It stops affecting the score around "
+                           f"{_add_months(end, SCORING_MONTHS):%B %Y}.")
+                    ),
+                    evidence=[f"{start:%b %d, %Y} – {end:%b %d, %Y}",
+                              f"Subscribers: {', '.join(sorted({i.subscriber for i in group})[:6])}",
+                              f"Drops off report: {_add_months(end, REPORT_MONTHS):%B %Y}"],
+                    bureau=bureau,
+                ))
+    return out
+
+
+@rule
+def unmatched_inquiries(cf: CreditFile, prog: ProgramCriteria) -> list[Finding]:
+    """Recent standalone inquiries with no account to show for them.
+
+    An inquiry that produced no tradeline is usually a decline or an
+    abandoned application — but it is also what an unauthorized pull looks
+    like, and it is the only inquiry category worth disputing. Rate-shopping
+    clusters are excluded: shopping five lenders and signing with one is
+    expected, not suspicious.
+    """
+    opened = [(t.date_opened, norm_creditor(t.creditor))
+              for t in cf.all_lines() if t.date_opened]
+    out: list[Finding] = []
+    cutoff = _add_months(cf.as_of, -SCORING_MONTHS)
+
+    for bureau, report in cf.reports.items():
+        for inq in report.inquiries:
+            if not inq.inquired_on or inq.inquired_on < cutoff:
+                continue
+            if _shop_category(inq):
+                continue  # part of a shopping pattern, not a standalone pull
+            name = norm_creditor(inq.subscriber)
+            matched = any(
+                d and inq.inquired_on <= d <= inq.inquired_on + timedelta(days=60)
+                and name and (n.startswith(name[:6]) or name.startswith(n[:6]))
+                for d, n in opened
+            )
+            if matched:
+                continue
+            out.append(Finding(
+                code="INQUIRY_UNMATCHED",
+                severity=MEDIUM,
+                title=f"{inq.subscriber} inquired {inq.inquired_on:%b %d, %Y} — no account opened",
+                detail=(
+                    "A standalone inquiry inside the scoring window with no corresponding "
+                    "tradeline. Most often a decline or an abandoned application, but this "
+                    "is also the only inquiry category worth disputing: if the borrower did "
+                    "not apply, a narrow claim naming this pull is credible in a way a "
+                    "blanket one is not. Confirm with the borrower before disputing."
+                ),
+                evidence=[f"Business type: {inq.business_type or 'not stated'}",
+                          f"Stops affecting score: {_add_months(inq.inquired_on, SCORING_MONTHS):%B %Y}",
+                          f"Drops off report: {_add_months(inq.inquired_on, REPORT_MONTHS):%B %Y}"],
+                bureau=bureau,
+            ))
+    return out
+
+
+@rule
+def inquiry_load(cf: CreditFile, prog: ProgramCriteria) -> list[Finding]:
+    """Effective inquiry count after rate-shop deduplication."""
+    out: list[Finding] = []
+    cutoff = _add_months(cf.as_of, -SCORING_MONTHS)
+    for bureau, report in cf.reports.items():
+        recent = [i for i in report.inquiries if i.inquired_on and i.inquired_on >= cutoff]
+        if not recent:
+            continue
+        standalone = [i for i in recent if not _shop_category(i)]
+        by_category: dict[str, list] = defaultdict(list)
+        for inq in recent:
+            cat = _shop_category(inq)
+            if cat:
+                by_category[cat].append(inq)
+        # Each rate-shopping window counts once, whatever its size.
+        windows = sum(len(_clusters(items)) for items in by_category.values())
+        effective = len(standalone) + windows
+        if len(recent) == effective:
+            continue
+        shoppable = sum(len(v) for v in by_category.values())
+        out.append(Finding(
+            code="INQUIRY_LOAD",
+            severity=INFO,
+            title=(f"{bureau.title()}: {len(recent)} inquiries in the last 12 months "
+                   f"score as roughly {effective}"),
+            detail=(
+                "Raw inquiry counts overstate the damage when rate shopping is present. "
+                "The effective figure is what the scoring model sees."
+            ),
+            evidence=[f"Standalone: {len(standalone)}",
+                      f"Rate-shopping: {shoppable} across {windows} window(s)"],
+            bureau=bureau,
+        ))
+    return out
 
 
 # --------------------------------------------------------------------------

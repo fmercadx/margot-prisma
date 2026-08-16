@@ -33,7 +33,7 @@ python -m pytest test_analyzer.py -q
 | `rules.py` | Findings engine; each rule reads the model and returns `Finding`s |
 | `report.py` | Renders findings into the ten-section HTML analysis report |
 | `analyze.py` | CLI |
-| `test_analyzer.py` | 53 tests on synthetic tradelines and a fabricated MISMO fixture |
+| `test_analyzer.py` | 63 tests on synthetic tradelines and a fabricated MISMO fixture |
 
 Adding an input format means writing a parser that emits `BureauReport`
 objects. Nothing else changes.
@@ -43,7 +43,8 @@ objects. Nothing else changes.
 `MIDDLE_SCORE` · `LIMIT_GAP` · `UTIL_SPREAD` · `OVER_LIMIT` · `PRESENCE_GAP` ·
 `ACTIVE_LATE` · `LATE_ASYMMETRY` · `ELIGIBILITY` · `OPEN_CLOSED` ·
 `STATUS_GRID_CONFLICT` · `CHARGEOFF_MATH` · `BURNED_DISPUTES` ·
-`SYSTEMIC_PATTERN` · `DTI_EFFICIENCY` · `COLLECTIONS`
+`SYSTEMIC_PATTERN` · `DTI_EFFICIENCY` · `COLLECTIONS` · `INQUIRY_CLUSTER` ·
+`INQUIRY_UNMATCHED` · `INQUIRY_LOAD` · `MERGED_SOURCE`
 
 Three of these carry most of the value:
 
@@ -130,9 +131,30 @@ needs to know where it goes first.
 Section 10 is written to be forwarded to the borrower unedited, which is what
 makes the originator look good and is the reason they renew.
 
+## Inquiries
+
+Raw inquiry counts mislead. Same-purpose inquiries inside a 45-day window are
+collapsed by the scoring model into one, so twenty-five auto pulls across a
+month cost roughly what one costs. `INQUIRY_CLUSTER` detects those windows and
+`INQUIRY_LOAD` reports the effective count next to the raw one.
+
+Business type is the primary signal for classification, but bureaus disagree —
+TransUnion files auto lenders under `Finance, personal` — so the subscriber name
+is checked too.
+
+`INQUIRY_UNMATCHED` is the one that matters. It flags a *standalone* inquiry
+inside the scoring window with no tradeline opened within 60 days. Usually a
+decline or an abandoned application, but it is also the only inquiry category
+worth disputing: a narrow claim naming one unrecognized pull is credible where a
+blanket claim is not. Rate-shopping cluster members are excluded — shopping five
+lenders and signing with one is expected, not suspicious.
+
+All of it is anchored to `CreditFile.as_of`, the pull date rather than the
+clock, so a file re-analyzed months later produces the findings it produced on
+the day it was pulled.
+
 ## Not done yet
 
-- Inquiry clustering (rate-shop windows vs. genuine credit seeking)
 - Per-program criteria beyond score floor and clean-month count
 
 ## Handling consumer data

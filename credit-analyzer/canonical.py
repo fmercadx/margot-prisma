@@ -243,6 +243,16 @@ class CreditFile:
     merged_source: bool = False
 
     @property
+    def as_of(self) -> date:
+        """Anchor date for anything time-relative.
+
+        The pull date, not today. A file analyzed months later must produce the
+        same findings it produced on the day it was pulled.
+        """
+        pulls = [r.pulled_on for r in self.reports.values() if r.pulled_on]
+        return max(pulls) if pulls else date.today()
+
+    @property
     def scores(self) -> dict[str, int]:
         return {b: r.score for b, r in self.reports.items() if r.score is not None}
 
