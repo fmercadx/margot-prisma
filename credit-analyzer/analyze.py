@@ -16,6 +16,7 @@ from pathlib import Path
 from canonical import BUREAUS, CreditFile, ProgramCriteria
 import parse_mismo
 import parse_pdf
+import report as report_mod
 from rules import CRITICAL, HIGH, INFO, MEDIUM, run
 
 _BADGE = {CRITICAL: "CRITICAL", HIGH: "HIGH", MEDIUM: "MEDIUM", INFO: "INFO"}
@@ -86,6 +87,11 @@ def main(argv=None) -> int:
     ap.add_argument("--collections-payoff", action="store_true",
                     help="Lender requires collections satisfied")
     ap.add_argument("--json", help="Write findings to this path")
+    ap.add_argument("--report", help="Write the HTML analysis report to this path")
+    ap.add_argument("--file-ref", default="[FILE REF]",
+                    help="Client file reference — never the borrower name")
+    ap.add_argument("--prepared-for", default="[LOAN OFFICER / COMPANY]")
+    ap.add_argument("--analyst", default="")
     ap.add_argument("--all", action="store_true", help="Include INFO findings")
     args = ap.parse_args(argv)
 
@@ -106,6 +112,19 @@ def main(argv=None) -> int:
 
     print(summarize(cf))
     print(render(findings, args.all))
+
+    if args.report:
+        eng = report_mod.Engagement(
+            file_ref=args.file_ref,
+            prepared_for=args.prepared_for,
+            analyst=args.analyst,
+        )
+        html = report_mod.render(cf, findings, prog, eng)
+        out_path = Path(args.report)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(html)
+        slots = html.count("[ANALYST]")
+        print(f"\nWrote {out_path} — {slots} analyst slots remain")
 
     if args.json:
         Path(args.json).write_text(json.dumps(

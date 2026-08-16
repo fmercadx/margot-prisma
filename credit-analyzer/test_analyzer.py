@@ -404,6 +404,121 @@ def test_merged_source_is_flagged_when_no_per_bureau_variance():
     assert warn and "cannot be detected" in warn[0].detail
 
 
+# ------------------------------------------------------- report generation
+
+import report as report_mod
+
+
+def _demo_file():
+    return build(
+        card("experian", "CREDIT ONE", acct="AAA", balance=837, limit=800,
+             past_due=70, payment=42, grid={"2026-08": "30"}),
+        card("equifax", "CREDIT ONE", acct="AAA", balance=837, limit=800, past_due=70),
+        card("transunion", "CREDIT ONE", acct="AAA", balance=837, past_due=70),
+        card("experian", "UPWARDLI", acct="BBB", balance=0, limit=2000,
+             atype="LineOfCredit"),
+        card("equifax", "UPWARDLI", acct="BBB", balance=0, limit=2000,
+             atype="LineOfCredit"),
+        card("transunion", "UPWARDLI", acct="BBB", balance=0, limit=None,
+             atype="LineOfCredit"),
+        card("transunion", "KOALAFI", acct="CCC", balance=861, payment=164,
+             atype="Installment"),
+        scores={"experian": 581, "transunion": 576, "equifax": 525},
+    )
+
+
+def _render(cf=None, prog=None):
+    cf = cf or _demo_file()
+    prog = prog or ProgramCriteria(min_middle_score=620, clean_months_required=12)
+    return report_mod.render(cf, rules.run(cf, prog), prog)
+
+
+def test_report_renders_all_ten_sections():
+    out = _render()
+    for n in range(1, 11):
+        assert f">{n} — " in out, f"section {n} missing"
+
+
+def test_report_marks_unfilled_judgment_slots():
+    """An unedited draft must be obviously a draft."""
+    out = _render()
+    assert "[ANALYST]" in out
+    assert out.count("[ANALYST]") >= 5
+    assert "DRAFT — NOT FOR RELEASE" in out
+
+
+def test_report_verdict_carries_the_eligibility_date():
+    out = _render()
+    assert "Eligible September 2027" in out
+
+
+def test_report_flags_the_middle_score_row():
+    out = _render()
+    assert "Middle — qualifying" in out
+    assert "Improving it does not affect qualification" in out
+
+
+def test_action_list_puts_active_delinquency_first_then_free_actions():
+    cf = _demo_file()
+    actions = report_mod.build_actions(cf, rules.run(cf), ProgramCriteria())
+    assert actions[0].cost == 70
+    assert "current" in actions[0].text
+    free = [i for i, a in enumerate(actions) if a.cost == 0]
+    paid = [i for i, a in enumerate(actions) if a.cost and a.cost > 70]
+    assert not paid or min(free) < min(paid), "free corrections must precede paid ones"
+
+
+def test_do_not_list_always_carries_the_standing_rules():
+    cf = _demo_file()
+    items = " ".join(report_mod.build_do_not(cf, rules.run(cf)))
+    assert "Do not close any account" in items
+    assert "Do not open new credit" in items
+
+
+def test_do_not_list_warns_against_disputing_asymmetric_marks():
+    cf = _demo_file()
+    items = " ".join(report_mod.build_do_not(cf, rules.run(cf)))
+    assert "Do not dispute CREDIT ONE" in items
+
+
+def test_report_escapes_creditor_names():
+    """Creditor strings come from an external file and must never render as markup."""
+    cf = build(card("experian", '<img src=x onerror=alert(1)>', acct="AAA",
+                    balance=100, limit=50))
+    out = report_mod.render(cf, rules.run(cf), ProgramCriteria())
+    assert "<img src=x" not in out
+    assert "&lt;img src=x" in out
+
+
+def test_report_surfaces_the_merged_source_warning():
+    cf = _demo_file()
+    cf.merged_source = True
+    out = report_mod.render(cf, rules.run(cf), ProgramCriteria())
+    assert "property of the input" in out
+
+
+def test_dti_rows_sort_by_ratio_ascending():
+    cf = _demo_file()
+    rows = report_mod.dti_rows(cf)
+    ratios = [t.balance_to_payment for _, t in rows]
+    assert ratios == sorted(ratios)
+    assert rows[0][0] == "KOALAFI"
+
+
+def test_report_is_self_contained():
+    out = _render()
+    assert "<style>" in out
+    for external in ("http://", "https://", "<script"):
+        assert external not in out
+
+
+def test_report_never_contains_a_full_account_number():
+    cf = _demo_file()
+    out = report_mod.render(cf, rules.run(cf), ProgramCriteria())
+    import re as _re
+    assert not _re.search(r"\b\d{9,}\b", out)
+
+
 def test_findings_sort_critical_first():
     cf = build(
         card("experian", "CREDIT ONE", acct="AAA", balance=837, limit=800, past_due=70),

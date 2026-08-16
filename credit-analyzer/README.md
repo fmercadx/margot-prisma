@@ -18,6 +18,7 @@ python analyze.py report.xml --score 620 --clean-months 12
 # Fallback: one consumer-disclosure PDF per bureau
 python analyze.py path/to/*.PDF --score 620 --clean-months 12
 
+python analyze.py report.xml --report out/analysis.html --file-ref OR-2601
 python analyze.py report.xml --json out/findings.json --all
 python -m pytest test_analyzer.py -q
 ```
@@ -30,8 +31,9 @@ python -m pytest test_analyzer.py -q
 | `parse_mismo.py` | MISMO v2.4 `CREDIT_RESPONSE` XML parser — the **preferred** input path |
 | `parse_pdf.py` | Consumer-disclosure PDF parser — the *fallback* input path |
 | `rules.py` | Findings engine; each rule reads the model and returns `Finding`s |
+| `report.py` | Renders findings into the ten-section HTML analysis report |
 | `analyze.py` | CLI |
-| `test_analyzer.py` | 41 tests on synthetic tradelines and a fabricated MISMO fixture |
+| `test_analyzer.py` | 53 tests on synthetic tradelines and a fabricated MISMO fixture |
 
 Adding an input format means writing a parser that emits `BureauReport`
 objects. Nothing else changes.
@@ -104,9 +106,32 @@ mark in August 2026 against a 12-month requirement gives a clean window of
 September 2026 – August 2027, so eligibility opens **September 2027** — not
 August. A month matters here.
 
+## The report
+
+`--report` renders the ten-section deliverable. It fills everything mechanical —
+scores, blocker ranking, discrepancy table, action list, DTI ordering, the
+eligibility arithmetic — and stops where judgment starts.
+
+Three things it does deliberately:
+
+**Judgment slots are visible.** Anything needing an analyst renders as a boxed
+`[ANALYST]` marker rather than plausible filler, and the footer counts how many
+remain and stamps the draft `NOT FOR RELEASE`. Filler that reads as finished is
+how an unreviewed draft reaches a client.
+
+**Truncation is always announced.** Tables cap at a readable length and print
+what was dropped. Silent truncation reads as "this is everything" when it isn't.
+
+**Actions sort by effect per dollar.** Curing an active delinquency gates
+everything and comes first regardless of cost; then free corrections; then the
+cheapest qualifying gains. Not by severity — a borrower has limited cash and
+needs to know where it goes first.
+
+Section 10 is written to be forwarded to the borrower unedited, which is what
+makes the originator look good and is the reason they renew.
+
 ## Not done yet
 
-- Report generation from findings JSON
 - Inquiry clustering (rate-shop windows vs. genuine credit seeking)
 - Per-program criteria beyond score floor and clean-month count
 

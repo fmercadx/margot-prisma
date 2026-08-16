@@ -244,9 +244,14 @@ def presence_gaps(cf: CreditFile, prog: ProgramCriteria) -> list[Finding]:
             continue
         line = acct.any_line
         helps = line.is_collection or line.is_chargeoff
+        # A closed, zero-balance account with no limit that one bureau omits is
+        # noise — it contributes no available credit and no payment history that
+        # changes a decision. Only surface gaps that could move something.
+        matters = bool(line.is_open or line.credit_limit or line.balance)
+        severity = INFO if (helps or not matters) else MEDIUM
         out.append(Finding(
             code="PRESENCE_GAP",
-            severity=INFO if helps else MEDIUM,
+            severity=severity,
             title=f"{acct.creditor} absent from {', '.join(b.title() for b in acct.missing_from)}",
             detail=("Derogatory item not reported everywhere — works in the borrower's favor."
                     if helps else
