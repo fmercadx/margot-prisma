@@ -14,10 +14,24 @@ from dataclasses import asdict
 from pathlib import Path
 
 from canonical import BUREAUS, CreditFile, ProgramCriteria
-from parse_pdf import load_file
+import parse_mismo
+import parse_pdf
 from rules import CRITICAL, HIGH, INFO, MEDIUM, run
 
 _BADGE = {CRITICAL: "CRITICAL", HIGH: "HIGH", MEDIUM: "MEDIUM", INFO: "INFO"}
+
+
+def load_any(paths: list[Path]) -> CreditFile:
+    """MISMO XML is the preferred input; PDFs are the fallback."""
+    xml = [p for p in paths if p.suffix.lower() == ".xml"]
+    pdf = [p for p in paths if p.suffix.lower() == ".pdf"]
+    if xml and pdf:
+        raise SystemExit("Provide either MISMO XML or PDFs, not both.")
+    if xml:
+        if len(xml) > 1:
+            raise SystemExit("A MISMO CREDIT_RESPONSE already covers all repositories; pass one file.")
+        return parse_mismo.load_file(xml[0])
+    return parse_pdf.load_file(pdf)
 
 
 def summarize(cf: CreditFile) -> str:
@@ -81,7 +95,7 @@ def main(argv=None) -> int:
         print(f"Not found: {', '.join(str(p) for p in missing)}", file=sys.stderr)
         return 2
 
-    cf = load_file(paths)
+    cf = load_any(paths)
     prog = ProgramCriteria(
         name=args.program,
         min_middle_score=args.score,

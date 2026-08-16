@@ -11,8 +11,14 @@ it is the quality bar and the liability line.
 
 ```bash
 pip install pypdf pytest
+
+# Preferred: one MISMO CREDIT_RESPONSE covers all three repositories
+python analyze.py report.xml --score 620 --clean-months 12
+
+# Fallback: one consumer-disclosure PDF per bureau
 python analyze.py path/to/*.PDF --score 620 --clean-months 12
-python analyze.py path/to/*.PDF --json out/findings.json --all
+
+python analyze.py report.xml --json out/findings.json --all
 python -m pytest test_analyzer.py -q
 ```
 
@@ -21,10 +27,11 @@ python -m pytest test_analyzer.py -q
 | File | Role |
 | --- | --- |
 | `canonical.py` | Schema (`Tradeline` / `BureauReport` / `CreditFile`), money and date parsing, cross-bureau merge |
+| `parse_mismo.py` | MISMO v2.4 `CREDIT_RESPONSE` XML parser — the **preferred** input path |
 | `parse_pdf.py` | Consumer-disclosure PDF parser — the *fallback* input path |
 | `rules.py` | Findings engine; each rule reads the model and returns `Finding`s |
 | `analyze.py` | CLI |
-| `test_analyzer.py` | 29 tests on synthetic tradelines — no consumer data required |
+| `test_analyzer.py` | 41 tests on synthetic tradelines and a fabricated MISMO fixture |
 
 Adding an input format means writing a parser that emits `BureauReport`
 objects. Nothing else changes.
@@ -52,9 +59,18 @@ Three of these carry most of the value:
 ## Design notes
 
 **Prefer MISMO XML over PDF.** Credit vendors deliver structured XML alongside
-the PDF, with payment grids as real fields. The grid reconstruction in
-`parse_pdf.py` exists only because glyphs are lost in text extraction; the XML
-path avoids the problem entirely. Ask clients for XML.
+the PDF they show the loan officer. Payment history arrives as `_PAYMENT_PATTERN`
+— one character per month with an explicit start date — so grids parse exactly
+and every tradeline comes back `grid_confident = True`. The reconstruction in
+`parse_pdf.py` exists only because glyphs are lost in text extraction. Ask
+clients for XML.
+
+**A merged input hides the most valuable findings.** Some vendors collapse
+per-bureau values before handing the file over. In that shape, missing credit
+limits and one-bureau late marks are undetectable — their absence is a property
+of the input, not of the borrower. `parse_mismo` detects this and sets
+`CreditFile.merged_source`, and the `MERGED_SOURCE` rule says so out loud rather
+than reporting a clean file. Request the unmerged report when it fires.
 
 **Grid confidence is tracked, not assumed.** Single-year grids render as one
 line of month tokens and parse unambiguously. Multi-year grids drop the on-time
@@ -77,6 +93,12 @@ keeps two different accounts opened the same day apart.
 every eligibility date forward forever, so consecutive runs collapse to the
 month the run began.
 
+**Account types are compared on letters only.** PDFs say `Line of Credit`,
+MISMO says `LineOfCredit`, some vendors say `LINE_OF_CREDIT`. A substring match
+on the raw string catches one of the three and silently drops the account from
+utilization — which is how two real credit-limit gaps went unreported until the
+XML fixture exposed it.
+
 **Eligibility has a fencepost.** The month of the late is not clean. A 30-day
 mark in August 2026 against a 12-month requirement gives a clean window of
 September 2026 – August 2027, so eligibility opens **September 2027** — not
@@ -84,7 +106,6 @@ August. A month matters here.
 
 ## Not done yet
 
-- MISMO XML parser (should become the primary path)
 - Report generation from findings JSON
 - Inquiry clustering (rate-shop windows vs. genuine credit seeking)
 - Per-program criteria beyond score floor and clean-month count

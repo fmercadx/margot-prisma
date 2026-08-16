@@ -5,6 +5,7 @@ fixtures/*.pdf
 fixtures/*.xml
 fixtures/*.txt
 !fixtures/synthetic_*.txt
+!fixtures/synthetic_*.xml
 
 # Analysis output may contain consumer data.
 out/

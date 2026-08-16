@@ -158,6 +158,32 @@ def credit_limit_gaps(cf: CreditFile, prog: ProgramCriteria) -> list[Finding]:
 
 
 @rule
+def merged_source_warning(cf: CreditFile, prog: ProgramCriteria) -> list[Finding]:
+    """A pre-merged input hides exactly the discrepancies worth the most.
+
+    Some vendors collapse per-bureau values before handing over the file. The
+    absence of discrepancy findings then proves nothing — it is a property of
+    the input, not of the borrower's credit. Say so rather than reporting a
+    clean file.
+    """
+    if not cf.merged_source:
+        return []
+    return [Finding(
+        code="MERGED_SOURCE",
+        severity=HIGH,
+        title="Input carries no per-bureau variance — discrepancy findings unavailable",
+        detail=(
+            "Every tradeline reports identical values across the repositories that "
+            "carry it, which means the source collapsed per-bureau data upstream. "
+            "Missing credit limits, one-bureau late marks and open/closed conflicts "
+            "cannot be detected from this file. Request the unmerged report or the "
+            "individual consumer disclosures before concluding the file is clean."
+        ),
+        evidence=[f"Repositories present: {', '.join(sorted(cf.reports))}"],
+    )]
+
+
+@rule
 def utilization_spread(cf: CreditFile, prog: ProgramCriteria) -> list[Finding]:
     utils = {b: r.utilization() for b, r in cf.reports.items() if r.utilization() is not None}
     if len(utils) < 2:

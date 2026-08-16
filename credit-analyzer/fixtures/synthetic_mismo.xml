@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Synthetic MISMO v2.4 CREDIT_RESPONSE. Entirely fabricated — no consumer data.
+  Exercises the shapes that matter:
+    · per-repository overrides (a credit limit furnished to two bureaus, not the third)
+    · _PAYMENT_PATTERN decoding, including a late on one bureau only
+    · a charge-off with a repossession in the pattern
+    · a collection with an original creditor
+    · scores from all three repositories
+-->
+<RESPONSE_GROUP MISMOVersionID="2.4">
+  <RESPONSE>
+    <RESPONSE_DATA>
+      <CREDIT_RESPONSE CreditReportIdentifier="SYNTH-0001"
+                       CreditReportFirstIssuedDate="2026-08-10">
+
+        <CREDIT_SCORE _Value="581" CreditRepositorySourceType="Experian"/>
+        <CREDIT_SCORE _Value="576" CreditRepositorySourceType="TransUnion"/>
+        <CREDIT_SCORE _Value="525" CreditRepositorySourceType="Equifax"/>
+
+        <!-- Over limit, 30-day late reported by one repository only. -->
+        <CREDIT_LIABILITY CreditLiabilityID="L1"
+                          _AccountIdentifier="470793XXXXXX"
+                          _AccountOpenedDate="2026-04-23"
+                          _AccountStatusType="Open"
+                          _AccountType="Revolving"
+                          _AccountOwnershipType="Individual"
+                          _UnpaidBalanceAmount="837"
+                          _CreditLimitAmount="800"
+                          _HighBalanceAmount="837"
+                          _MonthlyPaymentAmount="42"
+                          _PastDueAmount="70">
+          <_CREDITOR _Name="CREDIT ONE BANK"/>
+          <CREDIT_REPOSITORY _SourceType="Experian"/>
+          <CREDIT_REPOSITORY _SourceType="Equifax"/>
+          <CREDIT_REPOSITORY _SourceType="TransUnion"/>
+          <_CURRENT_RATING _Code="2" _Type="Late30Days"/>
+          <_PAYMENT_PATTERN _Data="1CCC" _StartDate="2026-08-01"/>
+        </CREDIT_LIABILITY>
+
+        <!-- Credit limit furnished to two repositories but not TransUnion. -->
+        <CREDIT_LIABILITY CreditLiabilityID="L2"
+                          _AccountIdentifier="551200XXXXXX"
+                          _AccountOpenedDate="2025-12-18"
+                          _AccountStatusType="Open"
+                          _AccountType="LineOfCredit"
+                          _AccountOwnershipType="Individual"
+                          _UnpaidBalanceAmount="0"
+                          _CreditLimitAmount="2000"
+                          _HighBalanceAmount="19">
+          <_CREDITOR _Name="UPWARD FINANCIAL INC"/>
+          <CREDIT_REPOSITORY _SourceType="Experian" _CreditLimitAmount="2000"/>
+          <CREDIT_REPOSITORY _SourceType="Equifax" _CreditLimitAmount="2000"/>
+          <CREDIT_REPOSITORY _SourceType="TransUnion" _CreditLimitAmount="0"/>
+          <_CURRENT_RATING _Code="1" _Type="AsAgreed"/>
+          <_PAYMENT_PATTERN _Data="CCCCCCCC" _StartDate="2026-08-01"/>
+        </CREDIT_LIABILITY>
+
+        <!-- Auto loan: repossession then charge-off, preceded by real lates. -->
+        <CREDIT_LIABILITY CreditLiabilityID="L3"
+                          _AccountIdentifier="111075XXXXXX"
+                          _AccountOpenedDate="2023-10-10"
+                          _AccountStatusType="Closed"
+                          _AccountType="Installment"
+                          _AccountOwnershipType="Individual"
+                          _UnpaidBalanceAmount="13963"
+                          _OriginalBalanceAmount="25349"
+                          _PastDueAmount="13963"
+                          _TermsMonthsCount="74">
+          <_CREDITOR _Name="GM FINANCIAL"/>
+          <CREDIT_REPOSITORY _SourceType="Experian"/>
+          <CREDIT_REPOSITORY _SourceType="Equifax"/>
+          <CREDIT_REPOSITORY _SourceType="TransUnion"/>
+          <_CURRENT_RATING _Code="9" _Type="ChargeOff"/>
+          <_PAYMENT_PATTERN _Data="999998332211CCC" _StartDate="2026-08-01"/>
+          <CREDIT_COMMENT _Type="ProfitAndLossWriteoff"/>
+        </CREDIT_LIABILITY>
+
+        <!-- Collection with an original creditor. -->
+        <CREDIT_LIABILITY CreditLiabilityID="L4"
+                          _AccountIdentifier="319184XXX"
+                          _AccountOpenedDate="2022-11-28"
+                          _AccountStatusType="Derogatory"
+                          _AccountType="Collection"
+                          _AccountOwnershipType="Individual"
+                          _UnpaidBalanceAmount="635"
+                          _PastDueAmount="635"
+                          _OriginalCreditorName="COMENITY CAPITAL BANK">
+          <_CREDITOR _Name="MIDLAND CREDIT MANAGEMENT"/>
+          <CREDIT_REPOSITORY _SourceType="Experian"/>
+          <CREDIT_REPOSITORY _SourceType="Equifax"/>
+          <CREDIT_REPOSITORY _SourceType="TransUnion"/>
+          <_CURRENT_RATING _Code="9" _Type="Collection"/>
+        </CREDIT_LIABILITY>
+
+        <!-- Small balance, large payment: the cheapest DTI win on the file. -->
+        <CREDIT_LIABILITY CreditLiabilityID="L5"
+                          _AccountIdentifier="880042XXXXXX"
+                          _AccountOpenedDate="2026-01-07"
+                          _AccountStatusType="Open"
+                          _AccountType="Installment"
+                          _AccountOwnershipType="Individual"
+                          _UnpaidBalanceAmount="861"
+                          _MonthlyPaymentAmount="164"
+                          _TermsMonthsCount="12">
+          <_CREDITOR _Name="KOALAFI"/>
+          <CREDIT_REPOSITORY _SourceType="TransUnion"/>
+          <_CURRENT_RATING _Code="1" _Type="AsAgreed"/>
+          <_PAYMENT_PATTERN _Data="CCCCCCC" _StartDate="2026-08-01"/>
+        </CREDIT_LIABILITY>
+
+        <CREDIT_INQUIRY _Date="2026-05-25" _Name="CB/INDIGO"
+                        CreditRepositorySourceType="TransUnion"
+                        _CreditBusinessType="BankCreditCards"/>
+        <CREDIT_INQUIRY _Date="2025-12-17" _Name="SYNCB/AMAZON"
+                        CreditRepositorySourceType="Experian"
+                        _CreditBusinessType="BankCreditCards"/>
+
+      </CREDIT_RESPONSE>
+    </RESPONSE_DATA>
+  </RESPONSE>
+</RESPONSE_GROUP>

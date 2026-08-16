@@ -131,8 +131,12 @@ class Tradeline:
 
     @property
     def is_revolving(self) -> bool:
-        t = self.account_type.lower()
-        return any(k in t for k in ("revolving", "credit card", "charge", "line of credit"))
+        # Compare on letters only. PDFs say "Line of Credit", MISMO says
+        # "LineOfCredit", and some vendors say "LINE_OF_CREDIT" — all the same
+        # thing, and a substring match on the raw string catches only one.
+        t = re.sub(r"[^a-z]", "", self.account_type.lower())
+        return any(k in t for k in
+                   ("revolving", "creditcard", "charge", "lineofcredit", "openaccount"))
 
     @property
     def is_collection(self) -> bool:
@@ -234,6 +238,9 @@ class MergedAccount:
 class CreditFile:
     reports: dict[str, BureauReport] = field(default_factory=dict)
     accounts: list[MergedAccount] = field(default_factory=list)
+    # True when the input collapsed per-bureau values upstream, so discrepancy
+    # findings cannot be derived and their absence proves nothing.
+    merged_source: bool = False
 
     @property
     def scores(self) -> dict[str, int]:

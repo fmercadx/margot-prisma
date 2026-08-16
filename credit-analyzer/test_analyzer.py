@@ -265,6 +265,145 @@ def test_no_rule_errors_on_a_representative_file():
     assert not errors, [f.detail for f in errors]
 
 
+# ---------------------------------------------------------------- MISMO XML
+
+import parse_mismo
+from pathlib import Path
+
+FIXTURE = Path(__file__).parent / "fixtures" / "synthetic_mismo.xml"
+
+
+def test_payment_pattern_reads_most_recent_first():
+    grid = parse_mismo.decode_payment_pattern("1CCC", date(2026, 8, 1))
+    assert grid["2026-08"] == "30"
+    assert grid["2026-07"] == "OK"
+    assert grid["2026-05"] == "OK"
+    assert "2026-04" not in grid
+
+
+def test_payment_pattern_maps_derogatory_codes():
+    grid = parse_mismo.decode_payment_pattern("98321", date(2026, 5, 1))
+    assert grid["2026-05"] == "CO"   # 9
+    assert grid["2026-04"] == "R"    # 8
+    assert grid["2026-03"] == "90"   # 3
+    assert grid["2026-02"] == "60"   # 2
+    assert grid["2026-01"] == "30"   # 1
+
+
+def test_payment_pattern_skips_no_data_characters():
+    grid = parse_mismo.decode_payment_pattern("C-X0C", date(2026, 8, 1))
+    assert set(grid) == {"2026-08", "2026-04"}
+
+
+def test_payment_pattern_without_start_date_is_empty():
+    assert parse_mismo.decode_payment_pattern("CCC", None) == {}
+
+
+def test_namespaced_mismo_parses():
+    import tempfile
+    from xml.etree import ElementTree as ET
+    xml = """<?xml version="1.0"?>
+    <RESPONSE_GROUP xmlns="http://www.mismo.org/residential/2009/schemas">
+      <CREDIT_RESPONSE>
+        <CREDIT_SCORE _Value="600" CreditRepositorySourceType="Equifax"/>
+        <CREDIT_LIABILITY _AccountIdentifier="123456XXXX" _AccountOpenedDate="2024-01-01"
+                          _AccountStatusType="Open" _AccountType="Revolving"
+                          _UnpaidBalanceAmount="100" _CreditLimitAmount="1000">
+          <_CREDITOR _Name="TEST BANK"/>
+          <CREDIT_REPOSITORY _SourceType="Equifax"/>
+        </CREDIT_LIABILITY>
+      </CREDIT_RESPONSE>
+    </RESPONSE_GROUP>"""
+    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as fh:
+        fh.write(xml)
+        path = fh.name
+    cf = parse_mismo.load_file(path)
+    assert cf.scores == {"equifax": 600}
+    assert cf.accounts[0].creditor == "TEST BANK"
+
+
+def test_repositories_from_indicator_attributes():
+    import tempfile
+    xml = """<?xml version="1.0"?>
+    <RESPONSE_GROUP><CREDIT_RESPONSE>
+      <CREDIT_LIABILITY _AccountIdentifier="999999XXXX" _AccountOpenedDate="2024-01-01"
+                        _AccountStatusType="Open" _AccountType="Revolving"
+                        _EquifaxIndicator="Y" _ExperianIndicator="Y"
+                        _TransUnionIndicator="N">
+        <_CREDITOR _Name="LEGACY FORMAT"/>
+      </CREDIT_LIABILITY>
+    </CREDIT_RESPONSE></RESPONSE_GROUP>"""
+    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as fh:
+        fh.write(xml)
+        path = fh.name
+    cf = parse_mismo.load_file(path)
+    assert sorted(cf.accounts[0].by_bureau) == ["equifax", "experian"]
+
+
+def test_line_of_credit_camelcase_counts_as_revolving():
+    """MISMO writes 'LineOfCredit'; PDFs write 'Line of Credit'."""
+    assert card("experian", "X", atype="LineOfCredit").is_revolving
+    assert card("experian", "X", atype="Line of Credit").is_revolving
+    assert card("experian", "X", atype="LINE_OF_CREDIT").is_revolving
+    assert not card("experian", "X", atype="Installment").is_revolving
+
+
+def test_mismo_per_repository_override_produces_a_limit_gap():
+    cf = parse_mismo.load_file(FIXTURE)
+    gaps = only(rules.run(cf), "LIMIT_GAP")
+    assert gaps, "per-repository CreditLimitAmount override should surface a gap"
+    assert "Transunion" in gaps[0].title
+    assert gaps[0].severity == rules.CRITICAL  # TransUnion holds the middle score
+
+
+def test_mismo_fixture_end_to_end():
+    cf = parse_mismo.load_file(FIXTURE)
+    assert cf.scores == {"experian": 581, "transunion": 576, "equifax": 525}
+    assert cf.middle_score() == ("transunion", 576)
+    assert not cf.merged_source
+    found = codes(rules.run(cf))
+    for expected in ("ACTIVE_LATE", "ELIGIBILITY", "LIMIT_GAP", "OVER_LIMIT",
+                     "DTI_EFFICIENCY", "COLLECTIONS"):
+        assert expected in found, f"{expected} missing from {found}"
+    assert "RULE_ERROR" not in found
+
+
+def test_mismo_grids_are_always_confident():
+    """Structured patterns need no alignment guessing."""
+    cf = parse_mismo.load_file(FIXTURE)
+    assert all(t.grid_confident for t in cf.all_lines())
+
+
+def test_collection_detected_from_original_creditor():
+    cf = parse_mismo.load_file(FIXTURE)
+    midland = next(a for a in cf.accounts if "MIDLAND" in a.creditor.upper())
+    assert midland.any_line.is_collection
+    assert midland.any_line.original_creditor == "COMENITY CAPITAL BANK"
+
+
+def test_merged_source_is_flagged_when_no_per_bureau_variance():
+    import tempfile
+    xml = """<?xml version="1.0"?>
+    <RESPONSE_GROUP><CREDIT_RESPONSE>
+      <CREDIT_SCORE _Value="600" CreditRepositorySourceType="Equifax"/>
+      <CREDIT_SCORE _Value="610" CreditRepositorySourceType="Experian"/>
+      <CREDIT_LIABILITY _AccountIdentifier="123456XXXX" _AccountOpenedDate="2024-01-01"
+                        _AccountStatusType="Open" _AccountType="Revolving"
+                        _UnpaidBalanceAmount="100" _CreditLimitAmount="1000">
+        <_CREDITOR _Name="SAME EVERYWHERE"/>
+        <CREDIT_REPOSITORY _SourceType="Equifax"/>
+        <CREDIT_REPOSITORY _SourceType="Experian"/>
+      </CREDIT_LIABILITY>
+    </CREDIT_RESPONSE></RESPONSE_GROUP>"""
+    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False) as fh:
+        fh.write(xml)
+        path = fh.name
+    cf = parse_mismo.load_file(path)
+    assert cf.merged_source
+    warn = only(rules.run(cf), "MERGED_SOURCE")
+    assert warn and "cannot be detected" in warn[0].detail
+
+
 def test_findings_sort_critical_first():
     cf = build(
         card("experian", "CREDIT ONE", acct="AAA", balance=837, limit=800, past_due=70),
