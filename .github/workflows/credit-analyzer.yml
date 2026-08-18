@@ -45,7 +45,10 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Run tests
-        run: python -m pytest test_analyzer.py -q
+        env:
+          ANALYZER_PASSWORD: ci-test-password-1234
+          ANALYZER_SECURE_COOKIE: '0'
+        run: python -m pytest test_analyzer.py web/test_web.py -q
 
       - name: Analyze the synthetic MISMO fixture end to end
         run: python analyze.py fixtures/synthetic_mismo.xml --score 620 --all

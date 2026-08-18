@@ -15,3 +15,7 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+
+# Web front end runtime data — uploaded consumer reports live here.
+credit-analyzer-data/
+web/__pycache__/

@@ -33,7 +33,9 @@ python -m pytest test_analyzer.py -q
 | `rules.py` | Findings engine; each rule reads the model and returns `Finding`s |
 | `report.py` | Renders findings into the ten-section HTML analysis report |
 | `analyze.py` | CLI |
+| `web/` | Flask front end &mdash; upload, review, download, delete |
 | `test_analyzer.py` | 63 tests on synthetic tradelines and a fabricated MISMO fixture |
+| `web/test_web.py` | 34 tests, weighted toward auth, traversal and retention |
 
 Adding an input format means writing a parser that emits `BureauReport`
 objects. Nothing else changes.
@@ -130,6 +132,37 @@ needs to know where it goes first.
 
 Section 10 is written to be forwarded to the borrower unedited, which is what
 makes the originator look good and is the reason they renew.
+
+## The web front end
+
+```bash
+export ANALYZER_PASSWORD='something long'     # no default; it refuses to start without one
+python web/app.py                             # http://127.0.0.1:5000
+```
+
+An **internal analyst tool**, not a consumer product. The operator uploads a file a
+loan officer sent them, reviews the findings, downloads a draft report, and deletes
+it. Borrowers never log in, never upload and never pay &mdash; which is what keeps
+this outside the Credit Repair Organizations Act. There is no consumer-facing route,
+by design rather than by omission.
+
+Handling consumer credit files over a network makes the FTC Safeguards Rule concrete,
+so the controls are code rather than policy:
+
+| Control | How |
+| --- | --- |
+| Retention | TTL on every job, purged on **every request** &mdash; not by a cron nobody runs |
+| Disposal | Delete is a first-class UI action and removes uploads and derived report together |
+| Access control | Session auth on every route, password hashed, no default, minimum length enforced |
+| Brute force | Per-IP throttle that blocks the correct password too, or it is trivially bypassed |
+| Least data | The form asks for a file reference, never a borrower name |
+| Confidentiality | Job dirs `0700`, files `0600`, unguessable job tokens, uploads never served statically |
+| Accountability | Append-only audit log of login, upload, analysis, download and delete |
+| Failure mode | Debug off &mdash; a traceback would leak file paths and job tokens |
+
+Before this faces the internet it needs TLS, `ANALYZER_SECRET_KEY` set to a stable
+value, and a real WSGI server. `ANALYZER_SECURE_COOKIE=0` exists only for local
+http testing.
 
 ## Inquiries
 

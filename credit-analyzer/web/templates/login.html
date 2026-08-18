@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Credit Analyzer{% endblock %}
+{% block body %}
+<div style="max-width:22rem;margin:5rem auto 0">
+  <h1>Credit Analyzer</h1>
+  <p style="color:var(--ink2);font-size:.9rem">Internal analyst tool. Authorized use only.</p>
+  <form method="post" class="card" style="margin-top:1.5rem">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" autocomplete="current-password"
+           required autofocus>
+    <div style="margin-top:1.2rem"><button class="go" type="submit">Sign in</button></div>
+  </form>
+</div>
+{% endblock %}
