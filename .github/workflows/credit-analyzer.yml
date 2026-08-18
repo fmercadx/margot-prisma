@@ -1,0 +1,82 @@
+name: credit-analyzer tests
+
+# Path-filtered so this never fires on salon-site changes, and entirely
+# independent of the Pages deploy (which builds `dist` from `main`).
+on:
+  pull_request:
+    paths:
+      - 'credit-analyzer/**'
+      - '.github/workflows/credit-analyzer.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'credit-analyzer/**'
+      - '.github/workflows/credit-analyzer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: credit-analyzer-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: credit-analyzer
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.11 is the floor the code targets; 3.13 catches deprecations early.
+        python-version: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: credit-analyzer/requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest test_analyzer.py -q
+
+      - name: Analyze the synthetic MISMO fixture end to end
+        run: python analyze.py fixtures/synthetic_mismo.xml --score 620 --all
+
+      - name: Render a report from the synthetic fixture
+        run: |
+          python analyze.py fixtures/synthetic_mismo.xml \
+            --score 620 --report /tmp/report.html --file-ref CI-SMOKE
+
+      - name: Fail if any rule crashed
+        # run() catches rule exceptions so one bad rule cannot kill an analysis.
+        # That means a bug becomes a missing finding rather than a traceback —
+        # invisible unless something checks for it here.
+        run: |
+          set -o pipefail   # otherwise tee's exit status masks a crash
+          python analyze.py fixtures/synthetic_mismo.xml --all \
+            | tee /tmp/out.txt
+          if grep -q "RULE_ERROR" /tmp/out.txt; then
+            echo "::error::A rule raised an exception; see RULE_ERROR findings above."
+            exit 1
+          fi
+
+      - name: Fail if a consumer report was committed
+        # fixtures/ is gitignored, but a --force or a rename could slip one in.
+        # Git history is permanent, so this is worth a hard gate on every PR.
+        working-directory: .
+        run: |
+          leaked=$(git ls-files -- 'credit-analyzer/fixtures/**' \
+            | grep -viE 'synthetic_[^/]*\.(xml|txt)$' || true)
+          if [ -n "$leaked" ]; then
+            echo "::error::Non-synthetic files are tracked under fixtures/:"
+            echo "$leaked"
+            exit 1
+          fi
