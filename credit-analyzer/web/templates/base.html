@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{% block title %}Credit Analyzer{% endblock %}</title>
+<style>
+  :root{
+    --paper:#f7f8f6; --card:#fff; --card2:#eef1ed;
+    --ink:#161a17; --ink2:#4d574f; --ink3:#7d8880;
+    --line:#dbe0da; --line2:#b6bfb7;
+    --pine:#1f4d3d; --pineS:#e5efe9;
+    --brass:#8a6a1f; --brassS:#f7f0dd;
+    --ox:#8f2f28; --oxS:#f9eae8;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --disp:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme=light]){
+      --paper:#101310; --card:#181c19; --card2:#212722;
+      --ink:#e8ebe7; --ink2:#9ba69d; --ink3:#727d75;
+      --line:#2a312c; --line2:#3d463f;
+      --pine:#7fc4a6; --pineS:#152420;
+      --brass:#d3ab5b; --brassS:#282116;
+      --ox:#e59189; --oxS:#2a1a18;
+    }
+  }
+  :root[data-theme=dark]{
+    --paper:#101310; --card:#181c19; --card2:#212722;
+    --ink:#e8ebe7; --ink2:#9ba69d; --ink3:#727d75;
+    --line:#2a312c; --line2:#3d463f;
+    --pine:#7fc4a6; --pineS:#152420;
+    --brass:#d3ab5b; --brassS:#282116;
+    --ox:#e59189; --oxS:#2a1a18;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--sans);font-size:15.5px;line-height:1.55;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:56rem;margin:0 auto;padding:2rem 1.25rem 5rem}
+  a{color:var(--pine)}
+  a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{
+    outline:2px solid var(--pine);outline-offset:2px}
+
+  header.bar{display:flex;align-items:baseline;justify-content:space-between;
+    gap:1rem;flex-wrap:wrap;border-bottom:1px solid var(--line);
+    padding-bottom:.9rem;margin-bottom:2rem}
+  .brand{font-family:var(--disp);font-size:1.35rem;font-weight:600;
+    letter-spacing:-.015em}
+  .brand span{font-family:var(--mono);font-size:.58rem;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--ink3);display:block;margin-top:.2rem}
+  nav{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;
+    text-transform:uppercase;display:flex;gap:1rem;align-items:center}
+  nav form{display:inline}
+  nav button{background:none;border:none;color:var(--ink2);cursor:pointer;
+    font:inherit;padding:0;text-transform:uppercase;letter-spacing:.1em}
+  nav button:hover{color:var(--ox)}
+
+  h1{font-family:var(--disp);font-size:1.7rem;line-height:1.15;
+    letter-spacing:-.02em;font-weight:600;margin:0 0 .4rem}
+  h2{font-family:var(--disp);font-size:1.2rem;font-weight:600;
+    margin:2.2rem 0 .6rem;letter-spacing:-.012em}
+  p{margin:.6em 0}
+
+  .card{background:var(--card);border:1px solid var(--line);
+    padding:1.4rem 1.5rem;margin:1.2rem 0}
+  .card > *:first-child{margin-top:0}
+  .card > *:last-child{margin-bottom:0}
+
+  label{display:block;font-family:var(--mono);font-size:.6rem;letter-spacing:.13em;
+    text-transform:uppercase;color:var(--ink3);margin-bottom:.3rem}
+  input[type=text],input[type=number],input[type=password],select{
+    width:100%;padding:.55rem .65rem;background:var(--paper);color:var(--ink);
+    border:1px solid var(--line2);border-radius:2px;font:inherit;font-size:.92rem}
+  input[type=file]{width:100%;padding:.9rem;background:var(--paper);
+    border:1px dashed var(--line2);border-radius:2px;font-size:.88rem;color:var(--ink2)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));
+    gap:1rem;margin:1rem 0}
+  .full{grid-column:1/-1}
+  .check{display:flex;align-items:center;gap:.5rem;font-size:.9rem;
+    font-family:var(--sans);text-transform:none;letter-spacing:0;color:var(--ink)}
+  .check input{width:auto}
+
+  button.go,a.go{display:inline-block;background:var(--pine);color:var(--paper);
+    border:none;padding:.65rem 1.4rem;font-family:var(--mono);font-size:.72rem;
+    letter-spacing:.13em;text-transform:uppercase;cursor:pointer;border-radius:2px;
+    text-decoration:none}
+  button.go:hover,a.go:hover{opacity:.9}
+  button.danger{background:none;border:1px solid var(--ox);color:var(--ox);
+    padding:.35rem .8rem;font-family:var(--mono);font-size:.62rem;
+    letter-spacing:.12em;text-transform:uppercase;cursor:pointer;border-radius:2px}
+
+  .flash{padding:.7rem 1rem;margin:.8rem 0;border-left:3px solid var(--pine);
+    background:var(--pineS);font-size:.92rem}
+  .flash.error{border-left-color:var(--ox);background:var(--oxS)}
+
+  .note{border:1px solid var(--line);border-left:3px solid var(--brass);
+    background:var(--brassS);padding:.9rem 1.1rem;margin:1.2rem 0;font-size:.88rem}
+  .note .lbl{display:block;font-family:var(--mono);font-size:.58rem;font-weight:700;
+    letter-spacing:.15em;text-transform:uppercase;color:var(--brass);margin-bottom:.35rem}
+  .note.stop{border-left-color:var(--ox);background:var(--oxS)}
+  .note.stop .lbl{color:var(--ox)}
+
+  table{border-collapse:collapse;width:100%;font-size:.83rem}
+  th,td{text-align:left;padding:.5rem .7rem;border-bottom:1px solid var(--line);
+    vertical-align:top}
+  th{font-family:var(--mono);font-size:.58rem;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--ink2);background:var(--card2)}
+  tbody tr:last-child td{border-bottom:none}
+  .tw{overflow-x:auto;border:1px solid var(--line);background:var(--card);margin:1rem 0}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+  .sev{font-family:var(--mono);font-size:.55rem;font-weight:700;letter-spacing:.12em;
+    text-transform:uppercase;padding:.15rem .45rem;border-radius:2px;white-space:nowrap}
+  .sev.critical{background:var(--oxS);color:var(--ox)}
+  .sev.high{background:var(--brassS);color:var(--brass)}
+  .sev.medium{background:var(--card2);color:var(--ink2)}
+  .sev.info{background:var(--card2);color:var(--ink3)}
+
+  footer{margin-top:3rem;padding-top:1.1rem;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:.63rem;line-height:1.7;color:var(--ink3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  {% if session.get('auth') %}
+  <header class="bar">
+    <div class="brand">Credit Analyzer<span>Internal analyst tool</span></div>
+    <nav>
+      <a href="{{ url_for('index') }}">Files</a>
+      <a href="{{ url_for('audit_view') }}">Audit</a>
+      <form method="post" action="{{ url_for('logout') }}"><button>Sign out</button></form>
+    </nav>
+  </header>
+  {% endif %}
+
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% for cat, m in msgs %}
+      <div class="flash {{ 'error' if cat == 'error' else '' }}">{{ m }}</div>
+    {% endfor %}
+  {% endwith %}
+
+  {% block body %}{% endblock %}
+
+  <footer>
+    UPLOADS AND DERIVED REPORTS ARE DELETED AUTOMATICALLY AFTER {{ ttl|default(24) }} HOURS,
+    AND IMMEDIATELY ON REQUEST. EVERY ACCESS IS LOGGED.<br><br>
+    THIS TOOL IS FOR AN ANALYST WORKING ON BEHALF OF A LENDER. IT IS NOT A CONSUMER
+    SERVICE — BORROWERS DO NOT LOG IN, UPLOAD, OR PAY. FINDINGS ARE MACHINE-GENERATED
+    CANDIDATES REQUIRING HUMAN REVIEW BEFORE ANY CLIENT SEES THEM.
+  </footer>
+</div>
+</body>
+</html>

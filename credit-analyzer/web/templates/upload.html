@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}New analysis — Credit Analyzer{% endblock %}
+{% block body %}
+
+<h1>New analysis</h1>
+<p style="color:var(--ink2)">Upload a lender tri-merge. One MISMO XML, or one consumer-disclosure PDF per bureau.</p>
+
+{% if oversize %}
+<div class="note stop"><span class="lbl">Upload too large</span>
+Files must total under {{ oversize }} MB.</div>
+{% endif %}
+
+<div class="note"><span class="lbl">Prefer XML</span>
+A MISMO <code>CREDIT_RESPONSE</code> carries payment history as structured fields, so
+grids parse exactly. PDFs work, but multi-year grids come back marked low confidence.
+Ask the loan officer for the XML their credit vendor already produces.</div>
+
+<form method="post" action="{{ url_for('analyze') }}" enctype="multipart/form-data" class="card">
+  <label for="reports">Credit reports</label>
+  <input type="file" id="reports" name="reports" multiple accept=".pdf,.xml" required>
+
+  <div class="grid" style="margin-top:1.4rem">
+    <div>
+      <label for="file_ref">File reference</label>
+      <input type="text" id="file_ref" name="file_ref" placeholder="OR-2601">
+    </div>
+    <div>
+      <label for="prepared_for">Prepared for</label>
+      <input type="text" id="prepared_for" name="prepared_for" placeholder="Brokerage / loan officer">
+    </div>
+    <div class="full">
+      <label for="program">Program</label>
+      <input type="text" id="program" name="program" value="VA — manual underwrite">
+    </div>
+    <div>
+      <label for="min_score">Minimum middle score</label>
+      <input type="number" id="min_score" name="min_score" value="620" min="300" max="850">
+    </div>
+    <div>
+      <label for="clean_months">Clean months required</label>
+      <input type="number" id="clean_months" name="clean_months" value="12" min="0" max="60">
+    </div>
+    <div class="full">
+      <label class="check"><input type="checkbox" name="collections_payoff">
+        Lender requires collections satisfied</label>
+    </div>
+  </div>
+
+  <div class="note stop" style="margin-top:1.4rem"><span class="lbl">Before you upload</span>
+  Use a file reference, not the borrower's name. This tool needs the tri-merge and the
+  loan parameters &mdash; nothing else. Every extra identifier is breach surface.</div>
+
+  <div style="margin-top:1.3rem"><button class="go" type="submit">Analyze</button></div>
+</form>
+
+<h2>Active files</h2>
+{% if jobs %}
+<div class="tw"><table>
+  <thead><tr><th>Reference</th><th>Prepared for</th><th>Findings</th>
+    <th>Uploaded</th><th>Deletes in</th><th></th></tr></thead>
+  <tbody>
+  {% for j in jobs %}
+    <tr>
+      <td><a href="{{ url_for('job_view', job_id=j.id) }}">{{ j.file_ref }}</a>
+        {% if j.error %}<br><span class="sev critical">Failed</span>{% endif %}</td>
+      <td>{{ j.prepared_for }}</td>
+      <td class="mono">
+        {%- set c = j.finding_counts -%}
+        {% if c %}{{ c.get('critical',0) }}C / {{ c.get('high',0) }}H / {{ c.get('medium',0) }}M{% else %}—{% endif %}
+      </td>
+      <td class="mono">{{ j.created_iso[:16].replace('T',' ') }}</td>
+      <td class="mono">{{ '%.1f'|format(j.hours_left) }} h</td>
+      <td><form method="post" action="{{ url_for('job_delete', job_id=j.id) }}"
+            onsubmit="return confirm('Delete this file and its report permanently?')">
+          <button class="danger" type="submit">Delete</button></form></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% else %}
+<p style="color:var(--ink3);font-size:.9rem">No files. Everything uploaded is deleted
+automatically after {{ ttl }} hours.</p>
+{% endif %}
+
+{% endblock %}

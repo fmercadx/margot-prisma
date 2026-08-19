@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}{{ job.file_ref }} — Credit Analyzer{% endblock %}
+{% block body %}
+
+<h1>{{ job.file_ref }}</h1>
+<p style="color:var(--ink2);font-size:.9rem">
+  {{ job.program }} &middot; floor {{ job.min_score }} &middot;
+  {{ job.clean_months }} clean months &middot;
+  prepared for {{ job.prepared_for }}<br>
+  <span class="mono" style="font-size:.8rem">{{ job.source_names|join(', ') }}</span>
+</p>
+
+{% if job.error %}
+<div class="note stop"><span class="lbl">Analysis failed</span>
+<span class="mono">{{ job.error }}</span>
+<p style="margin-bottom:0">The upload is still stored and will be deleted on schedule.
+If this is a format the parser doesn't handle yet, that's a bug worth fixing rather
+than a file worth retrying.</p></div>
+{% else %}
+
+<div class="card">
+  <div class="grid" style="margin:0">
+    {% for b, s in job.scores.items() %}
+    <div>
+      <label>{{ b|capitalize }}{% if job.middle and job.middle[0] == b %} — qualifying{% endif %}</label>
+      <div class="mono" style="font-size:1.5rem;font-weight:700;
+        {% if job.middle and job.middle[0] == b %}color:var(--brass){% endif %}">{{ s }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% if job.middle %}
+  <p style="margin-bottom:0;font-size:.9rem">
+    Underwriting uses the middle score: <strong>{{ job.middle[1] }}</strong>
+    ({{ job.middle[0]|capitalize }}). Every remediation dollar targets that repository.
+  </p>
+  {% endif %}
+</div>
+
+<p>
+  <a class="go" href="{{ url_for('job_report', job_id=job.id) }}" target="_blank" rel="noopener">Open draft report</a>
+  <a href="{{ url_for('job_findings', job_id=job.id) }}" style="margin-left:1rem;font-size:.85rem">findings.json</a>
+</p>
+
+{% if job.analyst_slots %}
+<div class="note"><span class="lbl">Draft — not for release</span>
+The report has <strong>{{ job.analyst_slots }} analyst slots</strong> still unfilled.
+Every finding below is a machine-generated candidate. Verify each one against the
+source report and resolve every slot before this reaches a client.</div>
+{% endif %}
+
+<h2>Findings</h2>
+<div class="tw"><table>
+  <thead><tr><th>Severity</th><th>Finding</th><th>Evidence</th></tr></thead>
+  <tbody>
+  {% for f in findings %}
+    <tr>
+      <td><span class="sev {{ f.severity }}">{{ f.severity }}</span>
+        {% if not f.confident %}<br><span class="sev info">low conf</span>{% endif %}</td>
+      <td style="min-width:14rem"><strong>{{ f.title }}</strong>
+        <div style="color:var(--ink2);margin-top:.25rem">{{ f.detail }}</div></td>
+      <td style="min-width:11rem;font-size:.78rem;color:var(--ink2)">
+        {% for e in f.evidence %}{{ e }}<br>{% endfor %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+
+<form method="post" action="{{ url_for('job_delete', job_id=job.id) }}"
+      onsubmit="return confirm('Delete this file and its report permanently?')"
+      style="margin-top:2rem">
+  <button class="danger" type="submit">Delete now</button>
+  <span style="font-size:.8rem;color:var(--ink3);margin-left:.7rem">
+    Otherwise deletes automatically in {{ '%.1f'|format(job.hours_left) }} hours.</span>
+</form>
+
+{% endblock %}
