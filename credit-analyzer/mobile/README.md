@@ -56,20 +56,23 @@ That keeps the store's 15–30% off a subscription that is not a consumer sale i
 the first place.
 
 The service lives in [`../licence/`](../licence/) — a Cloudflare Worker in front
-of Stripe. Deploy it, then set the endpoint in **`app.config.json`**, which is
-the only place it lives; `build.py` prepends it to `shell.js` at build time so
-nothing has to be edited twice:
+of Stripe. Deploy it, then point the app at it:
 
-```json
-{
-  "licenceEndpoint": "https://licence.your-domain.com/licence/verify",
-  "subscribeUrl": "https://your-domain.com/subscribe"
-}
+```bash
+npx wrangler deploy                    # in ../licence, prints your worker URL
+npm run set-endpoint -- https://credit-analyzer-licence.<subdomain>.workers.dev
+npm run sync
 ```
 
-The shipped value is a placeholder containing `CHANGE-ME`, and the app refuses
-to sign anyone in while it is still there — with a message saying so, rather
-than an unexplained network error on somebody's phone.
+`app.config.json` is the only place the endpoint lives, and `build.py` merges
+it into `shell.js` at build time so nothing is edited twice. Use the command
+rather than editing the file: it adds the `/licence/verify` path and rejects
+`http://`, and both of those mistakes surface on a device as an unexplained
+"licence check failed" with nothing pointing at the cause.
+
+Until it is set, the config carries a `YOUR-SUBDOMAIN` token and the app
+refuses to sign anyone in — saying exactly that, rather than failing later as a
+network error on somebody's phone.
 
 A verified subscription keeps working offline for seven days
 (`OFFLINE_GRACE_DAYS`), because a loan officer on a plane should not lose the
@@ -117,6 +120,7 @@ covers our logic and not Apple's:
 - an unchecked attestation does not get through
 - an unconfigured build refuses sign-in rather than admitting everyone
 - the report reaches `Filesystem.writeFile` and `Share.share`
+- the copy never says "browser" or "tab", which reads as a wrapped web page
 - deleting a saved report removes the file, not just the list entry
 
 **A real device run is still required before shipping.** Nothing here proves
@@ -125,7 +129,7 @@ or that a 13 MB bundle launches fast enough on an old phone. Run it on hardware.
 
 ## Before submitting
 
-- Deploy `../licence/` and set `licenceEndpoint` and `subscribeUrl` in `app.config.json`.
+- Deploy `../licence/`, then `npm run set-endpoint -- <worker URL> --subscribe <url>`.
 - Change `appId` in `capacitor.config.json` from the placeholder
   `com.creditanalyzer.app`.
 - Add icons and a splash screen.

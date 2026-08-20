@@ -1,16 +1,22 @@
 {
   "_comment": [
-    "The one place the app's deployment settings live. build.py reads this and",
-    "emits it into shell.js, so nothing has to be edited in two places.",
+    "The one place the app's deployment settings live. build.py merges this into",
+    "shell.js at build time, so nothing has to be edited in two places.",
     "",
-    "licenceEndpoint MUST be changed before a store build. The placeholder host",
-    "below does not resolve, which makes an unconfigured build fail loudly at",
-    "sign-in instead of quietly letting everyone in.",
+    "Do not edit by hand. Run, from this directory:",
     "",
-    "Whatever host you use also has to be listed in WKAppBoundDomains in",
-    "ios/App/App/Info.plist, or iOS will refuse the request."
+    "  npm run set-endpoint -- https://credit-analyzer-licence.<subdomain>.workers.dev",
+    "",
+    "which validates the URL and adds the /licence/verify path. Dropping that",
+    "path, or leaving the scheme as http, both surface on a device as an",
+    "unexplained 'licence check failed' — which is why this is a command rather",
+    "than a text edit.",
+    "",
+    "YOUR-SUBDOMAIN is your Cloudflare account subdomain; `npx wrangler deploy`",
+    "prints the full URL. While that token is still here the app refuses to sign",
+    "anyone in, and says so."
   ],
-  "licenceEndpoint": "https://licence.CHANGE-ME.example/licence/verify",
+  "licenceEndpoint": "https://credit-analyzer-licence.YOUR-SUBDOMAIN.workers.dev/licence/verify",
   "subscribeUrl": "https://CHANGE-ME.example/subscribe",
   "subscribeLabel": "Start one on the web"
 }

@@ -135,6 +135,10 @@ jobs:
         working-directory: credit-analyzer/mobile
         run: npm run build
 
+      - name: Test the endpoint wiring
+        working-directory: credit-analyzer/mobile
+        run: npm test
+
       - name: Drive the native shell against a stubbed Capacitor bridge
         working-directory: .
         run: python credit-analyzer/mobile/smoke_native.py

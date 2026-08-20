@@ -9,7 +9,9 @@
     "open:ios": "npx cap open ios",
     "open:android": "npx cap open android",
     "run:ios": "npm run sync && npx cap run ios",
-    "run:android": "npm run sync && npx cap run android"
+    "run:android": "npm run sync && npx cap run android",
+    "set-endpoint": "node set-endpoint.mjs",
+    "test": "node --test"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.4",
