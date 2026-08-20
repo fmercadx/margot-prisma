@@ -1,0 +1,14 @@
+name = "credit-analyzer-licence"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# Created with: npx wrangler kv namespace create LICENCES
+# Put the returned id here. The namespace holds one record per licence plus
+# two index entries (by email and by Stripe subscription).
+[[kv_namespaces]]
+binding = "LICENCES"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# Secrets are set with `npx wrangler secret put`, never in this file:
+#   STRIPE_WEBHOOK_SECRET   required — without it every webhook is rejected
+#   STRIPE_SECRET_KEY       optional — enables the staleness re-check

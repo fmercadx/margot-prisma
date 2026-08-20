@@ -32,6 +32,7 @@ The Pyodide runtime comes from `node_modules/pyodide` (a devDependency, so
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -160,7 +161,25 @@ def main(argv=None) -> int:
     shutil.copy2(HERE / "app.js", out / "app.js")
     # Always lands as shell.js — index.html loads one name, and which
     # implementation it got is a build-time fact rather than a runtime check.
-    shutil.copy2(shell_src, out / "shell.js")
+    #
+    # The mobile shell's deployment settings are prepended rather than kept in
+    # a second file: one file to edit, one file to review before a store
+    # build, and no way for the config and the shell to disagree about which
+    # of them is authoritative.
+    shell_js = shell_src.read_text()
+    cfg_path = MOBILE / "app.config.json"
+    if args.target == "mobile":
+        if not cfg_path.exists():
+            die(f"missing {cfg_path}")
+        cfg = {k: v for k, v in json.loads(cfg_path.read_text()).items()
+               if not k.startswith("_")}
+        # Merged rather than assigned, so anything already set wins. In the
+        # app nothing else can set it — every byte of content is local and
+        # bundled — but it lets a test drive the shell against a stub.
+        shell_js = (
+            f"window.ANALYZER_CONFIG = Object.assign({json.dumps(cfg, indent=2)},"
+            " window.ANALYZER_CONFIG || {});\n\n" + shell_js)
+    (out / "shell.js").write_text(shell_js)
     for extra in extras:
         if not extra.exists():
             die(f"missing {extra}")

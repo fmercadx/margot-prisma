@@ -21,15 +21,17 @@
  */
 
 /* ---------------------------------------------------------------------------
- * Deployment configuration. Set these before cutting a store build.
+ * Deployment configuration comes from mobile/app.config.json, which build.py
+ * prepends to this file. The defaults below only apply when something has gone
+ * wrong with that, and they are deliberately unusable: a build with no licence
+ * endpoint refuses to sign anybody in, which is the correct failure. The
+ * alternative — an app that lets everyone through — is the one that turns this
+ * into a credit repair organization.
  * ------------------------------------------------------------------------- */
 window.ANALYZER_CONFIG = Object.assign({
   // POST {email, key, app, v} -> {active: bool, reason?, seat?, company?}
-  // Point this at your own endpoint in front of Stripe. There is no default:
-  // a build that ships without one refuses to sign anybody in, which is the
-  // correct failure — the alternative is an app that lets everyone through.
   licenceEndpoint: null,
-  subscribeUrl: 'https://example.com/subscribe',
+  subscribeUrl: null,
   subscribeLabel: 'Start one on the web',
 }, window.ANALYZER_CONFIG || {});
 
@@ -97,8 +99,16 @@ window.Shell = (() => {
   async function verifyLicence(email, key) {
     if (!CFG.licenceEndpoint) {
       throw new Error(
-        'No licence endpoint is configured. Set ANALYZER_CONFIG.licenceEndpoint ' +
-        'to the verification URL before shipping a build.');
+        'No licence endpoint is configured. Set licenceEndpoint in ' +
+        'mobile/app.config.json before shipping a build.');
+    }
+    // The shipped config carries a placeholder host that does not resolve.
+    // Caught here so an unconfigured build says what is wrong, instead of
+    // failing later as an unexplained network error on someone's phone.
+    if (/CHANGE-ME/i.test(CFG.licenceEndpoint)) {
+      throw new Error(
+        'This build still has the placeholder licence endpoint. Set ' +
+        'licenceEndpoint in mobile/app.config.json to your own service.');
     }
     const res = await fetch(CFG.licenceEndpoint, {
       method: 'POST',

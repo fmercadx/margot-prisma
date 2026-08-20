@@ -138,3 +138,20 @@ jobs:
       - name: Drive the native shell against a stubbed Capacitor bridge
         working-directory: .
         run: python credit-analyzer/mobile/smoke_native.py
+
+  # The service the app checks at launch. It decides who gets in, so it is
+  # tested separately from anything that needs a browser.
+  licence:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: credit-analyzer/licence
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Test the licence service
+        run: node --test

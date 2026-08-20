@@ -53,21 +53,27 @@ allow this for business apps whose accounts are sold to organizations — the
 same shape as every B2B app that logs in with a work account.
 
 That keeps the store's 15–30% off a subscription that is not a consumer sale in
-the first place. Set the endpoint before cutting a store build:
+the first place.
 
-```js
-// shell-native.js, top of file
-window.ANALYZER_CONFIG = {
-  licenceEndpoint: 'https://your-api.example.com/licence/verify',
-  subscribeUrl: 'https://your-site.example.com/subscribe',
-};
+The service lives in [`../licence/`](../licence/) — a Cloudflare Worker in front
+of Stripe. Deploy it, then set the endpoint in **`app.config.json`**, which is
+the only place it lives; `build.py` prepends it to `shell.js` at build time so
+nothing has to be edited twice:
+
+```json
+{
+  "licenceEndpoint": "https://licence.your-domain.com/licence/verify",
+  "subscribeUrl": "https://your-domain.com/subscribe"
+}
 ```
 
-The endpoint takes `{email, key, app, v}` and returns
-`{active: bool, reason?, seat?, company?}`. A verified subscription keeps
-working offline for seven days (`OFFLINE_GRACE_DAYS`), because a loan officer on
-a plane should not lose the tool and a cancelled card should not take a week to
-notice.
+The shipped value is a placeholder containing `CHANGE-ME`, and the app refuses
+to sign anyone in while it is still there — with a message saying so, rather
+than an unexplained network error on somebody's phone.
+
+A verified subscription keeps working offline for seven days
+(`OFFLINE_GRACE_DAYS`), because a loan officer on a plane should not lose the
+tool and a cancelled card should not take a week to notice.
 
 ## Why this is not a repackaged website
 
@@ -119,7 +125,7 @@ or that a 13 MB bundle launches fast enough on an old phone. Run it on hardware.
 
 ## Before submitting
 
-- Set `licenceEndpoint` and `subscribeUrl`.
+- Deploy `../licence/` and set `licenceEndpoint` and `subscribeUrl` in `app.config.json`.
 - Change `appId` in `capacitor.config.json` from the placeholder
   `com.creditanalyzer.app`.
 - Add icons and a splash screen.

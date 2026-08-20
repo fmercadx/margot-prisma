@@ -1,0 +1,16 @@
+{
+  "_comment": [
+    "The one place the app's deployment settings live. build.py reads this and",
+    "emits it into shell.js, so nothing has to be edited in two places.",
+    "",
+    "licenceEndpoint MUST be changed before a store build. The placeholder host",
+    "below does not resolve, which makes an unconfigured build fail loudly at",
+    "sign-in instead of quietly letting everyone in.",
+    "",
+    "Whatever host you use also has to be listed in WKAppBoundDomains in",
+    "ios/App/App/Info.plist, or iOS will refuse the request."
+  ],
+  "licenceEndpoint": "https://licence.CHANGE-ME.example/licence/verify",
+  "subscribeUrl": "https://CHANGE-ME.example/subscribe",
+  "subscribeLabel": "Start one on the web"
+}
