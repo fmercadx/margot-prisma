@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Apple's privacy manifest. See ../../../PRIVACY.md for why each entry is
+	  what it is, and for the App Store Connect questionnaire answers, which
+	  are a separate form that must agree with this file.
+
+	  THIS FILE MUST BE A MEMBER OF THE App TARGET. Adding it to the folder is
+	  not enough — Xcode only bundles files added to the project. Open
+	  App.xcworkspace, drag PrivacyInfo.xcprivacy into the App group, and tick
+	  the App target. A manifest that is not in the bundle does nothing and
+	  Apple will still flag the app.
+	-->
+
+	<!-- No tracking. Nothing here is used to link this person to data from
+	     other apps or websites, and there are no ad or analytics SDKs. -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<!--
+	  Collected = leaves the device and is retained. Two things qualify, both
+	  from the licence check, and both about the *subscriber* rather than any
+	  borrower.
+
+	  Consumer credit reports are deliberately absent. They are parsed by
+	  WebAssembly inside the app and never transmitted anywhere, so under
+	  Apple's definition they are not collected. That is the product, not an
+	  omission — if a future change uploads a file, this array is wrong.
+
+	  Also absent: the NMLS ID and company from the professional attestation,
+	  and every saved report. Those live in on-device storage and never leave.
+	-->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeEmailAddress</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- The licence key. It identifies the subscription, so it is an
+			     account identifier rather than "other data". -->
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeUserID</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+	</array>
+
+	<!--
+	  Required-reason APIs. Neither @capacitor/preferences nor
+	  @capacitor/filesystem ships its own manifest, so the app has to declare
+	  what they call. Verified against the plugin sources rather than assumed.
+	-->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<!-- @capacitor/preferences stores the attestation, the
+			     entitlement and the saved-report index in UserDefaults. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- @capacitor/filesystem returns file creation and modification
+			     dates, for files inside this app's own container. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

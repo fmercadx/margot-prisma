@@ -138,9 +138,11 @@ or that a 13 MB bundle launches fast enough on an old phone. Run it on hardware.
   Apple needs a D-U-N-S number, which is free but takes a few days, and Play
   imposes a 12-tester/14-day requirement on new personal accounts that
   organization accounts skip.
-- Fill the privacy manifest and Play data-safety form. Both are easy here and
-  worth getting exactly right: no data collected, nothing transmitted except
-  the licence check, no third-party SDKs, no tracking.
+- Privacy declarations are drafted in [`PRIVACY.md`](PRIVACY.md) — the iOS
+  manifest, plus answers for both store questionnaires. **`PrivacyInfo.xcprivacy`
+  must be added to the App target in Xcode**; sitting in the folder does
+  nothing. A privacy policy URL is still needed and neither store will accept a
+  submission without one.
 - State plainly in the listing that this is a professional tool for mortgage
   originators and not a consumer credit-repair service. The listing is evidence
   of who you sold to.
