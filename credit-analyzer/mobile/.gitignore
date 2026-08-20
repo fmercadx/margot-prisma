@@ -14,3 +14,6 @@ ios/App/build/
 DerivedData/
 
 .DS_Store
+
+# Store listing assets — regenerate with make-screenshots.py.
+store/
