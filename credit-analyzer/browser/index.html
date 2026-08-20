@@ -121,7 +121,12 @@
     text-transform:uppercase;color:var(--ink2);background:var(--card2)}
   tbody tr:last-child td{border-bottom:none}
   .tw{overflow-x:auto;border:1px solid var(--line);background:var(--card);margin:1rem 0}
-  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+  /* nowrap belongs on table cells, where it keeps a figure on one line inside
+     a container that scrolls. Applied to .mono generally it also caught a
+     paragraph of prose, which then refused to wrap and pushed the whole page
+     sideways on any phone. */
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  th.mono,td.mono{white-space:nowrap}
 
   .sev{font-family:var(--mono);font-size:.55rem;font-weight:700;letter-spacing:.12em;
     text-transform:uppercase;padding:.15rem .45rem;border-radius:2px;white-space:nowrap}
@@ -257,6 +262,7 @@
     MACHINE-GENERATED CANDIDATES REQUIRING HUMAN REVIEW BEFORE ANY CLIENT SEES THEM.
   </footer>
 </div>
+<script src="shell.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

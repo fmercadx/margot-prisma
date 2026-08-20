@@ -66,7 +66,7 @@ def main(argv=None) -> int:
         with sync_playwright() as p:
             launch = {"executable_path": args.browser} if args.browser else {}
             browser = p.chromium.launch(**launch)
-            page = browser.new_page()
+            page = browser.new_page(reduced_motion="reduce")
 
             requests: list[str] = []
             page.on("request", lambda r: requests.append(r.url))
@@ -95,6 +95,25 @@ def main(argv=None) -> int:
             })
             if offsite:
                 failures.append(f"requested off-origin hosts: {offsite}")
+
+            # A phone-width pass. Wide tables are meant to scroll inside their
+            # own container; the page itself must not, and a single stray
+            # white-space:nowrap on prose is enough to break that — which is
+            # exactly how it broke once already.
+            page.set_viewport_size({"width": 390, "height": 844})
+            page.wait_for_timeout(250)
+            width = page.evaluate(
+                "() => ({doc: document.documentElement.clientWidth,"
+                "        scroll: document.body.scrollWidth})")
+            if width["scroll"] > width["doc"] + 1:
+                culprits = page.evaluate("""() => [...document.querySelectorAll('body *')]
+                    .filter(e => e.scrollWidth > e.clientWidth + 1
+                                 && e.scrollWidth > document.documentElement.clientWidth)
+                    .map(e => `${e.tagName}.${e.className}`.slice(0, 60))
+                    .slice(0, 5)""")
+                failures.append(
+                    f"page scrolls sideways at 390px "
+                    f"({width['scroll']}px wide): {culprits}")
 
             browser.close()
     finally:

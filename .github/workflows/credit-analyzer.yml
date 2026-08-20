@@ -120,3 +120,12 @@ jobs:
       - name: Analyze the synthetic fixture inside a browser
         working-directory: .
         run: python credit-analyzer/browser/smoke.py --dist dist/analyzer
+
+      # The mobile bundle is the same engine behind a different shell. The
+      # shell is where the subscription gate lives, so it gets its own gate.
+      - name: Build the mobile bundle
+        run: npm ci --prefix credit-analyzer/mobile && npm run build --prefix credit-analyzer/mobile
+
+      - name: Drive the native shell against a stubbed Capacitor bridge
+        working-directory: .
+        run: python credit-analyzer/mobile/smoke_native.py

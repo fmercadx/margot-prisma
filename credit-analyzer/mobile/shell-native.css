@@ -1,0 +1,204 @@
+/* Styling for the parts that exist only in the app: the gate and the saved
+   report list. Everything else is inherited from index.html, so the app and
+   the web page stay recognisably the same tool.
+
+   Loaded only in the mobile build — index.html does not reference it, the
+   native shell injects the link itself. */
+
+body.native {
+  /* Notches, home indicators, and the Android gesture bar. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+  /* Rubber-band scrolling past the end of a report looks broken in a web view. */
+  overscroll-behavior-y: none;
+}
+
+body.native .wrap { padding-top: 1.25rem; }
+
+/* Nothing in the app is selectable text by accident — that is a web-page
+   affordance and it makes a native build feel wrong. Report content still is. */
+body.native { -webkit-user-select: none; user-select: none; }
+body.native #out, body.native #findTable { -webkit-user-select: text; user-select: text; }
+body.native input { -webkit-user-select: text; user-select: text; }
+
+/* --------------------------------------------------------------- the gate */
+
+.gate {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: var(--paper);
+  overflow-y: auto;
+  padding: calc(env(safe-area-inset-top) + 2rem) 1.25rem
+           calc(env(safe-area-inset-bottom) + 2rem);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.gate-card {
+  width: 100%;
+  max-width: 30rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.gate-mark {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink3);
+}
+
+.gate-card h1 {
+  font-family: var(--disp);
+  font-size: 1.6rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.gate-lede { margin: 0; color: var(--ink2); font-size: 0.95rem; }
+
+.gate-field { display: flex; flex-direction: column; gap: 0.3rem; }
+
+.gate-field label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--ink3);
+  margin: 0;
+}
+
+.gate-field input {
+  width: 100%;
+  padding: 0.7rem 0.75rem;
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--line2);
+  border-radius: 3px;
+  font: inherit;
+  font-size: 1rem; /* under 16px iOS zooms the whole view on focus */
+}
+
+.gate-check {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  /* index.html styles every <label> as an uppercase mono field caption, which
+     is right for "Middle-score floor" and wrong for a sentence somebody is
+     attesting to. Someone agreeing to a legal statement has to be able to read
+     it comfortably, so this one opts back out. */
+  font-family: var(--sans);
+  font-size: 0.92rem;
+  letter-spacing: 0;
+  text-transform: none;
+  line-height: 1.45;
+  color: var(--ink);
+  padding: 0.15rem 0;
+}
+
+.gate-check input {
+  flex: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-top: 0.12rem;
+  accent-color: var(--pine);
+}
+
+.gate-stop {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--ox);
+  background: var(--oxS);
+  padding: 0.85rem 1rem;
+  font-size: 0.87rem;
+}
+
+.gate-stop-tag {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.57rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--ox);
+  margin-bottom: 0.3rem;
+}
+
+.gate-stop p { margin: 0; }
+
+.gate-err {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid var(--ox);
+  background: var(--oxS);
+  font-size: 0.88rem;
+}
+
+.gate-go {
+  background: var(--pine);
+  color: var(--paper);
+  border: none;
+  padding: 0.85rem 1.4rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  cursor: pointer;
+  /* A tap target under 44pt fails Apple's own guidance and feels bad. */
+  min-height: 2.9rem;
+}
+
+.gate-go:disabled { opacity: 0.5; }
+
+.gate-help { margin: 0; font-size: 0.85rem; color: var(--ink2); }
+
+/* ------------------------------------------------------- saved reports */
+
+.hist { list-style: none; padding: 0; margin: 0; }
+
+.hist li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.hist li:last-child { border-bottom: none; }
+
+.hist-ref { font-weight: 600; font-size: 0.95rem; }
+
+.hist-meta {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink3);
+  margin-top: 0.15rem;
+}
+
+.hist-actions { display: flex; gap: 0.5rem; flex: none; }
+
+.hist-btn {
+  background: none;
+  border: 1px solid var(--line2);
+  color: var(--ink2);
+  padding: 0.5rem 0.8rem;
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  border-radius: 3px;
+  cursor: pointer;
+  min-height: 2.4rem;
+}
+
+.hist-btn.danger { border-color: var(--ox); color: var(--ox); }
