@@ -160,9 +160,46 @@ so the controls are code rather than policy:
 | Accountability | Append-only audit log of login, upload, analysis, download and delete |
 | Failure mode | Debug off &mdash; a traceback would leak file paths and job tokens |
 
-Before this faces the internet it needs TLS, `ANALYZER_SECRET_KEY` set to a stable
-value, and a real WSGI server. `ANALYZER_SECURE_COOKIE=0` exists only for local
-http testing.
+### Deploying it
+
+`Procfile` and `railway.json` at the repo root configure a Railway deploy. Set
+these variables in the Railway dashboard:
+
+| Variable | Value |
+| --- | --- |
+| `ANALYZER_PASSWORD` | something long — there is no default |
+| `ANALYZER_SECRET_KEY` | `python -c 'import secrets; print(secrets.token_hex(32))'` |
+| `ANALYZER_TRUST_PROXY` | `1` |
+| `ANALYZER_DATA_DIR` | `/data/jobs` if you attach a volume, else leave unset |
+| `ANALYZER_TTL_HOURS` | `24` |
+
+`ANALYZER_TRUST_PROXY=1` is not optional behind a proxy. Without it every request
+appears to come from the proxy's address, which turns the per-IP login throttle
+into a *global* one — eight failed guesses from anyone locks out everybody — and
+fills the audit log with a single useless address. It is gated behind an explicit
+opt-in because trusting `X-Forwarded-For` when *not* behind a proxy is worse than
+the bug it fixes: anyone could then set their own address and bypass the throttle.
+
+Setting `ANALYZER_TRUST_PROXY=1` also makes `ANALYZER_SECRET_KEY` mandatory — a
+generated key differs per process and dies on restart, silently breaking sessions.
+
+Two platform facts worth knowing before you rely on it:
+
+**The filesystem is ephemeral.** Uploaded files and reports vanish on every
+redeploy and restart. With a 24-hour TTL that is mostly harmless, but a job can
+disappear mid-review. Attach a Railway volume and point `ANALYZER_DATA_DIR` at it
+if that matters.
+
+**One worker, deliberately.** The throttle counts attempts in process memory, so
+N workers allow N times the guesses. The `Procfile` pins `--workers 1`. Raising it
+requires moving the throttle into the shared data directory first.
+
+**Think before making it public.** A hosted instance means consumer credit files
+sitting on someone else's server, which is where FTC Safeguards Rule obligations
+stop being theoretical — a written security program, a named responsible person,
+vendor oversight and an incident response plan. Running it on a laptop for one
+operator's own files carries none of that. Deploy when a loan officer needs a link,
+not before.
 
 ## Inquiries
 

@@ -78,7 +78,35 @@ def _password_hash() -> str:
 
 
 PASSWORD_HASH = _password_hash()
-app.secret_key = os.environ.get("ANALYZER_SECRET_KEY") or secrets.token_hex(32)
+
+_secret = os.environ.get("ANALYZER_SECRET_KEY")
+if not _secret:
+    if os.environ.get("ANALYZER_TRUST_PROXY") == "1":
+        # A generated key differs per process and dies on restart, so sessions
+        # break unpredictably. Behind a proxy this is a real deployment, and a
+        # real deployment must set one.
+        raise SystemExit(
+            "ANALYZER_SECRET_KEY must be set when running behind a proxy.\n"
+            "Generate one: python -c 'import secrets; print(secrets.token_hex(32))'"
+        )
+    _secret = secrets.token_hex(32)
+app.secret_key = _secret
+
+# Behind a reverse proxy (Railway, Fly, nginx) request.remote_addr is the
+# proxy's address, not the client's. Two things break silently:
+#
+#   · the per-IP login throttle becomes a *global* throttle — eight failed
+#     guesses from anyone locks out everybody, which is a denial of service
+#     rather than a protection
+#   · every audit entry records the same useless address
+#
+# ProxyFix reads X-Forwarded-For instead. It is gated behind an explicit
+# opt-in because trusting that header when *not* behind a proxy is worse than
+# the bug it fixes: anyone could then set their own address and sidestep the
+# throttle entirely.
+if os.environ.get("ANALYZER_TRUST_PROXY") == "1":
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
 # IP -> [timestamps]. Single-password services get scanned; make it expensive.
 _attempts: dict[str, list[float]] = {}
