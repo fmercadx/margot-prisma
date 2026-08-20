@@ -34,6 +34,7 @@ python -m pytest test_analyzer.py -q
 | `report.py` | Renders findings into the ten-section HTML analysis report |
 | `analyze.py` | CLI |
 | `web/` | Flask front end &mdash; upload, review, download, delete |
+| `browser/` | Static build that runs the whole engine in the browser via WebAssembly |
 | `test_analyzer.py` | 63 tests on synthetic tradelines and a fabricated MISMO fixture |
 | `web/test_web.py` | 34 tests, weighted toward auth, traversal and retention |
 
@@ -200,6 +201,48 @@ stop being theoretical — a written security program, a named responsible perso
 vendor oversight and an incident response plan. Running it on a laptop for one
 operator's own files carries none of that. Deploy when a loan officer needs a link,
 not before.
+
+## The browser build
+
+`browser/` compiles the same engine to a page that needs no server at all.
+Pyodide is CPython built for WebAssembly, so `canonical.py`, `parse_pdf.py`,
+`parse_mismo.py`, `rules.py` and `report.py` are bundled and imported
+*unchanged* — `browser_api.py` is the only new code, and it is glue. The
+findings are the findings the CLI produces, because it is the same code.
+
+```bash
+npm ci                       # brings in Pyodide as a devDependency
+npm run build:analyzer       # assembles dist/analyzer
+python -m http.server -d dist/analyzer
+
+python browser/smoke.py --dist dist/analyzer   # drives it in real Chromium
+```
+
+**The credit file never leaves the machine.** Parsing and all nineteen rules
+run inside the tab. There is no upload, no session, no retention window and no
+server holding consumer reports — which removes most of what makes the FTC
+Safeguards Rule expensive, because the data is never in anyone's custody but
+the operator's own.
+
+**Everything is served same-origin, deliberately.** The Pyodide runtime, the
+Python standard library and pypdf are all vendored into the build rather than
+pulled from a CDN or installed by `micropip` at runtime. A page that reads
+consumer credit files should not be making third-party requests: a CDN would
+learn who opens the tool and when, and "nothing leaves your machine" would stop
+being true in the way that matters. `smoke.py` asserts zero off-origin requests
+so this cannot regress quietly.
+
+pypdf is pure Python with no dependencies, so unzipping the wheel into the
+bundle *is* the install. That is the whole reason `micropip` is not needed.
+
+**It is still not a consumer product.** Publicly reachable is not the same as
+consumer-facing: the page is an analyst's tool with no borrower-facing flow, no
+payment, and no representation that it repairs anything. That distinction is
+what keeps it outside CROA, and it is stated on the page rather than left to
+inference.
+
+First load is roughly 13 MB — the WebAssembly build of CPython and its standard
+library — and cached afterwards. That cost buys the absence of a server.
 
 ## Inquiries
 
