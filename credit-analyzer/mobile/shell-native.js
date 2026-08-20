@@ -105,10 +105,11 @@ window.Shell = (() => {
     // The shipped config carries a placeholder host that does not resolve.
     // Caught here so an unconfigured build says what is wrong, instead of
     // failing later as an unexplained network error on someone's phone.
-    if (/CHANGE-ME/i.test(CFG.licenceEndpoint)) {
+    if (/CHANGE-ME|YOUR-SUBDOMAIN/i.test(CFG.licenceEndpoint)) {
       throw new Error(
-        'This build still has the placeholder licence endpoint. Set ' +
-        'licenceEndpoint in mobile/app.config.json to your own service.');
+        'This build still has the placeholder licence endpoint. Run ' +
+        '`npm run set-endpoint -- <your worker URL>` in credit-analyzer/mobile ' +
+        'and rebuild.');
     }
     const res = await fetch(CFG.licenceEndpoint, {
       method: 'POST',
