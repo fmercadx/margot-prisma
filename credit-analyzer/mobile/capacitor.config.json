@@ -6,8 +6,7 @@
     "allowMixedContent": false
   },
   "ios": {
-    "contentInset": "always",
-    "limitsNavigationsToAppBoundDomains": true
+    "contentInset": "always"
   },
   "server": {
     "androidScheme": "https",

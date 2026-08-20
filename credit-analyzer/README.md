@@ -33,6 +33,7 @@ python -m pytest test_analyzer.py -q
 | `rules.py` | Findings engine; each rule reads the model and returns `Finding`s |
 | `report.py` | Renders findings into the ten-section HTML analysis report |
 | `analyze.py` | CLI |
+| `licence/` | Cloudflare Worker the app checks at launch &mdash; Stripe-backed |
 | `web/` | Flask front end &mdash; upload, review, download, delete |
 | `browser/` | Static build that runs the whole engine in the browser via WebAssembly |
 | `test_analyzer.py` | 63 tests on synthetic tradelines and a fabricated MISMO fixture |
