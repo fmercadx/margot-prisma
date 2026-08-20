@@ -2,17 +2,27 @@
 """Assemble the browser build.
 
     python credit-analyzer/browser/build.py --out dist/analyzer
+    python credit-analyzer/browser/build.py --target mobile --out mobile/www
 
 Produces a directory that can be served by any static host — GitHub Pages
 included — with no server-side anything:
 
-    index.html  app.js
+    index.html  app.js  shell.js
     pyodide/       CPython compiled to WebAssembly, plus the stdlib
     analyzer.zip   pypdf + the analyzer modules, unpacked into the VFS at boot
 
 Everything is vendored on purpose. A page that reads consumer credit files
 should not fetch its runtime from a third-party CDN, because that CDN then
-learns who opens the tool and when. Same-origin only.
+learns who opens the tool and when. Same-origin only. In the mobile build the
+same property is what lets the app work with the radio off, and is why the
+store listing can honestly declare that it collects nothing.
+
+Two targets, one analyzer. `shell.js` is the only file that differs: it is the
+seam between the analyzer and whatever is hosting it, so `app.js` and every
+Python module are byte-identical in both builds.
+
+    web      shell-web.js     — blob downloads, no gate, nothing retained
+    mobile   shell-native.js  — Files/share sheet, saved reports, licence gate
 
 The Pyodide runtime comes from `node_modules/pyodide` (a devDependency, so
 `npm ci` already fetched it) and pypdf from a wheel — either one found in
@@ -31,6 +41,13 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ANALYZER = HERE.parent
 REPO = ANALYZER.parent
+MOBILE = ANALYZER / "mobile"
+
+# target -> (shell implementation, extra files copied alongside it)
+TARGETS = {
+    "web": (HERE / "shell-web.js", []),
+    "mobile": (MOBILE / "shell-native.js", [MOBILE / "shell-native.css"]),
+}
 
 # The analyzer modules, imported unchanged. browser_api.py is the only glue.
 MODULES = [
@@ -113,11 +130,17 @@ def main(argv=None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", default=str(REPO / "dist" / "analyzer"),
                     help="output directory (default dist/analyzer)")
+    ap.add_argument("--target", choices=sorted(TARGETS), default="web",
+                    help="which host shell to bundle (default web)")
     ap.add_argument("--pyodide-dir", default=None,
                     help="Pyodide distribution (default node_modules/pyodide)")
     ap.add_argument("--wheel-dir", default=str(HERE / ".wheels"),
                     help="where to look for / cache the pypdf wheel")
     args = ap.parse_args(argv)
+
+    shell_src, extras = TARGETS[args.target]
+    if not shell_src.exists():
+        die(f"missing shell for target {args.target}: {shell_src}")
 
     out = Path(args.out).resolve()
     pyo = find_pyodide(Path(args.pyodide_dir).resolve() if args.pyodide_dir else None)
@@ -135,6 +158,13 @@ def main(argv=None) -> int:
 
     shutil.copy2(HERE / "index.html", out / "index.html")
     shutil.copy2(HERE / "app.js", out / "app.js")
+    # Always lands as shell.js — index.html loads one name, and which
+    # implementation it got is a build-time fact rather than a runtime check.
+    shutil.copy2(shell_src, out / "shell.js")
+    for extra in extras:
+        if not extra.exists():
+            die(f"missing {extra}")
+        shutil.copy2(extra, out / extra.name)
     build_bundle(out / "analyzer.zip", wheel)
 
     # Artifact-based Pages deploys skip Jekyll already, so this changes nothing
@@ -145,6 +175,7 @@ def main(argv=None) -> int:
     (out / ".nojekyll").write_text("")
 
     total = sum(p.stat().st_size for p in out.rglob("*") if p.is_file())
+    print(f"· target       {args.target}  ({shell_src.name})")
     print(f"· pyodide      {pyo}")
     print(f"· pypdf        {wheel.name}")
     print(f"· built        {out}  ({total / 1024 / 1024:.1f} MB)")

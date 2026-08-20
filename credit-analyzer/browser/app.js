@@ -16,7 +16,6 @@ const out = $('out'), errBox = $('err'), errText = $('errText');
 let pyodide = null;
 let api = null;
 let files = [];
-let blobUrls = [];
 
 function status(text, cls) {
   rtText.textContent = text;
@@ -27,6 +26,11 @@ function status(text, cls) {
 
 async function boot() {
   try {
+    // The host decides whether anything has to happen before the engine is
+    // usable. On the web that is nothing; in the app it is the subscription
+    // and professional-use gate, and it blocks here until it passes.
+    if (!(await Shell.start())) return;
+
     status('Loading engine…', 'loading');
     const { loadPyodide } = await import('./pyodide/pyodide.mjs');
     pyodide = await loadPyodide({
@@ -111,7 +115,7 @@ resetBtn.addEventListener('click', () => {
   renderPicked();
   out.classList.add('hide');
   hideError();
-  revokeBlobs();
+  Shell.release();
   if (api) api.clear();
 });
 
@@ -120,18 +124,13 @@ resetBtn.addEventListener('click', () => {
 function showError(msg) { errText.textContent = msg; errBox.classList.remove('hide'); }
 function hideError() { errBox.classList.add('hide'); }
 
-function revokeBlobs() {
-  blobUrls.forEach(URL.revokeObjectURL);
-  blobUrls = [];
-}
-
 /* ---------------------------------------------------------------- run */
 
 runBtn.addEventListener('click', async () => {
   if (!api || !files.length) return;
   hideError();
   out.classList.add('hide');
-  revokeBlobs();
+  Shell.release();
   runBtn.disabled = true;
   status('Reading files…', 'loading');
 
@@ -300,22 +299,18 @@ function render(res) {
       `read [ANALYST] and it is stamped NOT FOR RELEASE. Fill them before a client sees it.`
     : 'The report has no unfilled judgment slots.';
 
-  const html = new Blob([res.report_html], { type: 'text/html' });
-  const json = new Blob([res.findings_json], { type: 'application/json' });
-  const hUrl = URL.createObjectURL(html), jUrl = URL.createObjectURL(json);
-  blobUrls.push(hUrl, jUrl);
-
   const ref = ($('fileRef').value.trim() || 'analysis').replace(/[^\w.-]+/g, '-');
-  const dlReport = $('dlReport');
-  dlReport.href = hUrl;
-  dlReport.download = `${ref}.html`;
-  $('openReport').href = hUrl;
-  const dlJson = $('dlJson');
-  dlJson.href = jUrl;
-  dlJson.download = `${ref}-findings.json`;
+  Shell.offerDeliverables({
+    ref,
+    html: res.report_html,
+    json: res.findings_json,
+    middle: res.middle,
+    findingCount: res.findings.length,
+  });
 
   out.classList.remove('hide');
-  out.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  out.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'start' });
 }
 
 boot();

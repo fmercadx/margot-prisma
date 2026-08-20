@@ -1,0 +1,27 @@
+{
+  "name": "credit-analyzer-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "iOS and Android build of the credit analyzer. Wraps the same WebAssembly engine the web build uses.",
+  "scripts": {
+    "build": "python3 ../browser/build.py --target mobile --out www --pyodide-dir ../../node_modules/pyodide",
+    "sync": "npm run build && npx cap sync",
+    "open:ios": "npx cap open ios",
+    "open:android": "npx cap open android",
+    "run:ios": "npm run sync && npx cap run ios",
+    "run:android": "npm run sync && npx cap run android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.4",
+    "@capacitor/app": "^7.1.0",
+    "@capacitor/core": "^7.4.4",
+    "@capacitor/filesystem": "^7.1.5",
+    "@capacitor/ios": "^7.4.4",
+    "@capacitor/preferences": "^7.0.2",
+    "@capacitor/share": "^7.0.2",
+    "@capacitor/status-bar": "^7.0.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.4"
+  }
+}
