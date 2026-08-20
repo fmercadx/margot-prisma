@@ -7,11 +7,15 @@ on:
     paths:
       - 'credit-analyzer/**'
       - '.github/workflows/credit-analyzer.yml'
+      - 'package.json'
+      - 'package-lock.json'
   push:
     branches: [main]
     paths:
       - 'credit-analyzer/**'
       - '.github/workflows/credit-analyzer.yml'
+      - 'package.json'
+      - 'package-lock.json'
   workflow_dispatch:
 
 permissions:
@@ -83,3 +87,36 @@ jobs:
             echo "$leaked"
             exit 1
           fi
+
+  # The browser build is the thing that actually gets deployed, and none of the
+  # tests above touch it: they run the analyzer under CPython, not compiled to
+  # WebAssembly and unpacked into a virtual filesystem. This job builds it the
+  # way the Pages deploy builds it and then drives it in a real Chromium.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install Pyodide and the salon-site toolchain
+        working-directory: .
+        run: npm ci
+
+      - name: Build the browser bundle
+        working-directory: .
+        run: npm run build:analyzer
+
+      - name: Install Playwright Chromium
+        run: pip install playwright && python -m playwright install --with-deps chromium
+
+      - name: Analyze the synthetic fixture inside a browser
+        working-directory: .
+        run: python credit-analyzer/browser/smoke.py --dist dist/analyzer

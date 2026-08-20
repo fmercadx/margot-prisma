@@ -19,3 +19,8 @@ __pycache__/
 # Web front end runtime data — uploaded consumer reports live here.
 credit-analyzer-data/
 web/__pycache__/
+
+# Browser build inputs and output. The pypdf wheel is a download cache and the
+# Pyodide runtime comes from node_modules; neither belongs in the repo.
+browser/.wheels/
+browser/__pycache__/

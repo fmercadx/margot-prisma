@@ -25,8 +25,19 @@ jobs:
           node-version: 20
           cache: npm
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
       - run: npm ci
       - run: npm run build
+
+      # The credit analyzer ships as a second, self-contained page under
+      # dist/analyzer. It runs Python in WebAssembly rather than on a server,
+      # so Pages can host it — but the runtime has to be assembled here,
+      # because Vite knows nothing about it. Runs after `npm run build`:
+      # Vite clears dist, so building it first would delete it.
+      - run: npm run build:analyzer
 
       - uses: actions/upload-pages-artifact@v3
         with:

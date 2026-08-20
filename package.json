@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:analyzer": "python3 credit-analyzer/browser/build.py --out dist/analyzer"
   },
   "dependencies": {
     "framer-motion": "^12.43.0",
@@ -23,6 +24,7 @@
     "autoprefixer": "^10.5.4",
     "oxlint": "^1.75.0",
     "postcss": "^8.5.25",
+    "pyodide": "^314.0.5",
     "tailwindcss": "^3.4.19",
     "typescript": "~6.0.2",
     "vite": "^8.2.0"
