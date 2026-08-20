@@ -123,8 +123,17 @@ jobs:
 
       # The mobile bundle is the same engine behind a different shell. The
       # shell is where the subscription gate lives, so it gets its own gate.
+      #
+      # working-directory is set explicitly on every step in this job: the
+      # workflow defaults it to credit-analyzer/, and a step that forgets to
+      # override it resolves repo-root paths one level too deep.
+      - name: Install Capacitor
+        working-directory: credit-analyzer/mobile
+        run: npm ci
+
       - name: Build the mobile bundle
-        run: npm ci --prefix credit-analyzer/mobile && npm run build --prefix credit-analyzer/mobile
+        working-directory: credit-analyzer/mobile
+        run: npm run build
 
       - name: Drive the native shell against a stubbed Capacitor bridge
         working-directory: .
