@@ -71,6 +71,7 @@ export default function HomeTour() {
                 name={room.name}
                 caption={room.caption}
                 hint={room.hint}
+                captionBelow
                 className={`w-full ${room.aspect}`}
               />
             </Reveal>

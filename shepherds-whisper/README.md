@@ -50,10 +50,14 @@ Two more things worth knowing:
   ships empty and the section does not render at all while it is. Fabricated
   reviews on a care home's site are deceptive advertising under the FTC's
   endorsement rules, so they are not something to fill in with plausible text.
-- **Photographs**: drop files into `src/photos/` named after the slot they fill
-  and they appear automatically. See `src/photos/README.md` for the slot names.
-  Every empty slot renders a designed placeholder in the meantime. Get written
-  consent before publishing any photograph that shows a resident.
+- **Artwork**: the site ships with original illustrations in `src/photos/`,
+  drawn in its palette. Photographs of the real house override them with no code
+  change — drop a file named after the slot in beside the `.svg` and raster wins.
+  See `src/photos/README.md` for the slot names and the shot list. Replace them
+  with real photographs before the site is doing real work: captioning someone
+  else's interior as your own is deceptive advertising, and a touring family
+  notices. Get written consent before publishing any photograph showing a
+  resident.
 
 ## Where the tour requests go
 

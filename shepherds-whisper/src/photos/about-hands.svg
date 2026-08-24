@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 750 1000" width="750" height="1000" role="presentation" aria-hidden="true">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F5EDE3"/><stop offset="100%" stop-color="#EADCC8" stop-opacity=".75"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#DCE6EF"/><stop offset="100%" stop-color="#FBF7F2"/>
+    </linearGradient>
+    <linearGradient id="glassy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9"/><stop offset="100%" stop-color="#DCE6EF"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9" stop-opacity=".55"/>
+      <stop offset="100%" stop-color="#FFFDF9" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lamp">
+      <stop offset="0%" stop-color="#F6D9A8" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#F6D9A8" stop-opacity="0"/>
+    </radialGradient>
+    
+  </defs>
+  <rect width="750" height="1000" fill="url(#wall)"/>
+  <rect x="392" y="70" width="330" height="400" rx="10" fill="#D8C4A8"/>
+  <rect x="404" y="82" width="306" height="376" rx="6" fill="url(#glassy)"/>
+  <rect x="551" y="82" width="6" height="376" fill="#D8C4A8" opacity=".75"/>
+  <path d="M410 92 h70 l-140 356 h-70 Z" fill="#FFFDF9" opacity=".42"/>
+
+  <!-- table top fills the lower half: this is a close, quiet scene -->
+  <rect y="560" width="750" height="440" fill="#EADCC8"/>
+  <rect y="548" width="750" height="20" rx="8" fill="#D8C4A8"/>
+  <ellipse cx="375" cy="640" rx="330" ry="46" fill="#FFFDF9" opacity=".35"/>
+
+  <ellipse cx="258" cy="686" rx="96" ry="18" fill="#1F3557" opacity="0.1"/>
+  <ellipse cx="500" cy="700" rx="88" ry="16" fill="#1F3557" opacity="0.1"/>
+
+  <!-- two cups, one teapot: companionship without inventing a face -->
+  <g>
+    <path d="M188 588 q6 -74 70 -74 q64 0 70 74 Z" fill="#FFFDF9"/>
+    <ellipse cx="258" cy="588" rx="70" ry="14" fill="#DCE6EF"/>
+    <path d="M328 536 q34 8 30 34 q-4 26 -34 26" stroke="#FFFDF9" stroke-width="14" fill="none" stroke-linecap="round"/>
+    <rect x="238" y="486" width="40" height="16" rx="8" fill="#D8C4A8"/>
+    <path d="M244 470 q10 -22 -2 -40 M262 470 q12 -24 0 -44" stroke="#FFFDF9" stroke-width="6" fill="none" stroke-linecap="round" opacity=".8"/>
+  </g>
+  <g>
+    <ellipse cx="500" cy="702" rx="88" ry="20" fill="#DCE6EF"/>
+    <path d="M452 682 q6 -58 48 -58 q42 0 48 58 Z" fill="#FFFDF9"/>
+    <path d="M548 640 q28 6 24 26 q-4 20 -26 20" stroke="#FFFDF9" stroke-width="12" fill="none" stroke-linecap="round"/>
+    <ellipse cx="500" cy="626" rx="42" ry="9" fill="#A85A3C" opacity=".5"/>
+  </g>
+
+  <!-- knitting, left out mid-row -->
+  <g>
+    <ellipse cx="146" cy="790" rx="78" ry="66" fill="#A85A3C" opacity=".7"/>
+    <path d="M84 760 q62 -22 124 6 M80 792 q64 -20 132 6 M88 822 q58 -18 116 4"
+          stroke="#F5EDE3" stroke-width="5" fill="none" opacity=".7"/>
+    <path d="M196 736 l128 -66 M204 754 l132 -60" stroke="#D8C4A8" stroke-width="9" stroke-linecap="round"/>
+  </g>
+
+  <!-- reading glasses on a folded newspaper -->
+  <g transform="translate(470,824) rotate(-6)">
+    <rect x="-90" y="-34" width="230" height="96" rx="8" fill="#F5EDE3"/>
+    <g stroke="#D8C4A8" stroke-width="5" opacity=".8">
+      <path d="M-64 -8 h150 M-64 12 h150 M-64 32 h96"/>
+    </g>
+    <g fill="none" stroke="#3A5375" stroke-width="7">
+      <circle cx="4" cy="16" r="26"/><circle cx="82" cy="16" r="26"/>
+      <path d="M30 12 q12 -8 26 0"/>
+    </g>
+  </g>
+
+  <g transform="translate(690,560) scale(0.78)">
+    <path d="M0 0 q-4 -46 -34 -70 q34 2 36 40 q10 -44 40 -56 q-8 44 -32 62 q26 -14 48 -6 q-24 20 -52 22 Z" fill="#6E8C77" opacity=".85"/>
+    <path d="M-26 0 h52 l-7 42 h-38 Z" fill="#D8C4A8"/>
+    <rect x="-30" y="-6" width="60" height="12" rx="4" fill="#D8C4A8"/>
+  </g>
+
+</svg>

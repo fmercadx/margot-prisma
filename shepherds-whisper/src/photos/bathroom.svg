@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 750" width="1000" height="750" role="presentation" aria-hidden="true">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F5EDE3"/><stop offset="100%" stop-color="#EADCC8" stop-opacity=".75"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#DCE6EF"/><stop offset="100%" stop-color="#FBF7F2"/>
+    </linearGradient>
+    <linearGradient id="glassy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9"/><stop offset="100%" stop-color="#DCE6EF"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9" stop-opacity=".55"/>
+      <stop offset="100%" stop-color="#FFFDF9" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lamp">
+      <stop offset="0%" stop-color="#F6D9A8" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#F6D9A8" stop-opacity="0"/>
+    </radialGradient>
+    
+  </defs>
+  <rect width="1000" height="750" fill="#FBF7F2"/>
+  <rect width="1000" height="566" fill="url(#wall)"/>
+  <g stroke="#D8C4A8" stroke-width="3" opacity=".38">
+    <path d="M0 100 H1000 M0 200 H1000 M0 300 H1000 M0 400 H1000 M0 500 H1000"/>
+    <path d="M125 0 V566 M250 0 V566 M375 0 V566 M500 0 V566 M625 0 V566 M750 0 V566 M875 0 V566"/>
+  </g>
+  <rect y="566" width="1000" height="184" fill="#DCE6EF"/>
+  <rect y="552" width="1000" height="18" fill="#D8C4A8"/>
+
+  <!-- roll-in shower: level floor, no lip to step over -->
+  <g>
+    <rect x="580" y="70" width="392" height="496" rx="10" fill="#FFFDF9" opacity=".55"/>
+    <rect x="580" y="70" width="392" height="496" rx="10" fill="none" stroke="#5B7C9D" stroke-width="7" opacity=".5"/>
+    <rect x="580" y="536" width="392" height="30" rx="6" fill="#5B7C9D" opacity=".25"/>
+    <rect x="762" y="104" width="14" height="104" rx="6" fill="#3A5375"/>
+    <path d="M736 104 h66 l10 28 h-86 Z" fill="#3A5375"/>
+    <g stroke="#5B7C9D" stroke-width="4" opacity=".45" stroke-linecap="round">
+      <path d="M752 220 v46 M770 224 v48 M788 220 v44"/>
+    </g>
+    <!-- fold-down bench, and a rail on two walls -->
+    <rect x="606" y="356" width="168" height="28" rx="11" fill="#A85A3C" opacity=".72"/>
+    <rect x="616" y="384" width="13" height="88" rx="5" fill="#3A5375"/>
+    <rect x="750" y="384" width="13" height="88" rx="5" fill="#3A5375"/>
+    <rect x="606" y="296" width="200" height="22" rx="11" fill="#6E8C77"/>
+    <rect x="880" y="296" width="22" height="200" rx="11" fill="#6E8C77"/>
+  </g>
+
+  <!-- basin with clearance underneath, mirror above, towel within reach -->
+  <g>
+    <g><rect x="150" y="116" width="216" height="176" rx="4" fill="#D8C4A8"/>
+    <rect x="156" y="122" width="204" height="164" rx="2" fill="url(#glassy)"/></g>
+    <rect x="140" y="368" width="300" height="34" rx="12" fill="#FFFDF9"/>
+    <ellipse cx="262" cy="402" rx="90" ry="32" fill="#FFFDF9"/>
+    <ellipse cx="262" cy="398" rx="64" ry="21" fill="#DCE6EF"/>
+    <rect x="254" y="326" width="14" height="46" rx="6" fill="#3A5375"/>
+    <path d="M254 330 q10 -22 34 -18" stroke="#3A5375" stroke-width="12" fill="none" stroke-linecap="round"/>
+    <!-- grab bar mounted beside the basin, at the same height as the shower's -->
+    <rect x="140" y="296" width="200" height="22" rx="11" fill="#6E8C77"/>
+  </g>
+  <g>
+    <rect x="404" y="440" width="120" height="18" rx="9" fill="#3A5375"/>
+    <rect x="416" y="452" width="46" height="120" rx="10" fill="#F5EDE3"/>
+    <rect x="416" y="452" width="46" height="120" rx="10" fill="#A85A3C" opacity=".24"/>
+    <rect x="470" y="452" width="46" height="104" rx="10" fill="#F5EDE3"/>
+    <rect x="470" y="452" width="46" height="104" rx="10" fill="#5B7C9D" opacity=".18"/>
+  </g>
+  <g transform="translate(72,690) scale(0.74)">
+    <path d="M0 0 q-4 -46 -34 -70 q34 2 36 40 q10 -44 40 -56 q-8 44 -32 62 q26 -14 48 -6 q-24 20 -52 22 Z" fill="#6E8C77" opacity=".85"/>
+    <path d="M-26 0 h52 l-7 42 h-38 Z" fill="#D8C4A8"/>
+    <rect x="-30" y="-6" width="60" height="12" rx="4" fill="#D8C4A8"/>
+  </g>
+
+</svg>

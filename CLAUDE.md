@@ -76,8 +76,9 @@ it is filled in for real:
 - **Testimonials.** `src/content/testimonials.ts` ships empty and the section
   does not render. Fabricated endorsements are deceptive advertising under
   16 CFR Part 255.
-- **Photographs.** Empty slots in `src/photos/` render a designed placeholder.
-  Stock photos of another home would misrepresent this one.
+- **Photographs.** `src/photos/` ships original illustrations, and a raster file
+  dropped in beside one overrides it. Alt text says "Illustration —" while a
+  slot holds a drawing. Stock photos of another home would misrepresent this one.
 
 Its own README covers the deploy and the rest of the reasoning.
 

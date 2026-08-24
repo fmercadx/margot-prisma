@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 750 1000" width="750" height="1000" role="presentation" aria-hidden="true">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F5EDE3"/><stop offset="100%" stop-color="#EADCC8" stop-opacity=".75"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#DCE6EF"/><stop offset="100%" stop-color="#FBF7F2"/>
+    </linearGradient>
+    <linearGradient id="glassy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9"/><stop offset="100%" stop-color="#DCE6EF"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9" stop-opacity=".55"/>
+      <stop offset="100%" stop-color="#FFFDF9" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lamp">
+      <stop offset="0%" stop-color="#F6D9A8" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#F6D9A8" stop-opacity="0"/>
+    </radialGradient>
+    
+  </defs>
+  <rect width="750" height="1000" fill="url(#sky)"/>
+  <ellipse cx="120" cy="250" rx="180" ry="150" fill="#6E8C77" opacity=".22"/>
+  <ellipse cx="660" cy="190" rx="150" ry="130" fill="#6E8C77" opacity=".18"/>
+
+  <!-- house face -->
+  <rect x="86" y="150" width="580" height="640" rx="8" fill="#F5EDE3"/>
+  <path d="M56 168 L376 22 L696 168 Z" fill="#A85A3C" opacity=".72"/>
+  <path d="M56 168 L376 22 L696 168 Z" fill="none" stroke="#1F3557" stroke-opacity=".12" stroke-width="4"/>
+  <rect x="86" y="150" width="580" height="18" fill="#D8C4A8"/>
+
+  <!-- door -->
+  <rect x="300" y="380" width="156" height="330" rx="8" fill="#1F3557" opacity=".82"/>
+  <rect x="318" y="404" width="120" height="120" rx="4" fill="#DCE6EF" opacity=".9"/>
+  <rect x="318" y="546" width="120" height="140" rx="4" fill="#3A5375" opacity=".55"/>
+  <circle cx="428" cy="560" r="8" fill="#D8C4A8"/>
+
+  <!-- windows -->
+  <g><rect x="140" y="400" width="122" height="150" rx="4" fill="#D8C4A8"/>
+    <rect x="146" y="406" width="110" height="138" rx="2" fill="url(#glassy)"/></g>
+  <g><rect x="492" y="400" width="122" height="150" rx="4" fill="#D8C4A8"/>
+    <rect x="498" y="406" width="110" height="138" rx="2" fill="url(#glassy)"/></g>
+
+  <!-- porch floor and rail -->
+  <rect x="56" y="710" width="640" height="80" fill="#D8C4A8"/>
+  <rect x="56" y="700" width="640" height="16" rx="6" fill="#EADCC8"/>
+  <g fill="#FFFDF9" opacity=".85">
+    <rect x="80" y="590" width="16" height="120" rx="5"/>
+    <rect x="128" y="590" width="16" height="120" rx="5"/>
+    <rect x="608" y="590" width="16" height="120" rx="5"/>
+    <rect x="656" y="590" width="16" height="120" rx="5"/>
+    <rect x="70" y="576" width="86" height="16" rx="6"/>
+    <rect x="598" y="576" width="86" height="16" rx="6"/>
+  </g>
+
+  <!-- steps down to a path -->
+  <rect x="266" y="790" width="224" height="34" rx="4" fill="#EADCC8"/>
+  <rect x="240" y="824" width="276" height="34" rx="4" fill="#D8C4A8"/>
+  <rect y="858" width="750" height="142" fill="#6E8C77" opacity=".26"/>
+  <path d="M300 858 h156 l70 142 h-296 Z" fill="#EADCC8" opacity=".9"/>
+
+  <!-- rocking chair, hanging basket -->
+  <g>
+    <rect x="512" y="612" width="14" height="96" rx="5" fill="#3A5375"/>
+    <rect x="576" y="612" width="14" height="96" rx="5" fill="#3A5375"/>
+    <rect x="500" y="596" width="104" height="20" rx="9" fill="#A85A3C" opacity=".8"/>
+    <rect x="500" y="512" width="16" height="92" rx="7" fill="#A85A3C" opacity=".8"/>
+    <path d="M492 708 q56 22 112 0" stroke="#3A5375" stroke-width="10" fill="none" stroke-linecap="round"/>
+  </g>
+  <g>
+    <path d="M186 168 v70" stroke="#3A5375" stroke-width="5"/>
+    <path d="M150 238 h72 l-10 40 h-52 Z" fill="#A85A3C" opacity=".75"/>
+    <path d="M156 276 q10 46 -12 70 M186 276 q2 52 2 66 M216 276 q-8 44 12 64"
+          stroke="#6E8C77" stroke-width="9" fill="none" stroke-linecap="round" opacity=".9"/>
+  </g>
+
+  <g transform="translate(120,790) scale(0.9)">
+    <path d="M0 0 q-4 -46 -34 -70 q34 2 36 40 q10 -44 40 -56 q-8 44 -32 62 q26 -14 48 -6 q-24 20 -52 22 Z" fill="#6E8C77" opacity=".85"/>
+    <path d="M-26 0 h52 l-7 42 h-38 Z" fill="#D8C4A8"/>
+    <rect x="-30" y="-6" width="60" height="12" rx="4" fill="#D8C4A8"/>
+  </g>
+  <g transform="translate(636,790) scale(0.82)">
+    <path d="M0 0 q-4 -46 -34 -70 q34 2 36 40 q10 -44 40 -56 q-8 44 -32 62 q26 -14 48 -6 q-24 20 -52 22 Z" fill="#6E8C77" opacity=".85"/>
+    <path d="M-26 0 h52 l-7 42 h-38 Z" fill="#D8C4A8"/>
+    <rect x="-30" y="-6" width="60" height="12" rx="4" fill="#D8C4A8"/>
+  </g>
+
+</svg>

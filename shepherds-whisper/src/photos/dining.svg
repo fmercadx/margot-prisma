@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 750" width="1000" height="750" role="presentation" aria-hidden="true">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F5EDE3"/><stop offset="100%" stop-color="#EADCC8" stop-opacity=".75"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#DCE6EF"/><stop offset="100%" stop-color="#FBF7F2"/>
+    </linearGradient>
+    <linearGradient id="glassy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9"/><stop offset="100%" stop-color="#DCE6EF"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9" stop-opacity=".55"/>
+      <stop offset="100%" stop-color="#FFFDF9" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lamp">
+      <stop offset="0%" stop-color="#F6D9A8" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#F6D9A8" stop-opacity="0"/>
+    </radialGradient>
+    
+  </defs>
+  <rect width="1000" height="750" fill="#FBF7F2"/>
+  <rect width="1000" height="540" fill="url(#wall)"/>
+  <rect y="540" width="1000" height="210" fill="#D8C4A8"/>
+  <rect y="540" width="1000" height="210" fill="#A85A3C" opacity="0.1"/>
+  <rect y="524" width="1000" height="18" fill="#D8C4A8"/>
+  <g>
+    <rect x="596" y="74" width="316" height="274" rx="10" fill="#D8C4A8"/>
+    <rect x="608" y="86" width="292" height="250" rx="6" fill="url(#glassy)"/>
+    <rect x="751.0" y="86" width="7" height="250" fill="#D8C4A8" opacity=".85"/>
+    <path d="M614 96 h75.84 l-139.04 244 h-75.84 Z" fill="#FFFDF9" opacity=".45"/>
+  </g>
+  <path d="M596 348 h316 l112 190 h-484 Z" fill="url(#beam)"/>
+  <g><rect x="104" y="116" width="128" height="158" rx="4" fill="#D8C4A8"/>
+    <rect x="110" y="122" width="116" height="146" rx="2" fill="#DCE6EF"/></g>
+
+  <!-- one long table: everyone eats together, so it is laid for five -->
+  <ellipse cx="500" cy="700" rx="350" ry="26" fill="#1F3557" opacity="0.13"/>
+  <g>
+    <ellipse cx="500" cy="470" rx="376" ry="88" fill="#D8C4A8"/>
+    <ellipse cx="500" cy="456" rx="376" ry="88" fill="#F5EDE3"/>
+    <rect x="238" y="500" width="18" height="132" rx="7" fill="#3A5375"/>
+    <rect x="744" y="500" width="18" height="132" rx="7" fill="#3A5375"/>
+    <rect x="238" y="620" width="524" height="16" rx="7" fill="#3A5375"/>
+  </g>
+  <g fill="#FFFDF9">
+    <ellipse cx="228" cy="470" rx="46" ry="17"/><ellipse cx="364" cy="492" rx="48" ry="18"/>
+    <ellipse cx="516" cy="500" rx="50" ry="19"/><ellipse cx="668" cy="492" rx="48" ry="18"/>
+    <ellipse cx="796" cy="470" rx="46" ry="17"/>
+  </g>
+  <g fill="#DCE6EF" opacity=".95">
+    <ellipse cx="228" cy="466" rx="30" ry="11"/><ellipse cx="364" cy="488" rx="31" ry="11"/>
+    <ellipse cx="516" cy="496" rx="33" ry="12"/><ellipse cx="668" cy="488" rx="31" ry="11"/>
+    <ellipse cx="796" cy="466" rx="30" ry="11"/>
+  </g>
+  <!-- flowers in the middle, because somebody bothered -->
+  <g>
+    <path d="M478 452 h44 l-8 44 h-28 Z" fill="#DCE6EF"/>
+    <circle cx="486" cy="424" r="14" fill="#A85A3C" opacity=".8"/>
+    <circle cx="514" cy="416" r="12" fill="#E8B4A0"/>
+    <circle cx="500" cy="440" r="11" fill="#6E8C77"/>
+    <path d="M492 452 q-6 -22 -14 -30 M508 452 q8 -24 16 -32" stroke="#6E8C77" stroke-width="4" fill="none"/>
+  </g>
+  <!-- chairs, backs toward us -->
+  <g fill="#5B7C9D" opacity=".7">
+    <rect x="150" y="392" width="96" height="120" rx="16"/><rect x="330" y="404" width="100" height="124" rx="16"/>
+    <rect x="576" y="404" width="100" height="124" rx="16"/><rect x="758" y="392" width="96" height="120" rx="16"/>
+  </g>
+  <g transform="translate(70,700) scale(0.8)">
+    <path d="M0 0 q-4 -46 -34 -70 q34 2 36 40 q10 -44 40 -56 q-8 44 -32 62 q26 -14 48 -6 q-24 20 -52 22 Z" fill="#6E8C77" opacity=".85"/>
+    <path d="M-26 0 h52 l-7 42 h-38 Z" fill="#D8C4A8"/>
+    <rect x="-30" y="-6" width="60" height="12" rx="4" fill="#D8C4A8"/>
+  </g>
+
+</svg>
