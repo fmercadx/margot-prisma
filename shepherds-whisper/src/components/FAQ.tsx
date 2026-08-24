@@ -8,12 +8,20 @@ import Reveal from './Reveal'
    someone declines. */
 const faqs = [
   {
-    q: 'What is an adult family home, and how is it different from assisted living?',
-    a: `An adult family home is a licensed private residence where a small number of adults live and receive care. State rules cap it at six residents, which is the essential difference: assisted living communities house dozens to hundreds of people, with staff rotating across a building. Here, the same few caregivers look after the same few residents in an ordinary house, and the ratio is a fraction of what it is anywhere larger.`,
+    q: 'What is an adult foster home, and how is it different from assisted living?',
+    a: `An adult foster home is a licensed private residence where a small number of adults live and receive care. Oregon law caps it at five or fewer residents, which is the essential difference: assisted living communities house dozens to hundreds of people, with staff rotating across a building. Here, the same few caregivers look after the same few residents in an ordinary house, and the ratio is a fraction of what it is anywhere larger.`,
   },
   {
     q: 'Are you licensed and inspected?',
-    a: `Yes. ${business.name} is licensed by the ${business.licensingBody}, which inspects homes, investigates complaints, and publishes the results publicly.${business.licenceNumber ? ` Our licence number is ${business.licenceNumber}.` : ''} You can look up any home's inspection history on the state's website before you visit, and we would encourage you to.`,
+    a: `Yes. ${business.name} is licensed by the ${business.licensingBody}, which inspects adult foster homes, investigates complaints, and publishes the results publicly.${business.licenceNumber ? ` Our licence number is ${business.licenceNumber}.` : ''} You can look up any home's inspection history before you visit, and we would encourage you to.`,
+  },
+  {
+    q: 'What does an Oregon licence class mean?',
+    a: `Oregon licenses adult foster homes as Class 1, 2 or 3, according to how much care the home is approved to provide — Class 1 covers residents who need limited assistance, and Class 3 covers the highest level of care an adult foster home may give. ${
+      business.licenceClass
+        ? `We are licensed Class ${business.licenceClass}.`
+        : 'Ask us which class we hold on your first call — it determines whether we are permitted to take your parent at their current level of need, and it is the fastest way to rule a home in or out.'
+    } The class is set by the state, not by us, and it is checked at every inspection.`,
   },
   {
     q: 'How much does it cost?',
@@ -21,7 +29,7 @@ const faqs = [
   },
   {
     q: 'Do you accept Medicaid, or is this private pay only?',
-    a: `Ask us directly, because the answer depends on our current resident mix and on what our contract allows at the time. Some adult family homes take Medicaid from day one, some accept it only after a period of private pay, and some are private pay only. We will tell you plainly where we stand rather than let you find out at the point of application. If we cannot take your situation, we will say so on the first call.`,
+    a: `Ask us directly, because the answer depends on our current resident mix and on what our contract allows at the time. Some adult foster homes take Medicaid from day one, some accept it only after a period of private pay, and some are private pay only. We will tell you plainly where we stand rather than let you find out at the point of application. If we cannot take your situation, we will say so on the first call.`,
   },
   {
     q: 'Can we visit whenever we want?',
@@ -37,7 +45,7 @@ const faqs = [
   },
   {
     q: 'What is the process for moving in?',
-    a: `A visit first, with no obligation. If it feels right, we assess your parent's care needs in person, agree the rate in writing, and complete the state's required admission paperwork and a negotiated care plan. Move-in can happen quickly when it needs to — we have taken residents straight from a hospital discharge — but nobody is rushed.`,
+    a: `A visit first, with no obligation. If it feels right, we assess your parent's care needs in person, agree the rate in writing, and complete the residency agreement and care plan Oregon requires before anyone moves in. Move-in can happen quickly when it needs to — we have taken residents straight from a hospital discharge — but nobody is rushed.`,
   },
   {
     q: 'Can my parent bring their own furniture?',

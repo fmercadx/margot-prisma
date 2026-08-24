@@ -10,7 +10,7 @@ export function injectStructuredData() {
     '@type': 'ResidentialCareFacility',
     name: business.legalName,
     alternateName: business.name,
-    description: `${business.name} is a licensed adult family home in ${locality} providing 24-hour personal care, meals, medication management and memory care for older adults and adults living with disabilities.`,
+    description: `${business.name} is a licensed adult foster home in ${locality} providing 24-hour personal care, meals, medication management and memory care for older adults and adults living with disabilities.`,
     url: window.location.origin,
     areaServed: locality,
     availableService: [

@@ -1,6 +1,6 @@
 # The Shepherd's Whisper AFH — website
 
-Marketing site for a licensed adult family home. React + Vite + Tailwind,
+Marketing site for a licensed Oregon adult foster home. React + Vite + Tailwind,
 served in production by a dependency-free Node static server, deployed on
 Railway.
 
@@ -28,13 +28,21 @@ you fill them in one at a time.
 | `email` | The footer contact row, and the wizard's fallback delivery (see below). |
 | `address` | The footer address block and its map link. |
 | `licenceNumber` | The number beside the licence badge and in the FAQ answer. |
+| `licenceClass` | Names your Oregon licence class (1, 2 or 3) in the FAQ. |
 | `capacity` | The resident-count figures in the trust bar. |
 | `city` | The locality shown in the hero badge and the footer. |
 
-**Check `state` too.** It is set to Washington, because "AFH" is Washington's
-term for this licence class. If the home is in Oregon or Michigan — which also
-use it — change `state`, `licensingBody`, `licensingBodyShort` and
-`licensingUrl` together, since the FAQ copy reads from all four.
+**One URL still needs replacing.** `licensingUrl` points at the ODHS front door
+(`oregon.gov/odhs`) because the deep link could not be verified from the build
+environment. Swap in the department's adult foster home licensing or provider
+lookup page — the footer's "Look up our inspection record" link and the FAQ both
+use it.
+
+The site is written for **Oregon**: "adult foster home" throughout, the
+five-or-fewer resident cap from ORS 443.705, ODHS as the licensing agency, and
+an FAQ answer about Oregon's Class 1/2/3 licence. Set `licenceClass` in
+`business.ts` and that answer names yours instead of explaining the system
+generically.
 
 Two more things worth knowing:
 

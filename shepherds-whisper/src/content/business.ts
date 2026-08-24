@@ -6,7 +6,7 @@
  * that cannot leave a stale copy behind in a footer somewhere.
  *
  * Fields left as an empty string are TREATED AS UNKNOWN AND HIDDEN rather than
- * rendered blank. That is deliberate. A licensed adult family home is a
+ * rendered blank. That is deliberate. A licensed adult foster home is a
  * regulated business, and an invented licence number, address, or capacity on
  * a live page is a real problem — not a placeholder to tidy up later. So the
  * page degrades gracefully until you fill these in:
@@ -24,28 +24,39 @@ export type Business = typeof business
 export const business = {
   legalName: "The Shepherd's Whisper AFH LLC",
   name: "The Shepherd's Whisper",
-  tagline: 'Adult Family Home',
 
-  /* CHECK BEFORE LAUNCH. "AFH" is Washington State's term for this licence
-     class, so Washington is the assumption baked in here. If the home is in
-     Oregon or Michigan (which also use "AFH"), change `state`, `licensingBody`
-     and `licensingUrl` together — the FAQ copy reads from all three. */
+  /* Oregon. "AFH" here is Adult Foster Home, licensed under ORS 443.705 to
+     443.825 and OAR chapter 411 division 50 — not Washington's Adult Family
+     Home, which is a different statute with a different resident cap. The
+     wording throughout the site follows Oregon: "adult foster home", five or
+     fewer residents, ODHS as the licensing agency. */
+  tagline: 'Adult Foster Home',
+
   city: '',
-  state: 'Washington',
-  licensingBody: 'Washington State Department of Social and Health Services',
-  licensingBodyShort: 'Washington State DSHS',
-  licensingUrl: 'https://www.dshs.wa.gov/altsa/residential-care-services/adult-family-homes',
+  state: 'Oregon',
+  licensingBody: 'Oregon Department of Human Services',
+  licensingBodyShort: 'Oregon DHS',
+
+  /* TODO: point this at the ODHS adult foster home licensing page, or at the
+     provider lookup, rather than the department's front door. */
+  licensingUrl: 'https://www.oregon.gov/odhs/',
 
   phone: '',
   email: '',
   address: {
     street: '',
     city: '',
-    state: 'WA',
+    state: 'OR',
     zip: '',
   },
 
   licenceNumber: '',
+
+  /* Oregon licenses adult foster homes as Class 1, 2 or 3 by the level of care
+     the home is approved to provide. Families ask about it, so the FAQ answer
+     names the class once this is set, and stays general while it is blank. */
+  licenceClass: '',
+
   capacity: '',
 
   hours: 'Care is provided 24 hours a day, every day of the year.',

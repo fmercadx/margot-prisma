@@ -17,7 +17,7 @@ export default function Hero() {
           <div>
             <p className="inline-flex items-center gap-2 rounded-full border border-sand-deep/70 bg-cream/70 px-4 py-2 text-[0.78rem] font-semibold uppercase tracking-[0.16em] text-slate-deep">
               <ShieldIcon className="h-4 w-4" />
-              Licensed Adult Family Home · {locality}
+              Licensed {business.tagline} · {locality}
             </p>
 
             <h1 className="mt-7 text-[2.6rem] leading-[1.08] tracking-tight sm:text-6xl lg:text-[4.1rem]">

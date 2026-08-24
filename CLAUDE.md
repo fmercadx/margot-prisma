@@ -6,8 +6,8 @@ Three unrelated products share this repository:
   `fmercadx.github.io/margot-prisma/`
 - **`credit-analyzer/`** — a tri-merge credit analysis tool, serving
   `fmercadx.github.io/margot-prisma/analyzer/`
-- **`shepherds-whisper/`** — the marketing site for an adult family home,
-  deployed on Railway, not on Pages
+- **`shepherds-whisper/`** — the marketing site for an Oregon adult foster
+  home, deployed on Railway, not on Pages
 
 They are independent. `deploy.yml` builds the first two into one `dist/`, and
 `credit-analyzer.yml` and `shepherds-whisper.yml` are path-filtered so no
@@ -62,8 +62,11 @@ judgment calls as visible `[ANALYST]` markers and stamps itself
 
 ## `shepherds-whisper/` — what must not be invented
 
-A licensed adult family home is a regulated care provider, and the site is read
-by families choosing where a parent will live. Three things are therefore left
+A licensed adult foster home is a regulated care provider, and the site is read
+by families choosing where a parent will live. The copy follows **Oregon** law —
+"adult foster home", the five-or-fewer cap from ORS 443.705, ODHS as the
+licensing agency, and Class 1/2/3 licences. Washington's Adult Family Home rules
+are a different statute with a different cap; do not mix the two. Three things are therefore left
 empty rather than filled with plausible text, and each degrades gracefully until
 it is filled in for real:
 

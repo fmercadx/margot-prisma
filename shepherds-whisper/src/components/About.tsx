@@ -40,8 +40,8 @@ export default function About() {
                 who live in it are looked after by caregivers who know them.
               </p>
               <p>
-                That scale is the whole point. An adult family home is licensed to care for no
-                more than six adults at a time, and when a caregiver has a handful of residents
+                That scale is the whole point. An Oregon adult foster home is licensed to care
+                for five or fewer adults at a time, and when a caregiver has a handful of residents
                 rather than a corridor of them, they notice the things that matter early — the appetite that fell off this
                 week, the new hesitation on the stairs, the mood that is not quite right. Small
                 changes get caught while they are still small.
