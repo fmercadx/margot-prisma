@@ -1,0 +1,32 @@
+{
+  "name": "shepherds-whisper",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Marketing site for The Shepherd's Whisper AFH LLC",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "start": "node server.mjs",
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
+    "autoprefixer": "^10.5.4",
+    "playwright": "^1.62.1",
+    "postcss": "^8.5.25",
+    "tailwindcss": "^3.4.19",
+    "typescript": "~6.0.2",
+    "vite": "^8.2.0"
+  }
+}

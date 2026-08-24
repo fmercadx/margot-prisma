@@ -1,0 +1,62 @@
+name: shepherds-whisper site
+
+# Path-filtered, like credit-analyzer.yml, so salon-site and analyzer changes
+# never run this. The site deploys from Railway rather than Pages, so this
+# workflow only proves the build and the browser checks — it does not publish.
+on:
+  pull_request:
+    paths:
+      - 'shepherds-whisper/**'
+      - '.github/workflows/shepherds-whisper.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'shepherds-whisper/**'
+      - '.github/workflows/shepherds-whisper.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: shepherds-whisper-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: shepherds-whisper
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: shepherds-whisper/package-lock.json
+
+      - run: npm ci
+
+      # `npm run build` runs `tsc -b` first, so a type error fails here rather
+      # than shipping to Railway.
+      - run: npm run build
+
+      - run: npx playwright install --with-deps chromium
+
+      # Asserts no horizontal scroll at 390px, that the tour wizard advances
+      # through all three steps, that the FAQ accordion opens, and that nothing
+      # 404s. See the header comment in smoke.mjs.
+      - run: npm run smoke
+
+      - name: Check the built site actually serves
+        run: |
+          PORT=8080 node server.mjs &
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:8080/healthz > /dev/null && break
+            sleep 0.5
+          done
+          curl -sf http://127.0.0.1:8080/healthz > /dev/null
+          curl -sf http://127.0.0.1:8080/ | grep -q '<div id="root">'
