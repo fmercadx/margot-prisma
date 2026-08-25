@@ -12,7 +12,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "start": "node server.mjs",
-    "smoke": "node smoke.mjs"
+    "smoke": "node smoke.mjs",
+    "standalone": "node standalone.mjs"
   },
   "dependencies": {
     "react": "^19.2.8",

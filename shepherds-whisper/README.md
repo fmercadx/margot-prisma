@@ -90,6 +90,26 @@ npm run smoke                # browser checks against dist/ (build first)
 `npm run smoke` takes `--browser <path>` if Chromium is not where it expects,
 and `--port` if 4173 is in use.
 
+### One file you can send someone
+
+```bash
+npm run build && npm run standalone     # -> dist/standalone.html
+npm run standalone -- --skip-checks     # build it without opening a browser
+```
+
+`standalone.mjs` folds the whole site — CSS, JavaScript, and all nine
+illustrations — into a single HTML file that fetches nothing at runtime. Useful
+before a domain exists: it can be opened straight from disk, or published
+somewhere with a content-security policy that blocks off-origin requests.
+Google Fonts stays a `<link>`, since that is the one external host such policies
+tend to allow and `index.css` declares a full fallback stack anyway.
+
+It re-runs the important checks against the packaged file rather than trusting
+that inlining worked — every illustration present and loading, nothing
+off-origin but fonts, the wizard advancing through all three steps, and no
+sideways scroll at 390px. Regenerate it after editing `business.ts` so the
+shareable copy carries your real phone number.
+
 ---
 
 ## Deploying to Railway
