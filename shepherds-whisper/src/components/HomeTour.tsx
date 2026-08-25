@@ -50,7 +50,7 @@ const rooms = [
 
 export default function HomeTour() {
   return (
-    <section id="tour-gallery" className="scroll-mt-24 bg-linen py-24 lg:py-32">
+    <section id="tour-gallery" className="scroll-mt-24 bg-cream py-24 lg:py-32">
       <div className="mx-auto max-w-6xl px-5 sm:px-8">
         <Reveal className="max-w-2xl">
           <p className="text-[0.78rem] font-semibold uppercase tracking-[0.18em] text-clay">

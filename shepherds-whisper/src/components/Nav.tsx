@@ -5,6 +5,7 @@ import { PhoneIcon } from './Icons'
 const links = [
   { href: '#about', label: 'Our Home' },
   { href: '#care', label: 'Care' },
+  { href: '#team', label: 'The Team' },
   { href: '#tour-gallery', label: 'The House' },
   { href: '#day', label: 'A Day Here' },
   { href: '#faq', label: 'Questions' },
@@ -47,7 +48,7 @@ export default function Nav() {
           </span>
         </a>
 
-        <nav aria-label="Primary" className="hidden items-center gap-7 lg:flex">
+        <nav aria-label="Primary" className="hidden items-center gap-6 lg:flex">
           {links.map((link) => (
             <a
               key={link.href}

@@ -76,6 +76,10 @@ it is filled in for real:
 - **Testimonials.** `src/content/testimonials.ts` ships empty and the section
   does not render. Fabricated endorsements are deceptive advertising under
   16 CFR Part 255.
+- **Caregivers.** `src/content/caregivers.ts` ships empty; the section falls back
+  to the standards every caregiver is held to. Those four are safe to state
+  unpeopled because three are conditions of holding the licence. Never invent a
+  caregiver — families expect to meet them.
 - **Photographs.** `src/photos/` ships original illustrations, and a raster file
   dropped in beside one overrides it. Alt text says "Illustration —" while a
   slot holds a drawing. Stock photos of another home would misrepresent this one.

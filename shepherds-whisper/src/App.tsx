@@ -1,6 +1,7 @@
 import About from './components/About'
 import CallToAction from './components/CallToAction'
 import Care from './components/Care'
+import Caregivers from './components/Caregivers'
 import DailyLife from './components/DailyLife'
 import FAQ from './components/FAQ'
 import Footer from './components/Footer'
@@ -29,6 +30,7 @@ export default function App() {
         <TrustBar />
         <About />
         <Care />
+        <Caregivers />
         <DailyLife />
         <HomeTour />
         <Promise />

@@ -26,7 +26,7 @@ const schedule = [
 
 export default function DailyLife() {
   return (
-    <section id="day" className="scroll-mt-24 bg-cream py-24 lg:py-32">
+    <section id="day" className="scroll-mt-24 bg-linen py-24 lg:py-32">
       <div className="mx-auto max-w-6xl px-5 sm:px-8">
         <div className="grid gap-14 lg:grid-cols-[0.9fr_1.1fr] lg:gap-20">
           <Reveal>

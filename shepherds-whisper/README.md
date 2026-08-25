@@ -46,6 +46,14 @@ generically.
 
 Two more things worth knowing:
 
+- **Caregiver profiles are optional.** `src/content/caregivers.ts` ships empty,
+  and the section still renders — it shows the standards every caregiver here is
+  held to instead of profiles, so the page says something substantial before you
+  have added anyone. Add people and their cards appear above those standards.
+  For a portrait, drop `team-<slug>.jpg` into `src/photos/` and point `photo` at
+  that slot; without one the card shows their initials, which looks deliberate
+  rather than missing. Never invent a caregiver — a family reads those names
+  expecting to meet them on the tour.
 - **Testimonials are switched off** until real ones exist. `src/content/testimonials.ts`
   ships empty and the section does not render at all while it is. Fabricated
   reviews on a care home's site are deceptive advertising under the FTC's
