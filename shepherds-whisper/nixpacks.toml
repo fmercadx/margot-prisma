@@ -1,0 +1,13 @@
+# Nixpacks reads the Node version from package.json `engines`, but pinning it
+# here as well keeps a Railway build from drifting onto a new major on its own.
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = ["npm ci --include=dev"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "node server.mjs"

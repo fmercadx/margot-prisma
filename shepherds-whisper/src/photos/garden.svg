@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 750" width="1000" height="750" role="presentation" aria-hidden="true">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F5EDE3"/><stop offset="100%" stop-color="#EADCC8" stop-opacity=".75"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#DCE6EF"/><stop offset="100%" stop-color="#FBF7F2"/>
+    </linearGradient>
+    <linearGradient id="glassy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9"/><stop offset="100%" stop-color="#DCE6EF"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9" stop-opacity=".55"/>
+      <stop offset="100%" stop-color="#FFFDF9" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lamp">
+      <stop offset="0%" stop-color="#F6D9A8" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#F6D9A8" stop-opacity="0"/>
+    </radialGradient>
+    
+  </defs>
+  <rect width="1000" height="750" fill="url(#sky)"/>
+  <circle cx="836" cy="126" r="72" fill="#F6D9A8" opacity=".75"/>
+
+  <!-- hedge and trees behind -->
+  <ellipse cx="150" cy="330" rx="200" ry="150" fill="#6E8C77" opacity=".35"/>
+  <ellipse cx="392" cy="300" rx="150" ry="128" fill="#6E8C77" opacity=".28"/>
+  <ellipse cx="700" cy="326" rx="176" ry="132" fill="#6E8C77" opacity=".32"/>
+  <rect y="404" width="1000" height="70" fill="#6E8C77" opacity=".42"/>
+
+  <!-- lawn, then a level patio: no step out to the garden -->
+  <rect y="452" width="1000" height="140" fill="#6E8C77" opacity=".30"/>
+  <rect y="560" width="1000" height="190" fill="#EADCC8"/>
+  <g stroke="#D8C4A8" stroke-width="4" opacity=".8">
+    <path d="M0 620 H1000 M0 682 H1000 M170 560 V750 M420 560 V750 M670 560 V750 M880 560 V750"/>
+  </g>
+
+  <!-- pergola -->
+  <g>
+    <rect x="150" y="120" width="16" height="452" fill="#D8C4A8"/>
+    <rect x="820" y="120" width="16" height="452" fill="#D8C4A8"/>
+    <rect x="128" y="108" width="730" height="20" rx="8" fill="#A85A3C" opacity=".7"/>
+    <g fill="#A85A3C" opacity=".45">
+      <rect x="220" y="128" width="14" height="54" rx="5"/><rect x="330" y="128" width="14" height="54" rx="5"/>
+      <rect x="440" y="128" width="14" height="54" rx="5"/><rect x="550" y="128" width="14" height="54" rx="5"/>
+      <rect x="660" y="128" width="14" height="54" rx="5"/><rect x="756" y="128" width="14" height="54" rx="5"/>
+    </g>
+    <path d="M166 150 q46 34 34 92 M836 150 q-46 34 -34 92" stroke="#6E8C77" stroke-width="12" fill="none" stroke-linecap="round" opacity=".8"/>
+  </g>
+
+  <!-- two chairs and a small table, in the shade -->
+  <ellipse cx="300" cy="622" rx="104" ry="16" fill="#1F3557" opacity="0.12"/>
+  <g>
+    <rect x="216" y="428" width="150" height="96" rx="22" fill="#A85A3C" opacity=".5"/>
+    <rect x="216" y="492" width="150" height="72" rx="18" fill="#A85A3C" opacity=".72"/>
+    <rect x="206" y="462" width="32" height="112" rx="15" fill="#A85A3C" opacity=".82"/>
+    <rect x="346" y="462" width="32" height="112" rx="15" fill="#A85A3C" opacity=".82"/>
+    <rect x="236" y="566" width="13" height="28" rx="5" fill="#3A5375"/>
+    <rect x="336" y="566" width="13" height="28" rx="5" fill="#3A5375"/>
+  </g>
+  <ellipse cx="636" cy="622" rx="104" ry="16" fill="#1F3557" opacity="0.12"/>
+  <g>
+    <rect x="552" y="428" width="150" height="96" rx="22" fill="#A85A3C" opacity=".5"/>
+    <rect x="552" y="492" width="150" height="72" rx="18" fill="#A85A3C" opacity=".72"/>
+    <rect x="542" y="462" width="32" height="112" rx="15" fill="#A85A3C" opacity=".82"/>
+    <rect x="682" y="462" width="32" height="112" rx="15" fill="#A85A3C" opacity=".82"/>
+    <rect x="572" y="566" width="13" height="28" rx="5" fill="#3A5375"/>
+    <rect x="672" y="566" width="13" height="28" rx="5" fill="#3A5375"/>
+  </g>
+  <g>
+    <ellipse cx="468" cy="618" rx="56" ry="12" fill="#1F3557" opacity="0.12"/>
+    <ellipse cx="468" cy="504" rx="66" ry="20" fill="#F5EDE3"/>
+    <rect x="462" y="518" width="13" height="88" rx="5" fill="#3A5375"/>
+    <ellipse cx="468" cy="606" rx="42" ry="12" fill="#3A5375"/>
+    <circle cx="452" cy="496" r="11" fill="#FFFDF9"/><circle cx="486" cy="498" r="11" fill="#FFFDF9"/>
+  </g>
+
+  <!-- raised bed, at a height that can be gardened from a chair -->
+  <g>
+    <rect x="820" y="470" width="190" height="110" rx="10" fill="#D8C4A8"/>
+    <rect x="820" y="470" width="190" height="22" rx="8" fill="#A85A3C" opacity=".55"/>
+    <path d="M856 470 q-6 -52 22 -76 M902 470 q4 -60 -18 -84 M948 470 q10 -50 34 -66"
+          stroke="#6E8C77" stroke-width="11" fill="none" stroke-linecap="round"/>
+    <circle cx="878" cy="392" r="9" fill="#A85A3C" opacity=".8"/>
+    <circle cx="982" cy="404" r="8" fill="#E8B4A0"/>
+  </g>
+  <g transform="translate(96,592) scale(0.9)">
+    <path d="M0 0 q-4 -46 -34 -70 q34 2 36 40 q10 -44 40 -56 q-8 44 -32 62 q26 -14 48 -6 q-24 20 -52 22 Z" fill="#6E8C77" opacity=".85"/>
+    <path d="M-26 0 h52 l-7 42 h-38 Z" fill="#D8C4A8"/>
+    <rect x="-30" y="-6" width="60" height="12" rx="4" fill="#D8C4A8"/>
+  </g>
+
+</svg>

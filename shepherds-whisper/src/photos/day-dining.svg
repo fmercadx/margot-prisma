@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 750" width="1000" height="750" role="presentation" aria-hidden="true">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F5EDE3"/><stop offset="100%" stop-color="#EADCC8" stop-opacity=".75"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#DCE6EF"/><stop offset="100%" stop-color="#FBF7F2"/>
+    </linearGradient>
+    <linearGradient id="glassy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9"/><stop offset="100%" stop-color="#DCE6EF"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9" stop-opacity=".55"/>
+      <stop offset="100%" stop-color="#FFFDF9" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lamp">
+      <stop offset="0%" stop-color="#F6D9A8" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#F6D9A8" stop-opacity="0"/>
+    </radialGradient>
+    
+  </defs>
+  <rect width="1000" height="750" fill="#FBF7F2"/>
+  <rect width="1000" height="520" fill="url(#wall)"/>
+  <rect y="520" width="1000" height="230" fill="#D8C4A8"/>
+  <rect y="520" width="1000" height="230" fill="#A85A3C" opacity="0.1"/>
+  <rect y="504" width="1000" height="18" fill="#D8C4A8"/>
+  <g>
+    <rect x="84" y="68" width="280" height="268" rx="10" fill="#D8C4A8"/>
+    <rect x="96" y="80" width="256" height="244" rx="6" fill="url(#glassy)"/>
+    <rect x="221.0" y="80" width="7" height="244" fill="#D8C4A8" opacity=".85"/>
+    <path d="M102 90 h67.2 l-123.2 238 h-67.2 Z" fill="#FFFDF9" opacity=".45"/>
+  </g>
+  <g>
+    <rect x="624" y="68" width="280" height="268" rx="10" fill="#D8C4A8"/>
+    <rect x="636" y="80" width="256" height="244" rx="6" fill="url(#glassy)"/>
+    <rect x="761.0" y="80" width="7" height="244" fill="#D8C4A8" opacity=".85"/>
+    <path d="M642 90 h67.2 l-123.2 238 h-67.2 Z" fill="#FFFDF9" opacity=".45"/>
+  </g>
+  <path d="M84 336 h280 l100 180 h-380 Z" fill="url(#beam)"/>
+  <path d="M624 336 h280 l100 180 h-380 Z" fill="url(#beam)"/>
+
+  <!-- a round table, mid-meal -->
+  <ellipse cx="500" cy="690" rx="250" ry="24" fill="#1F3557" opacity="0.13"/>
+  <g>
+    <ellipse cx="500" cy="452" rx="292" ry="112" fill="#D8C4A8"/>
+    <ellipse cx="500" cy="438" rx="292" ry="112" fill="#FFFDF9"/>
+    <ellipse cx="500" cy="438" rx="230" ry="86" fill="#F5EDE3"/>
+    <rect x="484" y="540" width="32" height="120" rx="12" fill="#3A5375"/>
+    <ellipse cx="500" cy="664" rx="98" ry="22" fill="#3A5375"/>
+  </g>
+  <g>
+    <ellipse cx="500" cy="418" rx="86" ry="32" fill="#EADCC8"/>
+    <path d="M424 414 q14 -54 76 -54 q62 0 76 54 Z" fill="#A85A3C" opacity=".55"/>
+    <path d="M470 350 q10 -26 -2 -46 M500 346 q12 -30 0 -52 M530 350 q10 -26 -2 -46"
+          stroke="#FFFDF9" stroke-width="6" fill="none" stroke-linecap="round" opacity=".7"/>
+  </g>
+  <g fill="#FFFDF9">
+    <ellipse cx="316" cy="470" rx="52" ry="19"/><ellipse cx="684" cy="470" rx="52" ry="19"/>
+    <ellipse cx="500" cy="504" rx="54" ry="20"/>
+  </g>
+  <g fill="#DCE6EF">
+    <ellipse cx="316" cy="466" rx="33" ry="12"/><ellipse cx="684" cy="466" rx="33" ry="12"/>
+    <ellipse cx="500" cy="500" rx="35" ry="13"/>
+  </g>
+  <g fill="#5B7C9D" opacity=".7">
+    <rect x="238" y="380" width="104" height="124" rx="16"/><rect x="658" y="380" width="104" height="124" rx="16"/>
+  </g>
+  <g transform="translate(920,700) scale(0.85)">
+    <path d="M0 0 q-4 -46 -34 -70 q34 2 36 40 q10 -44 40 -56 q-8 44 -32 62 q26 -14 48 -6 q-24 20 -52 22 Z" fill="#6E8C77" opacity=".85"/>
+    <path d="M-26 0 h52 l-7 42 h-38 Z" fill="#D8C4A8"/>
+    <rect x="-30" y="-6" width="60" height="12" rx="4" fill="#D8C4A8"/>
+  </g>
+
+</svg>

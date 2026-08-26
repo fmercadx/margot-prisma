@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 800" width="1000" height="800" role="presentation" aria-hidden="true">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F5EDE3"/><stop offset="100%" stop-color="#EADCC8" stop-opacity=".75"/>
+    </linearGradient>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#DCE6EF"/><stop offset="100%" stop-color="#FBF7F2"/>
+    </linearGradient>
+    <linearGradient id="glassy" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9"/><stop offset="100%" stop-color="#DCE6EF"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFDF9" stop-opacity=".55"/>
+      <stop offset="100%" stop-color="#FFFDF9" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="lamp">
+      <stop offset="0%" stop-color="#F6D9A8" stop-opacity=".85"/>
+      <stop offset="100%" stop-color="#F6D9A8" stop-opacity="0"/>
+    </radialGradient>
+    
+  </defs>
+  <rect width="1000" height="800" fill="#FBF7F2"/>
+  <rect width="1000" height="590" fill="url(#wall)"/>
+  <rect y="590" width="1000" height="210" fill="#D8C4A8"/>
+  <rect y="590" width="1000" height="210" fill="#A85A3C" opacity="0.1"/>
+  <rect y="574" width="1000" height="18" fill="#D8C4A8"/>
+  <g>
+    <rect x="660" y="96" width="268" height="300" rx="10" fill="#D8C4A8"/>
+    <rect x="672" y="108" width="244" height="276" rx="6" fill="url(#glassy)"/>
+    <rect x="791.0" y="108" width="7" height="276" fill="#D8C4A8" opacity=".85"/>
+    <path d="M678 118 h64.32 l-117.92 270 h-64.32 Z" fill="#FFFDF9" opacity=".45"/>
+  </g>
+  <path d="M660 396 h268 l120 216 h-460 Z" fill="url(#beam)"/>
+
+  <g><rect x="190" y="120" width="118" height="150" rx="4" fill="#D8C4A8"/>
+    <rect x="196" y="126" width="106" height="138" rx="2" fill="#DCE6EF"/></g>
+  <g><rect x="330" y="150" width="96" height="120" rx="4" fill="#D8C4A8"/>
+    <rect x="336" y="156" width="84" height="108" rx="2" fill="#F5EDE3"/></g>
+
+  <!-- bed with a quilt brought from home -->
+  <ellipse cx="430" cy="720" rx="300" ry="24" fill="#1F3557" opacity="0.13"/>
+  <g>
+    <rect x="140" y="300" width="30" height="300" rx="12" fill="#3A5375"/>
+    <rect x="150" y="296" width="330" height="26" rx="12" fill="#A85A3C" opacity=".55"/>
+    <rect x="146" y="452" width="590" height="180" rx="20" fill="#F5EDE3"/>
+    <rect x="146" y="452" width="590" height="52" rx="20" fill="#FFFDF9"/>
+    <rect x="330" y="500" width="406" height="132" rx="18" fill="#A85A3C" opacity=".55"/>
+    <g opacity=".45" fill="#F5EDE3">
+      <rect x="366" y="524" width="46" height="46" rx="6"/><rect x="454" y="524" width="46" height="46" rx="6"/>
+      <rect x="542" y="524" width="46" height="46" rx="6"/><rect x="630" y="524" width="46" height="46" rx="6"/>
+      <rect x="410" y="578" width="46" height="40" rx="6"/><rect x="498" y="578" width="46" height="40" rx="6"/>
+      <rect x="586" y="578" width="46" height="40" rx="6"/>
+    </g>
+    <rect x="186" y="410" width="150" height="62" rx="22" fill="#FFFDF9"/>
+    <rect x="196" y="396" width="150" height="62" rx="22" fill="#DCE6EF"/>
+    <rect x="168" y="626" width="18" height="36" rx="6" fill="#1F3557"/>
+    <rect x="700" y="626" width="18" height="36" rx="6" fill="#1F3557"/>
+  </g>
+
+  <!-- nightstand: lamp, water, a photograph that came with them -->
+  <g>
+    <circle cx="850" cy="452" r="74" fill="url(#lamp)"/>
+    <path d="M818 424 h64 l14 44 h-92 Z" fill="#A85A3C" opacity=".85"/>
+    <rect x="844" y="468" width="10" height="30" fill="#3A5375"/>
+    <ellipse cx="858" cy="690" rx="92" ry="16" fill="#1F3557" opacity="0.12"/>
+    <rect x="778" y="498" width="160" height="180" rx="10" fill="#EADCC8"/>
+    <rect x="792" y="522" width="132" height="52" rx="6" fill="#F5EDE3"/>
+    <rect x="792" y="592" width="132" height="52" rx="6" fill="#F5EDE3"/>
+    <circle cx="858" cy="548" r="7" fill="#3A5375"/><circle cx="858" cy="618" r="7" fill="#3A5375"/>
+  </g>
+  <g><rect x="940" y="396" width="54" height="66" rx="4" fill="#D8C4A8"/>
+    <rect x="946" y="402" width="42" height="54" rx="2" fill="#DCE6EF"/></g>
+  <g transform="translate(96,690) scale(0.78)">
+    <path d="M0 0 q-4 -46 -34 -70 q34 2 36 40 q10 -44 40 -56 q-8 44 -32 62 q26 -14 48 -6 q-24 20 -52 22 Z" fill="#6E8C77" opacity=".85"/>
+    <path d="M-26 0 h52 l-7 42 h-38 Z" fill="#D8C4A8"/>
+    <rect x="-30" y="-6" width="60" height="12" rx="4" fill="#D8C4A8"/>
+  </g>
+
+</svg>

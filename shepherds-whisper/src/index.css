@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    /* The sticky header would otherwise cover the top of any section an
+       in-page link jumps to. */
+    scroll-padding-top: 5.5rem;
+  }
+
+  body {
+    @apply bg-cream font-sans text-base text-navy antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-display text-night;
+    font-variation-settings: 'SOFT' 30, 'WONK' 1;
+  }
+
+  /* A visible, high-contrast focus ring everywhere. Keyboard and switch-access
+     users are a real share of this audience, and the default ring disappears
+     against sand. */
+  :where(a, button, input, textarea, select, [tabindex]):focus-visible {
+    @apply outline-none ring-2 ring-slate-deep ring-offset-2 ring-offset-cream;
+  }
+}
+
+@layer components {
+  /* Reveal-on-scroll. Elements start hidden only when JS is running to remove
+     the class — with JS off, `.reveal` never gets applied by the observer and
+     the fallback below keeps everything visible. */
+  .reveal {
+    opacity: 0;
+    transform: translateY(20px);
+    transition:
+      opacity 700ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .reveal,
+  .reveal.is-visible {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

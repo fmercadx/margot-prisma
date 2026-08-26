@@ -1,14 +1,23 @@
 # Working in this repo
 
-Two unrelated products share this repository and one GitHub Pages deploy:
+Three unrelated products share this repository:
 
 - **the salon site** — React + Vite + Tailwind, at the repo root, serving
   `fmercadx.github.io/margot-prisma/`
 - **`credit-analyzer/`** — a tri-merge credit analysis tool, serving
   `fmercadx.github.io/margot-prisma/analyzer/`
+- **`shepherds-whisper/`** — the marketing site for an Oregon adult foster
+  home, deployed on Railway, not on Pages
 
-They are independent. `deploy.yml` builds both into one `dist/`, and
-`credit-analyzer.yml` is path-filtered so salon changes never run its tests.
+They are independent. `deploy.yml` builds the first two into one `dist/`, and
+`credit-analyzer.yml` and `shepherds-whisper.yml` are path-filtered so no
+product's changes run another's tests.
+
+**Two Railway services, two configs.** The root `railway.json` and `Procfile`
+belong to the credit analyzer's Flask app. `shepherds-whisper/railway.json` and
+`shepherds-whisper/nixpacks.toml` belong to the site, and its Railway service
+must have its root directory set to `shepherds-whisper` — otherwise it builds
+from the repo root and deploys the analyzer instead. Do not merge the two.
 
 ---
 
@@ -51,6 +60,34 @@ judgment calls as visible `[ANALYST]` markers and stamps itself
 
 ---
 
+## `shepherds-whisper/` — what must not be invented
+
+A licensed adult foster home is a regulated care provider, and the site is read
+by families choosing where a parent will live. The copy follows **Oregon** law —
+"adult foster home", the five-or-fewer cap from ORS 443.705, ODHS as the
+licensing agency, and Class 1/2/3 licences. Washington's Adult Family Home rules
+are a different statute with a different cap; do not mix the two. Three things are therefore left
+empty rather than filled with plausible text, and each degrades gracefully until
+it is filled in for real:
+
+- **Licence number, address, phone, capacity.** All in
+  `src/content/business.ts`; blank fields are hidden, not rendered empty. Never
+  invent one to make a page look finished.
+- **Testimonials.** `src/content/testimonials.ts` ships empty and the section
+  does not render. Fabricated endorsements are deceptive advertising under
+  16 CFR Part 255.
+- **Caregivers.** `src/content/caregivers.ts` ships empty; the section falls back
+  to the standards every caregiver is held to. Those four are safe to state
+  unpeopled because three are conditions of holding the licence. Never invent a
+  caregiver — families expect to meet them.
+- **Photographs.** `src/photos/` ships original illustrations, and a raster file
+  dropped in beside one overrides it. Alt text says "Illustration —" while a
+  slot holds a drawing. Stock photos of another home would misrepresent this one.
+
+Its own README covers the deploy and the rest of the reasoning.
+
+---
+
 ## Commands
 
 Paths below are relative to the **repo root** unless a `cd` is shown. Several
@@ -73,6 +110,9 @@ python3 credit-analyzer/mobile/smoke_native.py
 # Licence worker: 21 tests.  Endpoint wiring: 7 tests.
 cd credit-analyzer/licence && npm test
 cd credit-analyzer/mobile  && npm test
+
+# The adult family home site: build, then browser checks against dist/
+cd shepherds-whisper && npm ci && npm run build && npm run smoke
 ```
 
 The smoke scripts take `--browser <path>` if Playwright's Chromium is not on
