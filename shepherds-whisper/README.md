@@ -32,12 +32,6 @@ you fill them in one at a time.
 | `capacity` | The resident-count figures in the trust bar. |
 | `city` | The locality shown in the hero badge and the footer. |
 
-**One URL still needs replacing.** `licensingUrl` points at the ODHS front door
-(`oregon.gov/odhs`) because the deep link could not be verified from the build
-environment. Swap in the department's adult foster home licensing or provider
-lookup page — the footer's "Look up our inspection record" link and the FAQ both
-use it.
-
 The site is written for **Oregon**: "adult foster home" throughout, the
 five-or-fewer resident cap from ORS 443.705, ODHS as the licensing agency, and
 an FAQ answer about Oregon's Class 1/2/3 licence. Set `licenceClass` in

@@ -37,9 +37,12 @@ export const business = {
   licensingBody: 'Oregon Department of Human Services',
   licensingBodyShort: 'Oregon DHS',
 
-  /* TODO: point this at the ODHS adult foster home licensing page, or at the
-     provider lookup, rather than the department's front door. */
-  licensingUrl: 'https://www.oregon.gov/odhs/',
+  /* Oregon's public Licensed Long-Term Care Settings Search. This is the one
+     to link, not the department's front door: it carries provider profiles,
+     inspection reports, substantiated violations and regulatory actions, and
+     it refreshes every 24 hours. Sending families somewhere they can check us
+     against the record is the point of the link. */
+  licensingUrl: 'https://ltclicensing.oregon.gov/',
 
   phone: '',
   email: '',
