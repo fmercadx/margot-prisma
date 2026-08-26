@@ -1,7 +1,7 @@
 import { createReadStream, promises as fs } from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
-import { chromium } from 'playwright'
+import { launchChromium } from './browser.mjs'
 
 const DIST = '/home/user/margot-prisma/shepherds-whisper/dist'
 const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
@@ -29,7 +29,7 @@ function serve(port, apiStatus, seen) {
 const failures = []
 const ok = (n, v, d = '') => { console.log(`${v ? '  ok  ' : ' FAIL '} ${n}${d ? ` — ${d}` : ''}`); if (!v) failures.push(n) }
 
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome', args: ['--no-sandbox'] })
+const browser = await launchChromium()
 
 async function submit(port) {
   const p = await browser.newPage({ viewport: { width: 1280, height: 900 } })
