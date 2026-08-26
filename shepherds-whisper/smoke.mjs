@@ -120,9 +120,55 @@ try {
   })
   check('no horizontal scroll at 390px', overflow === null, overflow ?? '')
 
-  /* ---- the tour wizard ---------------------------------------------- */
+  /* ---- the header fits on one row ------------------------------------ */
   const desk = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   await desk.goto(base, { waitUntil: 'domcontentloaded' })
+
+  /* Two ways this breaks, and the height of the header shows neither: the row
+     is `h-20`, a fixed height, so it stays 80px tall whatever happens inside.
+     Adding the phone number once pushed six links, a number and the CTA past
+     the row's max width; the items broke onto two lines at every desktop width
+     and nothing here caught it. They carry `whitespace-nowrap` now, which
+     removes wrapping as a failure mode but replaces it with overflow — so
+     measure the content against the box, which catches both. */
+  const header = await desk.evaluate(() => {
+    const row = document.querySelector('header > div')
+    if (!row) return { error: 'header row not found' }
+
+    /* Count the line boxes the text actually occupies, rather than reasoning
+       from height: the brand block is deliberately two lines (name over
+       tagline), and padding plus an inline icon make any height arithmetic
+       either miss real wrapping or flag that block forever. */
+    const lineCount = (el) => {
+      const range = document.createRange()
+      let lines = 0
+      for (const node of el.childNodes) {
+        if (node.nodeType !== Node.TEXT_NODE || !node.textContent.trim()) continue
+        range.selectNodeContents(node)
+        lines = Math.max(lines, [...range.getClientRects()].filter((r) => r.height > 0).length)
+      }
+      return lines
+    }
+
+    const items = [...row.querySelectorAll('nav a, a[href^="tel:"], a[href="#tour"], a[href="#top"] span.block')]
+    const label = (el) => el.textContent.trim().replace(/\s+/g, ' ').slice(0, 22)
+
+    const wrapped = items.filter((el) => lineCount(el) > 1).map((el) => `wrapped: ${label(el)}`)
+    /* With `whitespace-nowrap` an item cannot wrap, so it overflows instead —
+       the perpendicular failure, invisible to the line count above. */
+    const squeezed = items
+      .filter((el) => el.scrollWidth > el.clientWidth + 1)
+      .map((el) => `squeezed: ${label(el)} (${el.scrollWidth}>${el.clientWidth})`)
+
+    return { squeezed: [...wrapped, ...squeezed], overflow: row.scrollWidth - row.clientWidth }
+  })
+  check(
+    'header fits on one row at 1280px',
+    !header.error && header.squeezed.length === 0 && header.overflow <= 1,
+    header.error ?? `${header.squeezed.join('; ')}${header.overflow > 1 ? ` overflow ${header.overflow}px` : ''}`,
+  )
+
+  /* ---- the tour wizard ---------------------------------------------- */
 
   await desk.locator('#tour').scrollIntoViewIfNeeded()
   const cont = desk.getByRole('button', { name: 'Continue' })

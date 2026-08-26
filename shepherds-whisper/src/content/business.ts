@@ -32,7 +32,7 @@ export const business = {
      fewer residents, ODHS as the licensing agency. */
   tagline: 'Adult Foster Home',
 
-  city: '',
+  city: 'Hillsboro',
   state: 'Oregon',
   licensingBody: 'Oregon Department of Human Services',
   licensingBodyShort: 'Oregon DHS',
@@ -44,13 +44,13 @@ export const business = {
      against the record is the point of the link. */
   licensingUrl: 'https://ltclicensing.oregon.gov/',
 
-  phone: '',
+  phone: '(503) 821-9608',
   email: '',
   address: {
-    street: '',
-    city: '',
+    street: '285 NW 334th Ave',
+    city: 'Hillsboro',
     state: 'OR',
-    zip: '',
+    zip: '97124',
   },
 
   licenceNumber: '',
@@ -75,8 +75,18 @@ export const business = {
 
 /* ---- derived helpers ---------------------------------------------------- */
 
-/** `+1-360-555-0100` -> `tel:+13605550100`, for the call buttons. */
-export const telHref = (phone: string) => `tel:${phone.replace(/[^\d+]/g, '')}`
+/** `(503) 821-9608` -> `tel:+15038219608`, for the call buttons.
+ *
+ * Normalised to E.164 rather than passed through as typed: a bare ten-digit
+ * href dials from a US handset but not from one roaming or set to another
+ * country, and the person reading this is often an adult child out of state. */
+export const telHref = (phone: string) => {
+  const digits = phone.replace(/[^\d+]/g, '')
+  if (digits.startsWith('+')) return `tel:${digits}`
+  if (digits.length === 10) return `tel:+1${digits}`
+  if (digits.length === 11 && digits.startsWith('1')) return `tel:+${digits}`
+  return `tel:${digits}`
+}
 
 /** The one-line locality used in headings and the schema.org payload. */
 export const locality = (() => {
