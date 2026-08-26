@@ -88,9 +88,7 @@ const wrap = (body) =>
   `<meta name="viewport" content="width=device-width,initial-scale=1">${body}</head><body></body></html>`
 
 async function check(html) {
-  const { chromium } = await import('playwright')
-  const { existsSync } = await import('node:fs')
-  const preinstalled = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'
+  const { launchChromium } = await import('./browser.mjs')
 
   const failures = []
   const ok = (name, pass, detail = '') => {
@@ -98,10 +96,7 @@ async function check(html) {
     if (!pass) failures.push(name)
   }
 
-  const browser = await chromium.launch({
-    executablePath: existsSync(preinstalled) ? preinstalled : undefined,
-    args: ['--no-sandbox'],
-  })
+  const browser = await launchChromium()
 
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })

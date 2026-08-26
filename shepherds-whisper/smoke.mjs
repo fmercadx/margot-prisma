@@ -19,11 +19,11 @@
  *   · nothing may 404. A missing asset on a care home's site reads as neglect.
  */
 
-import { createReadStream, existsSync, promises as fs } from 'node:fs'
+import { createReadStream, promises as fs } from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { launchChromium } from './browser.mjs'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const DIST = path.join(HERE, 'dist')
@@ -31,16 +31,6 @@ const DIST = path.join(HERE, 'dist')
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`)
   return i === -1 ? fallback : process.argv[i + 1]
-}
-
-/* On CI, `playwright install chromium` has put a browser where Playwright can
-   find it by itself, so no executablePath is needed. In the pre-provisioned dev
-   container there is one at a fixed path instead and downloads are disabled. */
-function browserPath() {
-  const explicit = arg('browser', process.env.PW_CHROMIUM)
-  if (explicit) return explicit
-  const preinstalled = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'
-  return existsSync(preinstalled) ? preinstalled : undefined
 }
 
 const TYPES = {
@@ -78,10 +68,7 @@ const port = Number(arg('port', 4173))
 const server = await serve(port)
 const base = `http://127.0.0.1:${port}`
 
-const browser = await chromium.launch({
-  executablePath: browserPath(),
-  args: ['--no-sandbox'],
-})
+const browser = await launchChromium()
 
 try {
   /* ---- phone width -------------------------------------------------- */
