@@ -13,7 +13,9 @@
     "preview": "vite preview",
     "start": "node server.mjs",
     "smoke": "node smoke.mjs",
-    "standalone": "node standalone.mjs"
+    "standalone": "node standalone.mjs",
+    "test": "node --test test-tour-request.mjs",
+    "test:form": "node test-form.mjs"
   },
   "dependencies": {
     "react": "^19.2.8",

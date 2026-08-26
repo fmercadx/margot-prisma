@@ -44,7 +44,13 @@ const EMPTY: FormState = {
   notes: '',
 }
 
-const FORM_ENDPOINT = import.meta.env.VITE_FORM_ENDPOINT ?? ''
+/* Posts to this site's own server, which emails the enquiry on. Overridable
+   with VITE_FORM_ENDPOINT for anyone who would rather use a form backend.
+   A 404/405 (no server — the single-file preview build) or a 503 (server up but
+   email not configured) means "no API here", and the wizard quietly falls back
+   to opening a prefilled email rather than showing the visitor an error. */
+const FORM_ENDPOINT = import.meta.env.VITE_FORM_ENDPOINT ?? '/api/tour-request'
+const NO_API = new Set([404, 405, 501, 503])
 
 /** Local YYYY-MM-DD. `toISOString()` is UTC and shifts the date west of Greenwich. */
 function todayISO() {
@@ -76,6 +82,7 @@ export default function TourWizard() {
   const [form, setForm] = useState<FormState>(EMPTY)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
+  const [delivered, setDelivered] = useState(false)
   const uid = useId()
   const formRef = useRef<HTMLFormElement>(null)
   const isLastStep = step === STEPS.length - 1
@@ -144,6 +151,18 @@ export default function TourWizard() {
 
     setStatus('sending')
 
+    /* Hands the enquiry to the visitor's mail client. The last resort, used
+       when there is no server to post to — an intake that silently disappears
+       is worse than no form at all. */
+    const handOffToMailClient = () => {
+      if (business.email) {
+        const subject = encodeURIComponent(`Tour request — ${form.name}`)
+        const body = encodeURIComponent(summarise(form))
+        window.location.href = `mailto:${business.email}?subject=${subject}&body=${body}`
+      }
+      setStatus('sent')
+    }
+
     if (FORM_ENDPOINT) {
       try {
         const res = await fetch(FORM_ENDPOINT, {
@@ -151,25 +170,28 @@ export default function TourWizard() {
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: JSON.stringify(form),
         })
-        setStatus(res.ok ? 'sent' : 'error')
+        if (res.ok) {
+          setDelivered(true)
+          setStatus('sent')
+        } else if (NO_API.has(res.status)) {
+          handOffToMailClient()
+        } else {
+          /* The server is there and refused: a real failure the visitor needs
+             telling about, not something to paper over. */
+          setStatus('error')
+        }
       } catch {
-        setStatus('error')
+        /* Offline, DNS, CORS — the request never landed, so fall back rather
+           than lose the enquiry. */
+        handOffToMailClient()
       }
       return
     }
 
-    /* No endpoint configured. Hand the enquiry to the visitor's mail client
-       rather than pretending it was delivered — an intake that silently
-       disappears is worse than no form at all. */
-    if (business.email) {
-      const subject = encodeURIComponent(`Tour request — ${form.name}`)
-      const body = encodeURIComponent(summarise(form))
-      window.location.href = `mailto:${business.email}?subject=${subject}&body=${body}`
-    }
-    setStatus('sent')
+    handOffToMailClient()
   }
 
-  if (status === 'sent') return <Sent form={form} delivered={Boolean(FORM_ENDPOINT || business.email)} />
+  if (status === 'sent') return <Sent form={form} delivered={delivered} />
 
   return (
     <section id="tour" className="scroll-mt-24 bg-cream py-24 lg:py-32">

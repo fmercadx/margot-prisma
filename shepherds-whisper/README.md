@@ -63,17 +63,37 @@ Two more things worth knowing:
 
 ## Where the tour requests go
 
-The three-step wizard needs somewhere to send an enquiry. It has two modes and
-never silently drops one:
+Straight to your inbox, from this server. The wizard POSTs to
+`/api/tour-request`, and `tour-request.mjs` emails the enquiry on.
 
-1. **`VITE_FORM_ENDPOINT` set** (a Railway build variable) — the wizard POSTs
-   the enquiry as JSON to that URL and shows a confirmation on a 2xx, or an
-   error with the phone number on a failure.
-2. **Not set** — it opens a prefilled email to `business.email`. If that is
-   blank too, the confirmation screen asks the visitor to call instead.
+Self-hosted on purpose. The wizard asks about memory care, incontinence and
+hospice — health-adjacent information about a named person — and the page
+promises the visitor that enquiries are not handed to third parties. Routing
+them through a form-processing service would put that data in someone else's
+database and quietly make the promise untrue.
 
-Set the variable at **build** time, not deploy time: Vite inlines it into the
-bundle, so changing it needs a redeploy.
+Set three variables on the Railway service:
+
+```
+RESEND_API_KEY    re_...              from resend.com
+TOUR_EMAIL_TO     you@example.com     comma-separate for several recipients
+TOUR_EMAIL_FROM   tours@yourdomain    a domain verified with Resend
+```
+
+Resend is used because it is an HTTPS call, so `server.mjs` keeps its zero
+dependencies — there is no SMTP client in the tree. `reply_to` is set to the
+family's own address, so hitting reply reaches them directly.
+
+**An enquiry is never silently lost.** With those variables unset the endpoint
+answers `503`, and the browser falls back to opening a prefilled email to
+`business.email` rather than showing a confirmation that isn't true. If the mail
+provider itself fails, the endpoint answers `502` — the visitor is told plainly
+and given the phone number — and the full enquiry is written to the deploy log
+so it can still be recovered.
+
+Prefer a form backend instead? Set `VITE_FORM_ENDPOINT` to its URL and the
+wizard posts there. That is a **build** variable — Vite inlines it, so changing
+it needs a redeploy.
 
 ---
 
@@ -87,6 +107,8 @@ npm run dev                  # local dev server
 npm run build                # tsc -b, then vite build into dist/
 npm start                    # serve dist/ exactly as Railway does
 npm run smoke                # browser checks against dist/ (build first)
+npm test                     # tour-request endpoint: no browser, no network
+npm run test:form            # the conversion path in a browser (build first)
 ```
 
 `npm run smoke` takes `--browser <path>` if Chromium is not where it expects,

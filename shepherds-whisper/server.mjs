@@ -11,6 +11,7 @@ import http from 'node:http'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createGzip } from 'node:zlib'
+import { handleTourRequest } from './tour-request.mjs'
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'dist')
 const PORT = Number(process.env.PORT) || 8080
@@ -63,12 +64,23 @@ async function statFile(filePath) {
 }
 
 const server = http.createServer(async (req, res) => {
+  const { pathname } = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`)
+
+  /* The one endpoint that is not a static file: the tour form posts here and
+     the server emails the enquiry on. See tour-request.mjs. */
+  if (pathname === '/api/tour-request') {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { Allow: 'POST' }).end('Method Not Allowed')
+      return
+    }
+    await handleTourRequest(req, res)
+    return
+  }
+
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.writeHead(405, { Allow: 'GET, HEAD' }).end('Method Not Allowed')
     return
   }
-
-  const { pathname } = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`)
 
   /* Railway's healthcheck hits this before the first real request. */
   if (pathname === '/healthz') {
