@@ -1,9 +1,13 @@
 import { createReadStream, promises as fs } from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { launchChromium } from './browser.mjs'
 
-const DIST = '/home/user/margot-prisma/shepherds-whisper/dist'
+/* Relative to this file, never an absolute path: CI checks the repo out under
+   /home/runner/work, so a path from a dev machine resolves to nothing there,
+   every request 404s, and the page renders blank. */
+const DIST = path.join(path.dirname(fileURLToPath(import.meta.url)), 'dist')
 const T = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }
 
 /** Serves dist/ and answers /api/tour-request with `apiStatus`. */
@@ -34,6 +38,17 @@ const browser = await launchChromium()
 async function submit(port) {
   const p = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   await p.goto(`http://127.0.0.1:${port}`, { waitUntil: 'networkidle' })
+
+  /* Say what is actually wrong. A page that did not render fails every locator
+     below, and a 30s timeout on `#tour` reads as a flaky selector rather than
+     what it is — an app that never mounted. */
+  const mounted = await p.locator('#root > *').count()
+  if (mounted === 0) {
+    throw new Error(
+      `the app did not mount — is dist/ built? serving from ${DIST}`,
+    )
+  }
+
   await p.locator('#tour').scrollIntoViewIfNeeded()
   await p.getByLabel('Your name').fill('Jordan Alvarez')
   await p.getByLabel('Phone', { exact: false }).first().fill('(503) 555-0142')
