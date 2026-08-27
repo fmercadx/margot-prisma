@@ -37,7 +37,7 @@ export default function Nav() {
         scrolled || open ? 'border-b border-sand-deep/40 bg-cream/95 backdrop-blur' : 'bg-transparent'
       }`}
     >
-      <div className="mx-auto flex h-20 max-w-6xl items-center justify-between gap-4 px-5 sm:px-8">
+      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between gap-4 px-5 sm:px-8">
         <a href="#top" className="flex items-center gap-3 rounded-lg" onClick={() => setOpen(false)}>
           <Mark />
           <span className="leading-tight">
@@ -48,23 +48,23 @@ export default function Nav() {
           </span>
         </a>
 
-        <nav aria-label="Primary" className="hidden items-center gap-6 lg:flex">
+        <nav aria-label="Primary" className="hidden items-center gap-6 xl:flex">
           {links.map((link) => (
             <a
               key={link.href}
               href={link.href}
-              className="rounded text-[0.95rem] font-medium text-navy transition-colors hover:text-clay"
+              className="whitespace-nowrap rounded text-[0.95rem] font-medium text-navy transition-colors hover:text-clay"
             >
               {link.label}
             </a>
           ))}
         </nav>
 
-        <div className="hidden items-center gap-3 md:flex">
+        <div className="hidden items-center gap-3 xl:flex">
           {hasPhone && (
             <a
               href={telHref(business.phone)}
-              className="flex items-center gap-2 rounded-full px-3 py-2 text-[0.95rem] font-semibold text-navy transition-colors hover:text-clay"
+              className="flex items-center gap-2 whitespace-nowrap rounded-full px-3 py-2 text-[0.95rem] font-semibold text-navy transition-colors hover:text-clay"
             >
               <PhoneIcon className="h-[1.1rem] w-[1.1rem]" />
               {business.phone}
@@ -72,7 +72,7 @@ export default function Nav() {
           )}
           <a
             href="#tour"
-            className="rounded-full bg-navy px-5 py-3 text-[0.95rem] font-semibold text-cream shadow-soft transition-colors hover:bg-night"
+            className="whitespace-nowrap rounded-full bg-navy px-5 py-3 text-[0.95rem] font-semibold text-cream shadow-soft transition-colors hover:bg-night"
           >
             Schedule a Tour
           </a>
@@ -83,7 +83,7 @@ export default function Nav() {
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           aria-controls="mobile-menu"
-          className="flex h-11 w-11 items-center justify-center rounded-full border border-sand-deep/60 text-navy md:hidden"
+          className="flex h-11 w-11 items-center justify-center rounded-full border border-sand-deep/60 text-navy xl:hidden"
         >
           <span className="sr-only">{open ? 'Close menu' : 'Open menu'}</span>
           <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" aria-hidden>
@@ -93,7 +93,7 @@ export default function Nav() {
       </div>
 
       {open && (
-        <div id="mobile-menu" className="border-t border-sand-deep/40 bg-cream px-5 pb-8 pt-4 md:hidden">
+        <div id="mobile-menu" className="border-t border-sand-deep/40 bg-cream px-5 pb-8 pt-4 xl:hidden">
           <nav aria-label="Primary mobile" className="flex flex-col">
             {links.map((link) => (
               <a
