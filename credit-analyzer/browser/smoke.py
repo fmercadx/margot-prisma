@@ -96,6 +96,25 @@ def main(argv=None) -> int:
             if offsite:
                 failures.append(f"requested off-origin hosts: {offsite}")
 
+            # Both stores require a reachable privacy policy, and a dead link
+            # to one is a rejection. Check it is linked, that it loads, and
+            # that it makes no requests of its own — a privacy page that
+            # phoned a font host would undercut what it says.
+            if not page.locator('footer a[href="privacy.html"]').count():
+                failures.append("no privacy link in the footer")
+            requests.clear()
+            resp = page.goto(origin + "/privacy.html", wait_until="load")
+            if not resp or resp.status != 200:
+                failures.append(f"privacy.html did not load ({resp and resp.status})")
+            elif "Privacy policy" not in page.inner_text("body"):
+                failures.append("privacy.html loaded but has no policy on it")
+            stray = sorted({
+                u.split("/")[2] for u in requests
+                if not u.startswith((origin, "blob:", "data:", "about:"))
+            })
+            if stray:
+                failures.append(f"privacy.html requested off-origin hosts: {stray}")
+
             # A phone-width pass. Wide tables are meant to scroll inside their
             # own container; the page itself must not, and a single stray
             # white-space:nowrap on prose is enough to break that — which is

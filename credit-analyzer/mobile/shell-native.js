@@ -351,6 +351,13 @@ window.Shell = (() => {
         'NOT CREDIT REPAIR, AND NOT LEGAL OR FINANCIAL ADVICE. FINDINGS ARE ' +
         'MACHINE-GENERATED CANDIDATES REQUIRING HUMAN REVIEW BEFORE ANY CLIENT ' +
         'SEES THEM.'));
+      // Play expects a privacy policy reachable from inside the app, not only
+      // from the listing. Bundled, so it opens with no connection.
+      foot.append(document.createElement('br'));
+      foot.append(document.createElement('br'));
+      const priv = el('a', null, 'PRIVACY');
+      priv.href = 'privacy.html';
+      foot.append(priv);
     }
   }
 
