@@ -159,6 +159,7 @@ def main(argv=None) -> int:
 
     shutil.copy2(HERE / "index.html", out / "index.html")
     shutil.copy2(HERE / "app.js", out / "app.js")
+    shutil.copy2(HERE / "privacy.html", out / "privacy.html")
     # Always lands as shell.js — index.html loads one name, and which
     # implementation it got is a build-time fact rather than a runtime check.
     #
@@ -192,6 +193,12 @@ def main(argv=None) -> int:
     # drops paths beginning with an underscore, which would break a future
     # Pyodide release that ships one.
     (out / ".nojekyll").write_text("")
+
+    privacy = (out / "privacy.html").read_text()
+    if 'class="todo"' in privacy:
+        n = privacy.count('class="todo"')
+        print(f"! privacy.html still has {n} unfilled fields — fine for the "
+              f"public site, but a store listing cannot point at it yet")
 
     total = sum(p.stat().st_size for p in out.rglob("*") if p.is_file())
     print(f"· target       {args.target}  ({shell_src.name})")
