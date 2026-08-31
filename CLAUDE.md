@@ -1,17 +1,20 @@
 # Working in this repo
 
-Three unrelated products share this repository:
+Two unrelated products share this repository:
 
-- **the salon site** — React + Vite + Tailwind, at the repo root, serving
-  `fmercadx.github.io/margot-prisma/`
 - **`credit-analyzer/`** — a tri-merge credit analysis tool, serving
   `fmercadx.github.io/margot-prisma/analyzer/`
 - **`shepherds-whisper/`** — the marketing site for an Oregon adult foster
   home, deployed on Railway, not on Pages
 
-They are independent. `deploy.yml` builds the first two into one `dist/`, and
-`credit-analyzer.yml` and `shepherds-whisper.yml` are path-filtered so no
-product's changes run another's tests.
+They are independent. `deploy.yml` builds the analyzer into `dist/analyzer`,
+and `credit-analyzer.yml` and `shepherds-whisper.yml` are path-filtered so
+neither product's changes run the other's tests.
+
+**The salon site used to live at the repo root** and now has its own
+repository, `margot-trim-n-trends`. `redirect.html` is copied to the root of
+this deploy so old links to `fmercadx.github.io/margot-prisma/` reach it rather
+than a 404. Do not delete it — that URL is the one people already have.
 
 **Two Railway services, two configs.** The root `railway.json` and `Procfile`
 belong to the credit analyzer's Flask app. `shepherds-whisper/railway.json` and
