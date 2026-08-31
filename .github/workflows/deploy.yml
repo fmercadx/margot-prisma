@@ -29,15 +29,17 @@ jobs:
         with:
           python-version: '3.13'
 
+      # Only Pyodide comes from npm now — the salon site that used to build
+      # into the root of this artifact lives in its own repository.
       - run: npm ci
-      - run: npm run build
 
-      # The credit analyzer ships as a second, self-contained page under
-      # dist/analyzer. It runs Python in WebAssembly rather than on a server,
-      # so Pages can host it — but the runtime has to be assembled here,
-      # because Vite knows nothing about it. Runs after `npm run build`:
-      # Vite clears dist, so building it first would delete it.
       - run: npm run build:analyzer
+
+      # Anyone who already has a link to the old salon address lands on the
+      # root of this deploy. Send them to where the site actually is rather
+      # than to a 404.
+      - name: Leave a redirect at the old salon address
+        run: cp redirect.html dist/index.html
 
       - uses: actions/upload-pages-artifact@v3
         with:
