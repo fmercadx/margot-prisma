@@ -1,0 +1,18 @@
+{
+  "name": "takeoff",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^5.4.0"
+  },
+  "devDependencies": {
+    "pdf-lib": "^1.17.1",
+    "vite": "^8.2.0"
+  }
+}

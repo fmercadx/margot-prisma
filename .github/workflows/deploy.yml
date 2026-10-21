@@ -39,6 +39,14 @@ jobs:
       # Vite clears dist, so building it first would delete it.
       - run: npm run build:analyzer
 
+      # The plan takeoff tool is a third page, under dist/takeoff. It has its
+      # own package.json, and its Vite config writes into this dist/ directly.
+      # Same ordering rule as the analyzer: after `npm run build`.
+      - run: npm ci
+        working-directory: takeoff
+      - run: npm run build
+        working-directory: takeoff
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

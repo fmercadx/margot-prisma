@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plan Takeoff</title>
+  <meta name="description" content="Counts symbols and measures areas and lengths on a CAD-exported plan, in the browser.">
+  <!-- An empty inline icon: without one the browser asks the server for
+       favicon.ico, which 404s and clutters the console. -->
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="./src/style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Plan Takeoff</h1>
+    <p class="tag">Counts and measures what is drawn on a plan. The file never leaves your browser.</p>
+  </header>
+
+  <main class="app">
+    <section class="plan" aria-label="Plan">
+      <div class="toolbar">
+        <label class="btn file">Open plan (PDF)
+          <input id="picker" type="file" accept="application/pdf,.pdf">
+        </label>
+        <button id="sample" type="button">Sample plan</button>
+        <span class="group pager">
+          <button id="prev" type="button" disabled aria-label="Previous page">‹</button>
+          <span id="pageLabel">–</span>
+          <button id="next" type="button" disabled aria-label="Next page">›</button>
+        </span>
+        <span class="group zoom">
+          <button id="zoomOut" type="button" disabled aria-label="Zoom out">−</button>
+          <button id="zoomFit" type="button" disabled>Fit</button>
+          <button id="zoomIn" type="button" disabled aria-label="Zoom in">+</button>
+        </span>
+        <span id="status" class="status" aria-live="polite"></span>
+      </div>
+      <div id="stage" class="stage">
+        <div id="empty" class="empty">
+          <p><strong>Drop a plan here</strong>, or use <em>Open plan</em>.</p>
+          <p>Works on PDFs exported from CAD, where the drawing is made of lines and shapes.
+             A scanned plan will display, but there is nothing on it to count.</p>
+          <p>Or load the <em>Sample plan</em> from the toolbar.</p>
+        </div>
+        <div class="canvases" id="canvases">
+          <canvas id="page"></canvas>
+          <canvas id="overlay"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <aside class="results" id="results" aria-label="Quantities">
+      <section class="card" id="scaleCard">
+        <h2>Scale</h2>
+        <p id="scaleText">Open a plan to begin.</p>
+        <div class="row-actions">
+          <select id="scaleSelect" class="hide" aria-label="Scale statements found on the sheet"></select>
+          <button id="calibrate" type="button" disabled>Calibrate</button>
+        </div>
+        <form id="calForm" class="hide">
+          <label>Distance between the two points
+            <span class="inline"><input id="calFeet" type="number" min="0.01" step="0.01" inputmode="decimal" required> ft</span>
+          </label>
+          <span class="inline">
+            <button type="submit">Apply</button>
+            <button type="button" id="calCancel">Cancel</button>
+          </span>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Symbols <span class="hint">count</span></h2>
+        <div id="symbols" class="rows"></div>
+      </section>
+      <section class="card">
+        <h2>Hatched areas <span class="hint">sq ft</span></h2>
+        <div id="hatches" class="rows"></div>
+      </section>
+      <section class="card">
+        <h2>Outlined areas <span class="hint">sq ft</span></h2>
+        <div id="regions" class="rows"></div>
+      </section>
+      <section class="card">
+        <h2>Lines <span class="hint">lin ft</span></h2>
+        <div id="lines" class="rows"></div>
+      </section>
+
+      <section class="card actions">
+        <div class="row-actions">
+          <button id="export" type="button" disabled>Download CSV</button>
+          <button id="copy" type="button" disabled>Copy CSV</button>
+        </div>
+        <textarea id="csvOut" class="hide" rows="6" readonly aria-label="CSV text"></textarea>
+        <p class="fine">Every quantity here is a candidate read off the drawing. An estimator
+           checks it against the plan before it goes into a bid.</p>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="foot">
+    <p>Runs entirely in this browser tab. The PDF is not uploaded anywhere.</p>
+  </footer>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

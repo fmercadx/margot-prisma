@@ -1,0 +1,5 @@
+# Never commit a client's plan set. Bid documents are confidential, and git
+# history is permanent. Only synthetic sheets drawn by test/fixture.mjs belong here.
+*
+!.gitignore
+!synthetic_*
