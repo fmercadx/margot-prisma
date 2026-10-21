@@ -22,6 +22,7 @@
         <label class="btn file">Open plan (PDF)
           <input id="picker" type="file" accept="application/pdf,.pdf">
         </label>
+        <button id="sample" type="button">Sample plan</button>
         <span class="group pager">
           <button id="prev" type="button" disabled aria-label="Previous page">‹</button>
           <span id="pageLabel">–</span>
@@ -39,6 +40,7 @@
           <p><strong>Drop a plan here</strong>, or use <em>Open plan</em>.</p>
           <p>Works on PDFs exported from CAD, where the drawing is made of lines and shapes.
              A scanned plan will display, but there is nothing on it to count.</p>
+          <p>Or load the <em>Sample plan</em> from the toolbar.</p>
         </div>
         <div class="canvases" id="canvases">
           <canvas id="page"></canvas>
@@ -84,7 +86,11 @@
       </section>
 
       <section class="card actions">
-        <button id="export" type="button" disabled>Download CSV</button>
+        <div class="row-actions">
+          <button id="export" type="button" disabled>Download CSV</button>
+          <button id="copy" type="button" disabled>Copy CSV</button>
+        </div>
+        <textarea id="csvOut" class="hide" rows="6" readonly aria-label="CSV text"></textarea>
         <p class="fine">Every quantity here is a candidate read off the drawing. An estimator
            checks it against the plan before it goes into a bid.</p>
       </section>

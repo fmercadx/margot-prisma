@@ -8,7 +8,24 @@
   --accent-ink: #ffffff;
   --mark: #d6412b;
   --stage: #e6e6e2;
+  --row-hover: #f1f4f1;
+  --row-on: #e4efe7;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17181a; --panel: #212326; --ink: #ecebe6; --muted: #a2a39e; --line: #3a3c40;
+    --accent: #4fa373; --accent-ink: #0d1a12; --mark: #ff7a62; --stage: #2a2c30;
+    --row-hover: #2a2e2b; --row-on: #263a2d;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17181a; --panel: #212326; --ink: #ecebe6; --muted: #a2a39e; --line: #3a3c40;
+  --accent: #4fa373; --accent-ink: #0d1a12; --mark: #ff7a62; --stage: #2a2c30;
+  --row-hover: #2a2e2b; --row-on: #263a2d;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -20,6 +37,9 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  /* One side gutter for the whole page, clear of a phone's side bar. */
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 h1 { font-size: 1.25rem; margin: 0; }
 h2 { font-size: 0.95rem; margin: 0 0 0.5rem; display: flex; justify-content: space-between; align-items: baseline; }
@@ -40,7 +60,7 @@ button.primary, .btn.file { background: var(--accent); color: var(--accent-ink);
 .btn.file { position: relative; display: inline-block; }
 .hide { display: none !important; }
 
-.top { padding: 0.9rem 16px 0.6rem; }
+.top { padding-block: 0.9rem 0.6rem; }
 .top .tag { color: var(--muted); font-size: 0.9rem; }
 
 .app {
@@ -48,7 +68,7 @@ button.primary, .btn.file { background: var(--accent); color: var(--accent-ink);
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
   gap: 12px;
-  padding: 0 16px 12px;
+  padding-block: 0 12px;
   min-width: 0;
 }
 @media (max-width: 960px) {
@@ -101,7 +121,9 @@ button.primary, .btn.file { background: var(--accent); color: var(--accent-ink);
 .row-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 0.4rem; }
 #calForm { margin-top: 0.5rem; display: flex; flex-direction: column; gap: 6px; }
 .inline { display: inline-flex; gap: 6px; align-items: center; }
-#calFeet { width: 7rem; font: inherit; padding: 0.25rem 0.4rem; border: 1px solid var(--line); border-radius: 6px; }
+#calFeet, #scaleSelect { font: inherit; padding: 0.25rem 0.4rem; border: 1px solid var(--line); border-radius: 6px; }
+#calFeet { width: 7rem; }
+#scaleSelect { max-width: 100%; }
 
 .rows { display: flex; flex-direction: column; gap: 2px; }
 .rows .none { color: var(--muted); font-size: 0.85rem; }
@@ -114,20 +136,26 @@ button.primary, .btn.file { background: var(--accent); color: var(--accent-ink);
   border-radius: 6px;
   cursor: pointer;
 }
-.row:hover { background: #f1f4f1; }
-.row.on { background: #e4efe7; outline: 1px solid var(--accent); }
+.row:hover { background: var(--row-hover); }
+.row.on { background: var(--row-on); outline: 1px solid var(--accent); }
 .row .thumb { width: 26px; height: 26px; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
 .row .thumb.blank { visibility: hidden; width: 0; border: 0; }
 .row .name {
   min-width: 0; width: 100%; font: inherit; padding: 0.2rem 0.4rem;
   border: 1px solid transparent; border-radius: 4px; background: transparent;
 }
-.row .name:hover, .row .name:focus { border-color: var(--line); background: #fff; }
+.row .name:hover, .row .name:focus { border-color: var(--line); background: var(--panel); }
+input, select { color: var(--ink); background: var(--panel); }
 .row .qty { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .row .unit { color: var(--muted); font-size: 0.8rem; width: 2.6rem; }
 .row .sub { grid-column: 3 / -1; color: var(--muted); font-size: 0.78rem; }
 
 .actions { display: flex; flex-direction: column; gap: 6px; }
+.actions .row-actions { margin-top: 0; }
+#csvOut {
+  width: 100%; min-width: 0; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace;
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px; resize: vertical;
+}
 .fine { color: var(--muted); font-size: 0.8rem; }
-.foot { padding: 0.6rem 16px 1rem; color: var(--muted); font-size: 0.8rem; }
+.foot { padding-block: 0.6rem 1rem; color: var(--muted); font-size: 0.8rem; }
 .err { color: var(--mark); }

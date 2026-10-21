@@ -63,6 +63,16 @@ def main(argv=None) -> int:
             page.on("pageerror", lambda e: failures.append(f"page error: {e}"))
 
             page.goto(origin + "/", wait_until="load")
+
+            # The bundled sample loads on its own, so the first view shows the
+            # tool working. It also proves the build emitted the file.
+            page.wait_for_selector("#results.ready", timeout=120_000)
+            if not page.is_hidden("#empty"):
+                failures.append("the sample plan loaded but the empty state is still shown")
+            if "sample-plan" not in page.inner_text("#status"):
+                failures.append("status does not name the sample plan: " + page.inner_text("#status"))
+
+            # Then a file chosen from disk, the real path.
             page.set_input_files("#picker", args.file)
             page.wait_for_selector("#results.ready", timeout=120_000)
 
@@ -114,6 +124,14 @@ def main(argv=None) -> int:
                 failures.append(f"csv has too few rows:\n{csv}")
             if "calibrated" not in csv:
                 failures.append("csv does not record the calibrated scale")
+
+            # Copy CSV: the clipboard, or the fallback box with the text in it.
+            page.click("#copy")
+            page.wait_for_timeout(200)
+            st = page.inner_text("#status")
+            boxed = page.is_visible("#csvOut") and "Item,Type" in page.input_value("#csvOut")
+            if "copied" not in st and not boxed:
+                failures.append(f"copy CSV neither copied nor showed the text (status={st!r})")
 
             offsite = sorted({
                 u.split("/")[2] for u in requests

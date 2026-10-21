@@ -21,7 +21,7 @@ const el = {
   results: $('results'), scaleText: $('scaleText'), scaleSelect: $('scaleSelect'),
   calibrate: $('calibrate'), calForm: $('calForm'), calFeet: $('calFeet'), calCancel: $('calCancel'),
   symbols: $('symbols'), hatches: $('hatches'), regions: $('regions'), lines: $('lines'),
-  export: $('export'),
+  export: $('export'), copy: $('copy'), csvOut: $('csvOut'), sample: $('sample'),
 };
 
 const viewer = new Viewer({
@@ -203,7 +203,7 @@ function renderRows() {
       node.appendChild(none);
     }
   }
-  el.export.disabled = !state.items.length;
+  el.export.disabled = el.copy.disabled = !state.items.length;
 }
 
 function toggleActive(id) {
@@ -345,7 +345,7 @@ async function showPage(n) {
   renderScale();
   renderRows();
   const found = c.items.length;
-  status(`Page ${n}: ${c.analysis.paths.length.toLocaleString('en-US')} paths, ${found} item${found === 1 ? '' : 's'}.`);
+  status(`${state.fileName}, page ${n}: ${c.analysis.paths.length.toLocaleString('en-US')} paths, ${found} item${found === 1 ? '' : 's'}.`);
   el.results.classList.add('ready');
 }
 
@@ -379,6 +379,20 @@ async function openFile(file) {
 }
 
 el.picker.addEventListener('change', () => openFile(el.picker.files[0]));
+// The synthetic test sheet ships beside the page (see vite.config.js), so a
+// visitor with no plan to hand can still see the tool work. Same origin.
+async function loadSample() {
+  status('Loading the sample plan…');
+  try {
+    const res = await fetch('./sample-plan.pdf');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    await openFile(new File([blob], 'sample-plan.pdf', { type: 'application/pdf' }));
+  } catch (e) {
+    status(`Could not load the sample plan: ${e && e.message ? e.message : e}`, true);
+  }
+}
+el.sample.addEventListener('click', loadSample);
 el.prev.addEventListener('click', () => showPage(state.pageNo - 1));
 el.next.addEventListener('click', () => showPage(state.pageNo + 1));
 el.zoomIn.addEventListener('click', () => viewer.setZoom(viewer.zoom * 1.25));
@@ -398,7 +412,7 @@ el.stage.addEventListener('drop', (e) => {
 
 // ---------------------------------------------------------------- export
 
-el.export.addEventListener('click', () => {
+function buildCsv() {
   const rows = [['Item', 'Type', 'Quantity', 'Unit', 'Page', 'Scale', 'Scale source']];
   const scaleLabel = state.scale ? describeScale(state.scale.feetPerPoint) : '';
   const source = state.scale ? state.scale.source : 'none';
@@ -407,7 +421,11 @@ el.export.addEventListener('click', () => {
     const q = quantity(item);
     rows.push([item.name, item.kind, q.value == null ? '' : q.value, q.unit, state.pageNo, scaleLabel, source]);
   }
-  const blob = new Blob([toCsv(rows)], { type: 'text/csv' });
+  return toCsv(rows);
+}
+
+el.export.addEventListener('click', () => {
+  const blob = new Blob([buildCsv()], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `${state.fileName || 'plan'}-p${state.pageNo}-takeoff.csv`;
@@ -417,4 +435,26 @@ el.export.addEventListener('click', () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
 
+// Copy works where a download cannot (an embedded viewer). When the
+// clipboard refuses, the text is shown selected so it can be copied by hand.
+el.copy.addEventListener('click', async () => {
+  const csv = buildCsv();
+  try {
+    await navigator.clipboard.writeText(csv);
+    el.csvOut.classList.add('hide');
+    status('CSV copied to the clipboard.');
+  } catch {
+    el.csvOut.value = csv;
+    el.csvOut.classList.remove('hide');
+    el.csvOut.focus();
+    el.csvOut.select();
+    status('Copy the CSV from the box below.');
+  }
+});
+
+// A host that cannot save files says so with a meta tag; copy is the way out there.
+if (document.querySelector('meta[name="takeoff-host"][content="artifact"]')) el.export.hidden = true;
+
 renderRows();
+// A sheet to look at before the estimator has opened one of their own.
+loadSample();

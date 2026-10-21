@@ -21,7 +21,11 @@ model, no training data, no server.
 | The scale note in the title block | `1" = 20'-0"`, `1/8" = 1'-0"`, `1:240` | Feet per point, or **Calibrate** by clicking two points a known distance apart |
 
 Click a row to see what it refers to on the plan. Rename rows, untick what you
-don't want, download a CSV.
+don't want, download or copy a CSV.
+
+The page opens on a bundled sample sheet (the synthetic test plan, emitted
+beside `index.html` at build time) so the first view shows the tool working.
+*Open plan* replaces it.
 
 ## What it does not do
 
