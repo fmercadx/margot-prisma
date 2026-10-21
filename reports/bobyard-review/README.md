@@ -216,6 +216,12 @@ purpose rather than by default.
 | --- | --- | --- | --- | --- |
 | A | Full multi-trade Bobyard competitor | Years, a funded ML team | Very high | **No** |
 | B | Self-serve, local-only, vector-first landscape takeoff tool | A few months to a usable version: viewer + extraction + export | Distribution; low-end price pressure ($15–$39/mo) | **Later, only if C works** |
+
+*Update, 21 October 2026:* a first version of B exists in [`takeoff/`](../../takeoff/README.md):
+plan viewer, symbol counts, hatch and polygon areas, line lengths, scale
+reading and calibration, CSV export, tested in the browser. The recommendation
+to test demand through C before investing further stands; the tool is what C
+would use.
 | C | Tool-assisted takeoff service: our extractor + a human reviewer, priced per sheet or per job | Weeks to start | Labour-bound; needs estimating skill | **Start here** |
 
 Why C first:

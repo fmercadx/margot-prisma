@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "build:analyzer": "python3 credit-analyzer/browser/build.py --out dist/analyzer"
+    "build:analyzer": "python3 credit-analyzer/browser/build.py --out dist/analyzer",
+    "build:takeoff": "npm --prefix takeoff run build"
   },
   "dependencies": {
     "framer-motion": "^12.43.0",

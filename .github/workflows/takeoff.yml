@@ -1,0 +1,61 @@
+name: takeoff
+
+# Path-filtered like the other product workflows, so nothing else in the repo
+# runs this. Deployment is deploy.yml's job; this proves the engine, the build
+# and the page in a browser.
+on:
+  pull_request:
+    paths:
+      - 'takeoff/**'
+      - '.github/workflows/takeoff.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'takeoff/**'
+      - '.github/workflows/takeoff.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: takeoff-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: takeoff
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: takeoff/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - run: npm ci
+
+      # The engine against the synthetic plan, through pdf.js's real operator
+      # list: counts, hatch areas, polygon areas, chained lines, nested
+      # transforms, scale notation.
+      - run: npm test
+
+      # Writes to ../dist/takeoff, the same place deploy.yml puts it.
+      - run: npm run build
+
+      - run: pip install playwright && python -m playwright install --with-deps chromium
+
+      # smoke.py takes repo-root-relative paths, so this step must not inherit
+      # the takeoff/ working directory.
+      - name: Browser smoke test
+        working-directory: .
+        run: python3 takeoff/smoke.py --dist dist/takeoff
