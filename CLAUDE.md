@@ -1,6 +1,6 @@
 # Working in this repo
 
-Three unrelated products share this repository:
+Four unrelated products share this repository:
 
 - **the salon site** — React + Vite + Tailwind, at the repo root, serving
   `fmercadx.github.io/margot-prisma/`
@@ -8,10 +8,19 @@ Three unrelated products share this repository:
   `fmercadx.github.io/margot-prisma/analyzer/`
 - **`shepherds-whisper/`** — the marketing site for an Oregon adult foster
   home, deployed on Railway, not on Pages
+- **`car-mirror/`** — an Android app that mirrors the owner's phone screen to
+  their Tesla's browser. Its own Gradle build; ships as an APK on GitHub
+  Releases, not on Pages or Railway. Its README explains the design.
 
 They are independent. `deploy.yml` builds the first two into one `dist/`, and
-`credit-analyzer.yml` and `shepherds-whisper.yml` are path-filtered so no
-product's changes run another's tests.
+`credit-analyzer.yml`, `shepherds-whisper.yml` and `car-mirror.yml` are
+path-filtered so no product's changes run another's tests. `car-mirror.yml`
+alone also runs on branch pushes, because each build publishes a release.
+
+**`car-mirror/` network exposure is deliberate.** Its VPN covers only the app
+and routes a single `/32`, and its server binds only that address and checks
+the Host header. Widening any of these would expose the phone's screen to
+whoever shares a network with it.
 
 **Two Railway services, two configs.** The root `railway.json` and `Procfile`
 belong to the credit analyzer's Flask app. `shepherds-whisper/railway.json` and
@@ -113,6 +122,13 @@ cd credit-analyzer/mobile  && npm test
 
 # The adult family home site: build, then browser checks against dist/
 cd shepherds-whisper && npm ci && npm run build && npm run smoke
+
+# Car mirror: core tests (JDK only), then the viewer page in Chromium.
+# The APK itself cannot build here (dl.google.com is blocked); CI builds it.
+# Maven Central sometimes answers 429 through the proxy: just rerun.
+cd car-mirror && ./gradlew -PcoreOnly :core:test
+cd car-mirror && ./gradlew -PcoreOnly :core:demoServer --args="8090" &   # wait for READY
+cd car-mirror && NODE_PATH=$(npm root -g) node tools/viewer-smoke.cjs http://127.0.0.1:8090/
 ```
 
 The smoke scripts take `--browser <path>` if Playwright's Chromium is not on

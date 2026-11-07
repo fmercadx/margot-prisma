@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Car Mirror</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  body { -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+  #screen { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #mjpeg { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; display: none; }
+  #msg {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    max-width: 70vw; padding: 20px 28px; border-radius: 14px;
+    background: rgba(0, 0, 0, .8); color: #f2f2f2; text-align: center;
+    font: 500 28px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  #msg small { display: block; margin-top: 12px; color: #9a9a9a; font-size: 18px; font-weight: 400; }
+  #info {
+    position: fixed; left: 16px; bottom: 16px; display: none;
+    padding: 8px 12px; border-radius: 8px; background: rgba(0, 0, 0, .7); color: #bdbdbd;
+    font: 15px/1.3 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+</style>
+</head>
+<body>
+<canvas id="screen"></canvas>
+<img id="mjpeg" alt="Phone screen">
+<div id="msg">Connecting to your phone…</div>
+<div id="info"></div>
+<script>
+(function () {
+  'use strict';
+
+  var canvas = document.getElementById('screen');
+  var ctx = canvas.getContext('2d', { alpha: false });
+  var img = document.getElementById('mjpeg');
+  var msg = document.getElementById('msg');
+  var info = document.getElementById('info');
+
+  var seq = 0;              // newest frame drawn; sent back so the phone only answers with newer ones
+  var bitmap = null;        // last decoded frame, kept for redraws on resize
+  var failures = 0;
+  var framesThisSecond = 0;
+  var fps = 0;
+  var POLL_TIMEOUT_MS = 15000; // the phone answers within 10 s; anything longer is a dead connection
+
+  function show(text, detail) {
+    msg.textContent = text || '';
+    if (detail) {
+      var small = document.createElement('small');
+      small.textContent = detail;
+      msg.appendChild(small);
+    }
+    msg.style.display = text ? 'block' : 'none';
+  }
+
+  function fitCanvas() {
+    var ratio = window.devicePixelRatio || 1;
+    var w = Math.round(window.innerWidth * ratio);
+    var h = Math.round(window.innerHeight * ratio);
+    if (canvas.width !== w || canvas.height !== h) {
+      canvas.width = w;
+      canvas.height = h;
+      draw();
+    }
+  }
+
+  function draw() {
+    var cw = canvas.width, ch = canvas.height;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, cw, ch);
+    if (!bitmap) return;
+    var scale = Math.min(cw / bitmap.width, ch / bitmap.height);
+    var w = Math.round(bitmap.width * scale), h = Math.round(bitmap.height * scale);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bitmap, Math.round((cw - w) / 2), Math.round((ch - h) / 2), w, h);
+  }
+
+  function updateInfo() {
+    if (info.style.display !== 'block') return;
+    var size = bitmap ? bitmap.width + '×' + bitmap.height : 'no frame yet';
+    info.textContent = size + ' · ' + fps + ' fps · ' + location.host;
+  }
+
+  setInterval(function () {
+    fps = framesThisSecond;
+    framesThisSecond = 0;
+    updateInfo();
+  }, 1000);
+
+  // Written with plain promises rather than async/await so that an older browser can still
+  // parse this script and reach the MJPEG fallback below.
+  function fetchFrame() {
+    var controller = typeof AbortController === 'function' ? new AbortController() : null;
+    var timer = controller ? setTimeout(function () { controller.abort(); }, POLL_TIMEOUT_MS) : 0;
+    function done() { if (timer) clearTimeout(timer); }
+    return fetch('frame?after=' + seq, {
+      cache: 'no-store',
+      signal: controller ? controller.signal : undefined
+    }).then(function (response) {
+      if (response.status === 204) return null;          // nothing new on the phone's screen
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      var next = Number(response.headers.get('X-Frame-Seq')) || 0;
+      return response.blob().then(function (blob) { return { seq: next, blob: blob }; });
+    }).then(function (frame) { done(); return frame; }, function (err) { done(); throw err; });
+  }
+
+  function pollOnce() {
+    return fetchFrame().then(function (frame) {
+      failures = 0;
+      if (!frame) {
+        if (!bitmap) show('Connected.', 'Waiting for the phone screen…');
+        return;
+      }
+      seq = frame.seq; // advance even if this one fails to decode, so a bad frame is skipped
+      return createImageBitmap(frame.blob).then(function (decoded) {
+        if (bitmap && bitmap.close) bitmap.close();
+        bitmap = decoded;
+        draw();
+        framesThisSecond++;
+        show('');
+      });
+    });
+  }
+
+  function pollLoop() {
+    pollOnce().then(pollLoop, function () {
+      failures++;
+      if (failures >= 3) {
+        show('Lost the connection to your phone.',
+          'Retrying… Check that mirroring is still on and the car is on the phone’s hotspot.');
+      }
+      setTimeout(pollLoop, Math.min(3000, 250 * failures));
+    });
+  }
+
+  function startMjpeg() {
+    canvas.style.display = 'none';
+    img.style.display = 'block';
+    img.onload = function () { show(''); };
+    img.onerror = function () {
+      show('Lost the connection to your phone.', 'Retrying…');
+      setTimeout(function () { img.src = 'stream.mjpeg?t=' + Date.now(); }, 2000);
+    };
+    img.src = 'stream.mjpeg';
+  }
+
+  // Tap: show stats, and go full screen where the browser allows it.
+  document.addEventListener('click', function () {
+    info.style.display = info.style.display === 'block' ? 'none' : 'block';
+    updateInfo();
+    var root = document.documentElement;
+    if (!document.fullscreenElement && root.requestFullscreen) {
+      var request = root.requestFullscreen();
+      if (request && request.catch) request.catch(function () {});
+    }
+  });
+
+  var forceMjpeg = /[?&]mode=mjpeg\b/.test(location.search);
+  if (forceMjpeg || typeof fetch !== 'function' || typeof createImageBitmap !== 'function') {
+    startMjpeg();
+  } else {
+    window.addEventListener('resize', fitCanvas);
+    fitCanvas();
+    pollLoop();
+  }
+})();
+</script>
+</body>
+</html>

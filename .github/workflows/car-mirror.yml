@@ -1,0 +1,76 @@
+name: car-mirror app
+
+# Path-filtered like the other products' workflows, so nothing outside
+# car-mirror/ runs this. It builds on pushes to any branch (not only main)
+# because each build publishes the installable APK as a release; a branch
+# build is marked pre-release.
+on:
+  push:
+    paths:
+      - 'car-mirror/**'
+      - '.github/workflows/car-mirror.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write # publishing the APK as a release
+
+concurrency:
+  group: car-mirror-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: car-mirror
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Frame hub, HTTP server, address rules. Plain JVM, no Android SDK.
+      - run: ./gradlew -PcoreOnly :core:test --console=plain
+
+      # The page the car's browser loads, driven in Chromium against a fake
+      # phone: draws frames, letterboxes, recovers from a dropped connection,
+      # and makes no request off the phone. See tools/viewer-smoke.cjs.
+      - name: Viewer page in Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright@1.49.1
+          npx playwright install --with-deps chromium
+          ./gradlew -PcoreOnly :core:demoServer --args="8090" --console=plain > demo.log 2>&1 &
+          DEMO=$!
+          for i in $(seq 1 180); do grep -q READY demo.log && break; sleep 1; done
+          node tools/viewer-smoke.cjs http://127.0.0.1:8090/ || { cat demo.log; exit 1; }
+          kill $DEMO || true
+
+      - run: ./gradlew :app:assembleRelease -PbuildNumber=${{ github.run_number }} --console=plain
+
+      - run: cp app/build/outputs/apk/release/app-release.apk car-mirror-${{ github.run_number }}.apk
+
+      # Paths below are repo-root relative: `defaults.run` does not apply to `uses:` steps.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: car-mirror-apk
+          path: car-mirror/car-mirror-*.apk
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: car-mirror-build-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: Car Mirror build ${{ github.run_number }}
+          prerelease: ${{ github.ref != 'refs/heads/main' }}
+          files: car-mirror/car-mirror-*.apk
+          body: |
+            Open this page on your Android phone and tap **car-mirror-${{ github.run_number }}.apk** below to install it.
+            Installing over an earlier build keeps your settings. Setup steps: car-mirror/README.md.
+
+            Built from ${{ github.sha }} on `${{ github.ref_name }}`.
