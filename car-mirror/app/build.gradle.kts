@@ -62,6 +62,11 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    // Robolectric renders the real screen in unit tests (see ScreenshotTest), which needs resources.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 kotlin {
@@ -70,4 +75,12 @@ kotlin {
 
 dependencies {
     implementation(project(":core"))
+
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.17")
+}
+
+tasks.withType<Test>().configureEach {
+    systemProperty("screenshotDir", layout.buildDirectory.dir("screenshots").get().asFile.absolutePath)
+    maxHeapSize = "2g"
 }

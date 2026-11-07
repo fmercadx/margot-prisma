@@ -1,4 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Light theme. Dark-theme values are in values-night/colors.xml. -->
 <resources>
     <color name="icon_background">#1E40AF</color>
+
+    <color name="background">#F3F5F9</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_variant">#EBEEF4</color>
+    <color name="on_surface">#12151B</color>
+    <color name="muted">#5A6270</color>
+    <color name="outline">#DDE1E8</color>
+    <color name="ripple">#22000000</color>
+
+    <color name="accent">#1E4FD8</color>
+    <color name="on_accent">#FFFFFF</color>
+    <color name="accent_container">#E1E8FC</color>
+
+    <color name="success">#15803D</color>
+    <color name="success_container">#E2F4E8</color>
+    <color name="warning">#A65A00</color>
+    <color name="warning_container">#FCEFD9</color>
+    <color name="danger">#C62828</color>
+    <color name="danger_container">#FBE3E3</color>
 </resources>

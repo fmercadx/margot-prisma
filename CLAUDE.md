@@ -131,6 +131,10 @@ cd shepherds-whisper && npm ci && npm run build && npm run smoke
 cd car-mirror && ./gradlew -PcoreOnly :core:test
 cd car-mirror && ./gradlew -PcoreOnly :core:demoServer --args="8090 --control $PWD/build/smoke" &   # wait for READY
 cd car-mirror && NODE_PATH=$(npm root -g) node tools/viewer-smoke.cjs http://127.0.0.1:8090/ --control $PWD/build/smoke
+
+# Car mirror phone-screen previews: Robolectric renders the real screen in each state.
+# CI only (needs Google Maven); the PNGs are attached to each release as preview-*.png.
+cd car-mirror && ./gradlew :app:testDebugUnitTest
 ```
 
 The smoke scripts take `--browser <path>` if Playwright's Chromium is not on

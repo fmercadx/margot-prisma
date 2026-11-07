@@ -61,6 +61,15 @@ jobs:
 
       - run: cp app/build/outputs/apk/release/app-release.apk car-mirror-${{ github.run_number }}.apk
 
+      # Opens the real phone screen in Robolectric in each state (ready, waiting, paused,
+      # light and dark), checks the right controls show, and saves a picture of each.
+      # The pictures go on the release as preview-*.png.
+      - name: Phone screen previews
+        run: |
+          ./gradlew :app:testDebugUnitTest --console=plain
+          for f in app/build/screenshots/*.png; do cp "$f" "preview-$(basename "$f")"; done
+          ls -l preview-*.png
+
       # The bundle Google Play takes, signed with the private upload key rather than the
       # shared one. It is a workflow artifact only, never attached to the public release.
       - name: Google Play bundle
@@ -93,9 +102,12 @@ jobs:
           target_commitish: ${{ github.sha }}
           name: Car Mirror build ${{ github.run_number }}
           prerelease: ${{ github.ref != 'refs/heads/main' }}
-          files: car-mirror/car-mirror-*.apk
+          files: |
+            car-mirror/car-mirror-*.apk
+            car-mirror/preview-*.png
           body: |
             Open this page on your Android phone and tap **car-mirror-${{ github.run_number }}.apk** below to install it.
             Installing over an earlier build keeps your settings. Setup steps: car-mirror/README.md.
+            The preview-*.png files show what each screen of this build looks like.
 
             Built from ${{ github.sha }} on `${{ github.ref_name }}`.
