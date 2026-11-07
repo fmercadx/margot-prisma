@@ -14,6 +14,7 @@ import android.os.HandlerThread
 import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.view.Display
+import io.github.fmercadx.carmirror.core.AutoQuality
 import io.github.fmercadx.carmirror.core.FrameHub
 import io.github.fmercadx.carmirror.core.Quality
 import java.io.ByteArrayOutputStream
@@ -26,6 +27,10 @@ import java.nio.ByteBuffer
  * screen costs nothing. Encoding is capped at [Quality.fps]; the newest image is always the
  * one encoded, including the last one before the screen goes still.
  *
+ * JPEG quality comes from [autoQuality], which lowers it when the car can't keep up. While
+ * paused, images are still copied (cheap) but not encoded, and the newest one is encoded
+ * the moment mirroring resumes.
+ *
  * Everything after [start] runs on one background thread, so none of the state below needs
  * locking.
  */
@@ -34,6 +39,7 @@ class ScreenCapture(
     private val projection: MediaProjection,
     private val hub: FrameHub,
     private val quality: Quality,
+    private val autoQuality: AutoQuality,
 ) {
     private val displayManager = context.service<DisplayManager>()
     private val thread = HandlerThread("screen-capture").apply { start() }
@@ -56,6 +62,7 @@ class ScreenCapture(
     private var croppedCanvas: Canvas? = null
 
     private var dirty = false
+    private var paused = false
     private var encodeScheduled = false
     private var lastEncodeAt = 0L
 
@@ -89,6 +96,14 @@ class ScreenCapture(
             imageReader.surface, null, handler,
         )
         displayManager.registerDisplayListener(displayListener, handler)
+    }
+
+    /** Stops or resumes encoding. Safe to call from any thread. */
+    fun setPaused(value: Boolean) {
+        handler.post {
+            paused = value
+            if (!paused) scheduleEncode()
+        }
     }
 
     fun stop() {
@@ -148,11 +163,14 @@ class ScreenCapture(
             image.close()
         }
         dirty = true
-        if (!encodeScheduled) {
-            encodeScheduled = true
-            val wait = (lastEncodeAt + quality.frameIntervalMs - SystemClock.uptimeMillis()).coerceAtLeast(0)
-            handler.postDelayed(encodeTask, wait)
-        }
+        scheduleEncode()
+    }
+
+    private fun scheduleEncode() {
+        if (paused || !dirty || encodeScheduled) return
+        encodeScheduled = true
+        val wait = (lastEncodeAt + quality.frameIntervalMs - SystemClock.uptimeMillis()).coerceAtLeast(0)
+        handler.postDelayed(encodeTask, wait)
     }
 
     private fun copy(image: Image) {
@@ -203,7 +221,7 @@ class ScreenCapture(
             target
         }
         jpeg.reset()
-        frame.compress(Bitmap.CompressFormat.JPEG, quality.jpegQuality, jpeg)
+        frame.compress(Bitmap.CompressFormat.JPEG, autoQuality.current, jpeg)
         hub.publish(jpeg.toByteArray(), width, height)
     }
 }

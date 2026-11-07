@@ -10,6 +10,9 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.URLDecoder
+import java.security.SecureRandom
+import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -23,14 +26,24 @@ data class Viewer(val remoteAddress: String, val host: String, val lastSeenMs: L
  * A small HTTP/1.1 server for the car's browser. No dependencies, so it runs the same on
  * the phone and in JVM tests.
  *
- *   GET /                 the viewer page
- *   GET /frame?after=N    long-poll: the newest JPEG with seq > N, or 204 after [longPollMs]
- *   GET /stream.mjpeg     multipart MJPEG, for browsers without fetch/createImageBitmap
- *   GET /status           JSON, for debugging
+ *   GET  /                          the viewer page
+ *   GET  /frame?after=N&paused=R    long-poll: the newest JPEG with seq > N, or 204 when the
+ *                                   pause state differs from R or after [longPollMs]. Every
+ *                                   response carries the state in X-Mirror-Paused.
+ *   GET  /stream.mjpeg              multipart MJPEG, for browsers without fetch/createImageBitmap
+ *   GET  /status                    JSON: frame size, viewers, touch, quality, session token
+ *   POST /input                     a [Gesture] from the car, when [control] allows touch
+ *
+ * POST /input must carry the session token from /status in X-Car-Mirror-Token. Only the
+ * viewer page can read /status (no CORS headers are ever sent), and the custom header makes
+ * a browser preflight any cross-site attempt, which this server refuses. So another web
+ * page open in the car can neither read the screen nor tap on the phone.
  */
 class MirrorServer(
     private val hub: FrameHub,
     private val hostAllowed: (String) -> Boolean = { true },
+    private val control: MirrorControl? = null,
+    private val autoQuality: AutoQuality? = null,
     private val longPollMs: Long = 10_000,
     private val idleTimeoutMs: Int = 30_000,
     private val maxConnections: Int = 16,
@@ -48,6 +61,10 @@ class MirrorServer(
             ?: error("viewer.html is missing from the build")
         stream.use { it.readBytes() }
     }
+
+    /** Changes every time a server is created, so a token from an earlier session is useless. */
+    val token: String = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        .let { Base64.getUrlEncoder().withoutPadding().encodeToString(it) }
 
     val port: Int get() = serverSocket?.localPort ?: -1
 
@@ -137,11 +154,11 @@ class MirrorServer(
                 val request = try {
                     Request.read(input) ?: break
                 } catch (e: BadRequest) {
-                    respond(output, 400, "text/plain; charset=utf-8", e.message.orEmpty().toByteArray(), keepAlive = false)
+                    respond(output, 400, TEXT, e.message.orEmpty().toByteArray(), keepAlive = false)
                     output.flush()
                     break
                 }
-                val keepAlive = handle(request, socket, output)
+                val keepAlive = handle(request, socket, input, output)
                 output.flush()
                 if (!keepAlive) break
             }
@@ -156,21 +173,20 @@ class MirrorServer(
     }
 
     /** Writes one response and returns whether the connection may carry another request. */
-    private fun handle(request: Request, socket: Socket, out: OutputStream): Boolean {
+    private fun handle(request: Request, socket: Socket, input: InputStream, out: OutputStream): Boolean {
+        val host = request.headers["host"].orEmpty()
+        if (!hostAllowed(host)) {
+            respond(out, 403, TEXT, "Open this page with the address shown in the Car Mirror app.".toByteArray(), keepAlive = false)
+            return false
+        }
+        if (request.method == "POST" && request.path == "/input") return handleInput(request, input, out)
         val headOnly = request.method == "HEAD"
         if (request.method != "GET" && !headOnly) {
-            respond(out, 405, "text/plain; charset=utf-8", "Only GET is supported".toByteArray(),
-                keepAlive = false, extra = listOf("Allow" to "GET, HEAD"))
+            respond(out, 405, TEXT, "Method not allowed".toByteArray(), keepAlive = false, extra = listOf("Allow" to "GET, HEAD, POST"))
             return false
         }
         if (request.hasBody) {
-            respond(out, 400, "text/plain; charset=utf-8", "Request bodies are not accepted".toByteArray(), keepAlive = false)
-            return false
-        }
-        val host = request.headers["host"].orEmpty()
-        if (!hostAllowed(host)) {
-            respond(out, 403, "text/plain; charset=utf-8",
-                "Open this page with the address shown in the Car Mirror app.".toByteArray(), keepAlive = false)
+            respond(out, 400, TEXT, "Request bodies are not accepted here".toByteArray(), keepAlive = false)
             return false
         }
         val keepAlive = request.keepAlive
@@ -183,30 +199,73 @@ class MirrorServer(
             }
             "/status" -> respond(out, 200, "application/json", statusJson().toByteArray(), keepAlive, headOnly)
             "/favicon.ico" -> respond(out, 204, null, EMPTY, keepAlive, headOnly)
-            else -> respond(out, 404, "text/plain; charset=utf-8", "Not found".toByteArray(), keepAlive, headOnly)
+            else -> respond(out, 404, TEXT, "Not found".toByteArray(), keepAlive, headOnly)
         }
+        return keepAlive
+    }
+
+    private fun handleInput(request: Request, input: InputStream, out: OutputStream): Boolean {
+        val keepAlive = request.keepAlive
+        val length = request.headers["content-length"]?.toIntOrNull()
+        if (length == null || request.headers.containsKey("transfer-encoding")) {
+            respond(out, 411, TEXT, "Content-Length required".toByteArray(), keepAlive = false)
+            return false
+        }
+        if (length !in 0..MAX_INPUT_BYTES) {
+            respond(out, 413, TEXT, "Gesture too large".toByteArray(), keepAlive = false)
+            return false
+        }
+        // Not InputStream.readNBytes: Android only has it from API 33, and this app runs on 29.
+        val body = ByteArray(length)
+        var read = 0
+        while (read < length) {
+            val n = input.read(body, read, length - read)
+            if (n < 0) throw IOException("connection closed mid-body")
+            read += n
+        }
+
+        fun refuse(status: Int, why: String): Boolean {
+            respond(out, status, TEXT, why.toByteArray(), keepAlive)
+            return keepAlive
+        }
+        if (request.headers["x-car-mirror-token"] != token) return refuse(403, "Stale or missing session token")
+        val phone = control ?: return refuse(404, "Touch control is not available")
+        if (hub.pausedReason != null) return refuse(409, "Mirroring is paused")
+        if (!phone.touchAvailable) return refuse(409, "Touch control is off on the phone")
+        val gesture = Gesture.parse(String(body, Charsets.UTF_8)) ?: return refuse(400, "Malformed gesture")
+        if (!phone.perform(gesture)) return refuse(409, "The phone could not perform that")
+        respond(out, 204, null, EMPTY, keepAlive)
         return keepAlive
     }
 
     private fun serveFrame(request: Request, socket: Socket, out: OutputStream, keepAlive: Boolean, headOnly: Boolean) {
         noteViewer(socket, request)
         if (hub.isClosed) {
-            respond(out, 503, "text/plain; charset=utf-8", "Mirroring stopped".toByteArray(), keepAlive, headOnly)
+            respond(out, 503, TEXT, "Mirroring stopped".toByteArray(), keepAlive, headOnly)
             return
         }
         val after = request.query["after"]?.toLongOrNull() ?: 0L
-        val frame = hub.awaitAfter(after, longPollMs)
+        val viewerPaused = request.query["paused"]?.let { decode(it) }?.ifEmpty { null }
+        val update = hub.awaitUpdate(after, viewerPaused, longPollMs)
+        val paused = update?.paused ?: hub.pausedReason
+        val state = listOf(PAUSED_HEADER to paused.orEmpty())
+        val frame = update?.frame
         if (frame == null) {
-            respond(out, 204, null, EMPTY, keepAlive, headOnly)
+            respond(out, 204, null, EMPTY, keepAlive, headOnly, state)
             return
         }
-        respond(out, 200, "image/jpeg", frame.jpeg, keepAlive, headOnly, listOf(
+        respond(out, 200, "image/jpeg", frame.jpeg, keepAlive, headOnly, state + listOf(
             "X-Frame-Seq" to frame.seq.toString(),
             "X-Frame-Width" to frame.width.toString(),
             "X-Frame-Height" to frame.height.toString(),
         ))
         noteViewer(socket, request)
-        if (!headOnly) framesServed.incrementAndGet()
+        if (!headOnly) {
+            framesServed.incrementAndGet()
+            // Frames between the one the viewer last drew and this one were never drawn.
+            val skipped = if (after in 1 until frame.seq) (frame.seq - after - 1).toInt() else 0
+            autoQuality?.onFrameServed(skipped)
+        }
     }
 
     private fun serveMjpeg(request: Request, socket: Socket, out: OutputStream) {
@@ -219,16 +278,24 @@ class MirrorServer(
         out.flush()
         if (request.method == "HEAD") return
         var seen = 0L
+        var paused: String? = null
         while (running && !hub.isClosed) {
-            // Re-send the current frame every few seconds even when nothing changed, so a
-            // browser that vanished without closing the connection is noticed on write.
-            val frame = hub.awaitAfter(seen, 3_000) ?: hub.latest() ?: continue
-            val part = "--$BOUNDARY\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.jpeg.size}\r\n\r\n"
+            val update = hub.awaitUpdate(seen, paused, 3_000)
+            val jpeg: ByteArray = when {
+                update == null -> if (paused != null) BLACK_JPEG else hub.latest()?.jpeg ?: continue
+                update.frame == null -> {
+                    paused = update.paused
+                    if (paused != null) BLACK_JPEG else continue // resumed: wait for the next frame
+                }
+                else -> update.frame.jpeg.also { seen = update.frame.seq }
+            }
+            // While paused or idle the current picture is re-sent every few seconds anyway, so
+            // a browser that vanished without closing the connection is noticed on write.
+            val part = "--$BOUNDARY\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.size}\r\n\r\n"
             out.write(part.toByteArray(Charsets.ISO_8859_1))
-            out.write(frame.jpeg)
+            out.write(jpeg)
             out.write(CRLF)
             out.flush()
-            seen = frame.seq
             framesServed.incrementAndGet()
             noteViewer(socket, request)
         }
@@ -241,8 +308,13 @@ class MirrorServer(
 
     private fun statusJson(): String {
         val frame = hub.latest()
+        val paused = hub.pausedReason
         return "{\"seq\":${frame?.seq ?: 0},\"width\":${frame?.width ?: 0},\"height\":${frame?.height ?: 0}," +
-            "\"framesSent\":${framesServed.get()},\"viewers\":${recentViewers().size}}"
+            "\"framesSent\":${framesServed.get()},\"viewers\":${recentViewers().size}," +
+            "\"paused\":${if (paused == null) "null" else "\"$paused\""}," +
+            "\"touch\":${control?.touchAvailable == true}," +
+            "\"jpegQuality\":${autoQuality?.current ?: 0}," +
+            "\"token\":\"$token\"}"
     }
 
     private fun respond(
@@ -280,8 +352,23 @@ class MirrorServer(
 
     private companion object {
         const val BOUNDARY = "carmirrorframe"
+        const val TEXT = "text/plain; charset=utf-8"
+        const val PAUSED_HEADER = "X-Mirror-Paused"
+        const val MAX_INPUT_BYTES = 4 * 1024
         val CRLF = "\r\n".toByteArray(Charsets.ISO_8859_1)
         val EMPTY = ByteArray(0)
+
+        /** 16x16 black, sent to the MJPEG fallback while paused so the last picture disappears. */
+        val BLACK_JPEG: ByteArray = Base64.getDecoder().decode(
+            "/9j/4AAQSkZJRgABAgAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4z" +
+                "NDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAQABADASIA" +
+                "AhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEI" +
+                "I0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKj" +
+                "pKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcI" +
+                "CQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNE" +
+                "RUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna" +
+                "4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD5/ooooA//2Q==",
+        )
 
         /** The page loads nothing from anywhere but the phone. */
         val PAGE_HEADERS = listOf(
@@ -290,6 +377,12 @@ class MirrorServer(
             "Referrer-Policy" to "no-referrer",
         )
 
+        fun decode(value: String): String = try {
+            URLDecoder.decode(value, "UTF-8")
+        } catch (_: IllegalArgumentException) {
+            value
+        }
+
         fun reason(status: Int) = when (status) {
             200 -> "OK"
             204 -> "No Content"
@@ -297,6 +390,9 @@ class MirrorServer(
             403 -> "Forbidden"
             404 -> "Not Found"
             405 -> "Method Not Allowed"
+            409 -> "Conflict"
+            411 -> "Length Required"
+            413 -> "Payload Too Large"
             503 -> "Service Unavailable"
             else -> "Status"
         }

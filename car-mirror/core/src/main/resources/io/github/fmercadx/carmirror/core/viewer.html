@@ -6,20 +6,30 @@
 <title>Car Mirror</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
-  body { -webkit-user-select: none; user-select: none; touch-action: manipulation; }
-  #screen { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  body { -webkit-user-select: none; user-select: none; touch-action: none; }
+  #screen { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
   #mjpeg { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; display: none; }
   #msg {
     position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    max-width: 70vw; padding: 20px 28px; border-radius: 14px;
+    max-width: 70vw; padding: 20px 28px; border-radius: 14px; pointer-events: none;
     background: rgba(0, 0, 0, .8); color: #f2f2f2; text-align: center;
     font: 500 28px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
   #msg small { display: block; margin-top: 12px; color: #9a9a9a; font-size: 18px; font-weight: 400; }
   #info {
-    position: fixed; left: 16px; bottom: 16px; display: none;
+    position: fixed; left: 16px; bottom: 16px; display: none; pointer-events: none;
     padding: 8px 12px; border-radius: 8px; background: rgba(0, 0, 0, .7); color: #bdbdbd;
     font: 15px/1.3 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  #menu {
+    position: fixed; left: 12px; top: 12px; width: 48px; height: 48px; border-radius: 24px;
+    background: rgba(255, 255, 255, .14); color: #e6e6e6; opacity: .45;
+    font: 700 24px/46px system-ui, sans-serif; text-align: center; cursor: pointer;
+  }
+  .touch {
+    position: fixed; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%;
+    background: rgba(255, 255, 255, .45); pointer-events: none;
+    transition: transform .35s ease-out, opacity .35s ease-out;
   }
 </style>
 </head>
@@ -28,6 +38,7 @@
 <img id="mjpeg" alt="Phone screen">
 <div id="msg">Connecting to your phone…</div>
 <div id="info"></div>
+<div id="menu" role="button" aria-label="Show details and go full screen">⋯</div>
 <script>
 (function () {
   'use strict';
@@ -37,12 +48,16 @@
   var img = document.getElementById('mjpeg');
   var msg = document.getElementById('msg');
   var info = document.getElementById('info');
+  var menu = document.getElementById('menu');
 
   var seq = 0;              // newest frame drawn; sent back so the phone only answers with newer ones
   var bitmap = null;        // last decoded frame, kept for redraws on resize
+  var rect = null;          // where the picture sits on screen, in CSS pixels
+  var paused = '';          // '' while live, otherwise why the phone is withholding the picture
   var failures = 0;
   var framesThisSecond = 0;
   var fps = 0;
+  var phone = { token: '', touch: false, quality: 0 };
   var POLL_TIMEOUT_MS = 15000; // the phone answers within 10 s; anything longer is a dead connection
 
   function show(text, detail) {
@@ -70,18 +85,24 @@
     var cw = canvas.width, ch = canvas.height;
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, cw, ch);
-    if (!bitmap) return;
+    if (!bitmap) { rect = null; return; }
     var scale = Math.min(cw / bitmap.width, ch / bitmap.height);
     var w = Math.round(bitmap.width * scale), h = Math.round(bitmap.height * scale);
+    var x = Math.round((cw - w) / 2), y = Math.round((ch - h) / 2);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(bitmap, Math.round((cw - w) / 2), Math.round((ch - h) / 2), w, h);
+    ctx.drawImage(bitmap, x, y, w, h);
+    var ratio = cw / canvas.clientWidth || 1;
+    rect = { x: x / ratio, y: y / ratio, w: w / ratio, h: h / ratio };
   }
 
   function updateInfo() {
     if (info.style.display !== 'block') return;
-    var size = bitmap ? bitmap.width + '×' + bitmap.height : 'no frame yet';
-    info.textContent = size + ' · ' + fps + ' fps · ' + location.host;
+    var parts = [bitmap ? bitmap.width + '×' + bitmap.height : 'no frame yet', fps + ' fps'];
+    if (phone.quality) parts.push('quality ' + phone.quality);
+    parts.push(phone.touch ? 'touch on' : 'touch off');
+    parts.push(location.host);
+    info.textContent = parts.join(' · ');
   }
 
   setInterval(function () {
@@ -90,18 +111,50 @@
     updateInfo();
   }, 1000);
 
+  // ---- What the phone allows: touch, the session token, current quality ----
+
+  function refreshStatus() {
+    if (typeof fetch !== 'function') return;
+    fetch('status', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (s) {
+      phone.token = s.token || '';
+      phone.touch = !!s.touch;
+      phone.quality = s.jpegQuality || 0;
+      updateInfo();
+    }).catch(function () {});
+  }
+
+  // ---- Pause ----
+
+  function setPaused(reason) {
+    if (reason === paused) return;
+    paused = reason;
+    if (paused) {
+      // Drop the last picture: whatever the phone is hiding must not stay on the car's screen.
+      if (bitmap && bitmap.close) bitmap.close();
+      bitmap = null;
+      draw();
+      if (paused === 'driving') show('Paused while the car is moving.', 'The picture comes back when you stop.');
+      else show('Paused on the phone.', 'Tap Resume on the phone to continue.');
+    } else {
+      show(bitmap ? '' : 'Resuming…');
+    }
+  }
+
+  // ---- Frames ----
+
   // Written with plain promises rather than async/await so that an older browser can still
   // parse this script and reach the MJPEG fallback below.
   function fetchFrame() {
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
     var timer = controller ? setTimeout(function () { controller.abort(); }, POLL_TIMEOUT_MS) : 0;
     function done() { if (timer) clearTimeout(timer); }
-    return fetch('frame?after=' + seq, {
+    return fetch('frame?after=' + seq + '&paused=' + encodeURIComponent(paused), {
       cache: 'no-store',
       signal: controller ? controller.signal : undefined
     }).then(function (response) {
-      if (response.status === 204) return null;          // nothing new on the phone's screen
       if (!response.ok) throw new Error('HTTP ' + response.status);
+      setPaused(response.headers.get('X-Mirror-Paused') || '');
+      if (response.status === 204) return null;          // nothing new, or only the pause changed
       var next = Number(response.headers.get('X-Frame-Seq')) || 0;
       return response.blob().then(function (blob) { return { seq: next, blob: blob }; });
     }).then(function (frame) { done(); return frame; }, function (err) { done(); throw err; });
@@ -109,13 +162,15 @@
 
   function pollOnce() {
     return fetchFrame().then(function (frame) {
+      if (failures >= 3) refreshStatus(); // back after an outage: the phone may have restarted
       failures = 0;
       if (!frame) {
-        if (!bitmap) show('Connected.', 'Waiting for the phone screen…');
+        if (!bitmap && !paused) show('Connected.', 'Waiting for the phone screen…');
         return;
       }
       seq = frame.seq; // advance even if this one fails to decode, so a bad frame is skipped
       return createImageBitmap(frame.blob).then(function (decoded) {
+        if (paused) { if (decoded.close) decoded.close(); return; }
         if (bitmap && bitmap.close) bitmap.close();
         bitmap = decoded;
         draw();
@@ -147,8 +202,9 @@
     img.src = 'stream.mjpeg';
   }
 
-  // Tap: show stats, and go full screen where the browser allows it.
-  document.addEventListener('click', function () {
+  // ---- Details and full screen ----
+
+  function toggleDetails() {
     info.style.display = info.style.display === 'block' ? 'none' : 'block';
     updateInfo();
     var root = document.documentElement;
@@ -156,14 +212,110 @@
       var request = root.requestFullscreen();
       if (request && request.catch) request.catch(function () {});
     }
+  }
+
+  menu.addEventListener('click', function (e) {
+    e.stopPropagation();
+    toggleDetails();
   });
+
+  // ---- Touch: taps and swipes on the picture are performed on the phone ----
+
+  var stroke = null;
+
+  // Where (clientX, clientY) falls on the phone screen, as fractions. Null when outside it,
+  // unless clamp is set (a swipe may run past the edge of the picture).
+  function onPicture(clientX, clientY, clamp) {
+    if (!rect) return null;
+    var x = (clientX - rect.x) / rect.w, y = (clientY - rect.y) / rect.h;
+    if (clamp) return [Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))];
+    return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? [x, y] : null;
+  }
+
+  function ripple(clientX, clientY) {
+    var dot = document.createElement('div');
+    dot.className = 'touch';
+    dot.style.left = clientX + 'px';
+    dot.style.top = clientY + 'px';
+    document.body.appendChild(dot);
+    requestAnimationFrame(function () {
+      dot.style.transform = 'scale(1.8)';
+      dot.style.opacity = '0';
+    });
+    setTimeout(function () { dot.remove(); }, 400);
+  }
+
+  // A finished stroke as the phone expects it: `d=<ms>&p=x,y;x,y;...`. Barely moving is a tap
+  // (or a long press if held); anything else is a swipe along the sampled points.
+  function gestureBody(points, ms) {
+    var x0 = points[0][0], y0 = points[0][1], far = 0;
+    for (var i = 1; i < points.length; i++) {
+      far = Math.max(far, Math.hypot((points[i][0] - x0) * rect.w, (points[i][1] - y0) * rect.h));
+    }
+    var list, duration;
+    if (far < 12) {
+      list = [points[0]];
+      duration = ms < 450 ? 60 : Math.min(ms, 1500);
+    } else {
+      var step = Math.ceil(points.length / 60);
+      list = points.filter(function (p, i) { return i % step === 0 || i === points.length - 1; });
+      duration = Math.max(100, Math.min(ms, 3000));
+    }
+    return 'd=' + Math.round(duration) + '&p=' +
+      list.map(function (p) { return p[0].toFixed(4) + ',' + p[1].toFixed(4); }).join(';');
+  }
+
+  function sendGesture(body) {
+    fetch('input', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'text/plain', 'X-Car-Mirror-Token': phone.token },
+      body: body
+    }).then(function (r) {
+      if (r.status === 403 || r.status === 409) refreshStatus(); // new session, or touch was turned off
+    }).catch(function () {});
+  }
+
+  canvas.addEventListener('pointerdown', function (e) {
+    var p = onPicture(e.clientX, e.clientY, false);
+    if (!p || paused || !phone.touch || !phone.token) {
+      toggleDetails();
+      return;
+    }
+    e.preventDefault();
+    stroke = { id: e.pointerId, points: [p], start: e.timeStamp, last: e.timeStamp };
+    if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+    ripple(e.clientX, e.clientY);
+  });
+
+  canvas.addEventListener('pointermove', function (e) {
+    if (!stroke || e.pointerId !== stroke.id || e.timeStamp - stroke.last < 16) return;
+    stroke.points.push(onPicture(e.clientX, e.clientY, true));
+    stroke.last = e.timeStamp;
+  });
+
+  function endStroke(e, cancelled) {
+    if (!stroke || e.pointerId !== stroke.id) return;
+    var s = stroke;
+    stroke = null;
+    if (cancelled || !rect) return;
+    s.points.push(onPicture(e.clientX, e.clientY, true));
+    sendGesture(gestureBody(s.points, e.timeStamp - s.start));
+  }
+
+  canvas.addEventListener('pointerup', function (e) { endStroke(e, false); });
+  canvas.addEventListener('pointercancel', function (e) { endStroke(e, true); });
+
+  // ---- Start ----
 
   var forceMjpeg = /[?&]mode=mjpeg\b/.test(location.search);
   if (forceMjpeg || typeof fetch !== 'function' || typeof createImageBitmap !== 'function') {
-    startMjpeg();
+    startMjpeg(); // view only: no touch without fetch
   } else {
     window.addEventListener('resize', fitCanvas);
     fitCanvas();
+    refreshStatus();
+    setInterval(refreshStatus, 5000);
     pollLoop();
   }
 })();

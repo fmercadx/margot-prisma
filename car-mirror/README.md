@@ -24,8 +24,26 @@ isn't on `main`). Installing a newer one replaces the old one.
 4. In the car's browser, type the address the app shows, for example
    `100-73-0-1.sslip.io:8080`.
 
-When the car reaches the phone, the app shows **Car connected**. Tap the car's screen to
-show the frame rate and go full screen.
+When the car reaches the phone, the app shows **Car connected**. The **⋯** button in the
+car screen's top-left corner shows the frame rate and goes full screen.
+
+Quicker next time: add the **Car Mirror** tile to Quick Settings, or long-press the app
+icon and choose **Start mirroring**. Android still asks to share the screen each time; no
+app can skip that.
+
+## Features
+
+- **Touch control.** Tap, swipe and long-press on the car's screen to control the phone.
+  Turn it on from the app (it opens Android's Accessibility settings). It only performs
+  taps: it is set up so it can't read the screen or what you type.
+- **Pause.** **Pause** in the app or the notification blanks the car's screen until you
+  tap **Resume**. Useful before opening messages or banking. Taps from the car are ignored
+  while paused.
+- **Pause while moving** (off by default). Uses GPS speed to blank the picture while the
+  car moves, and brings it back about 5 seconds after you stop. It also pauses maps, which
+  is why it's off by default.
+- **Auto quality.** When the Wi-Fi can't keep up, the picture gets a little softer instead
+  of stuttering, then sharpens again. The picture setting you choose is the upper limit.
 
 ## How it works
 
@@ -52,6 +70,8 @@ show the frame rate and go full screen.
 - **Who can watch.** The server listens only on `100.73.0.1`, which only devices on your
   hotspot can reach. It also refuses requests that name any other host, so a web page can't
   point its own domain at your phone and read the screen.
+- **Who can tap.** A tap must carry a token that changes every session and that only the
+  car's own Car Mirror page can read. Another web page open in the car can't send taps.
 
 ## If the car's page doesn't load
 
@@ -69,7 +89,8 @@ show the frame rate and go full screen.
 - **Protected apps show black.** Netflix, Disney+, banking apps and others block screen
   capture, and Android enforces that.
 - **No sound** goes through the browser. Pair the phone with the car over Bluetooth.
-- **View only.** You can't control the phone from the car's touchscreen yet.
+- **Touch is performed after you lift your finger.** A drag on a map happens as one quick
+  swipe when you let go, not while you move. Pinch-to-zoom isn't supported.
 - **The phone screen must stay on.** The app keeps it on, dimmed. Pressing the power
   button stops the picture.
 - **Battery.** Compressing frames is steady work. Keep the phone plugged in.
@@ -80,7 +101,8 @@ show the frame rate and go full screen.
 
 The car stops video in its own browser while you drive. This app draws still images, so
 the car may keep showing it. Use it like a phone on a dash mount: navigation is fine, video
-is not. Local laws about screens the driver can see still apply.
+is not. Local laws about screens the driver can see still apply. **Pause while moving**
+(above) enforces this, at the cost of maps.
 
 ## Signing
 
@@ -114,9 +136,18 @@ Then in the repo's **Settings → Secrets and variables → Actions**, add
 workflow run. Download it from the run's page and upload it in Play Console.
 
 What only you can do in Play Console: open a developer account; run a 12-tester, 14-day
-closed test if it is a personal account (organization accounts are exempt); fill in the
-VPN declaration, the foreground-service declaration (screen capture, with a short demo
-video), and the data safety form ("no data collected").
+closed test if it is a personal account (organization accounts are exempt); and fill in:
+
+- the **VPN** declaration;
+- the **foreground service** declaration: screen capture, and location for the driving
+  pause, each with a short demo video;
+- the **Accessibility API** declaration for touch control. The app shows its own
+  explanation before sending users to Settings, as Play requires;
+- **location** permission details (optional feature, used on the phone only);
+- the **data safety** form: no data collected or shared.
+
+Accessibility and location get the closest review. If either holds up approval, they can
+be left out of the store build without touching the rest.
 
 ## Development
 
@@ -125,17 +156,18 @@ repo root.
 
 | Path | What |
 | --- | --- |
-| `core/` | Frame hub, HTTP server, viewer page. Plain Kotlin, no Android, tested on the JVM. |
-| `app/` | The Android app: screen capture, the VPN address, the one-screen UI. |
-| `tools/viewer-smoke.cjs` | Drives the viewer page in Chromium against a fake phone. |
+| `core/` | Frame hub, HTTP server, viewer page, gestures, auto quality, the moving/stopped rule. Plain Kotlin, no Android, tested on the JVM. |
+| `app/` | The Android app: screen capture, the VPN address, touch, the driving pause, the tile, the one-screen UI. |
+| `tools/viewer-smoke.cjs` | Drives the viewer page in Chromium against a fake phone, including touch and pause. |
 
 ```bash
 # Core tests (any machine with a JDK)
 ./gradlew -PcoreOnly :core:test
 
-# The viewer page against a moving test pattern, then the browser checks
-./gradlew -PcoreOnly :core:demoServer --args="8090" &   # wait for READY
-node tools/viewer-smoke.cjs http://127.0.0.1:8090/      # needs `npm i playwright`
+# The viewer page against a fake phone, then the browser checks (needs `npm i playwright`).
+# The control folder lets the test pause the fake phone and see the taps it received.
+./gradlew -PcoreOnly :core:demoServer --args="8090 --control $PWD/build/smoke" &   # wait for READY
+node tools/viewer-smoke.cjs http://127.0.0.1:8090/ --control $PWD/build/smoke
 
 # The APK (needs the Android SDK; CI does this on every push)
 ./gradlew :app:assembleRelease

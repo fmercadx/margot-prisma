@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Car Mirror</string>
+    <string name="touch_service_label">Car Mirror touch control</string>
+    <string name="touch_service_description">Lets taps and swipes on your car\'s screen control this phone while Car Mirror is mirroring. It only performs those taps: it can\'t read what\'s on your screen or what you type, and nothing is collected or sent anywhere.</string>
+    <string name="shortcut_start_short">Start mirroring</string>
+    <string name="shortcut_start_long">Start mirroring to the car</string>
 </resources>

@@ -1,11 +1,13 @@
 package io.github.fmercadx.carmirror
 
+import android.Manifest
 import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.drawable.Icon
 import android.media.projection.MediaProjection
@@ -17,8 +19,11 @@ import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.system.OsConstants
+import io.github.fmercadx.carmirror.core.AutoQuality
 import io.github.fmercadx.carmirror.core.CarUrls
 import io.github.fmercadx.carmirror.core.FrameHub
+import io.github.fmercadx.carmirror.core.Gesture
+import io.github.fmercadx.carmirror.core.MirrorControl
 import io.github.fmercadx.carmirror.core.MirrorServer
 import io.github.fmercadx.carmirror.core.Quality
 import java.io.IOException
@@ -34,6 +39,9 @@ import java.net.NetworkInterface
  * car's packets for it come to the phone because the phone is the car's gateway. The VPN is
  * limited to this app, routes nothing but that one address, and is bypassable, so every other
  * app's traffic, and this app's, flows as if it were not there.
+ *
+ * The picture can be paused two ways: by the user (privacy) or, when they opted in, by GPS
+ * while the car is moving (driving). While paused the car gets no frames and no taps.
  */
 class MirrorService : VpnService() {
 
@@ -44,11 +52,29 @@ class MirrorService : VpnService() {
     private var server: MirrorServer? = null
     private var tunnel: ParcelFileDescriptor? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var motion: MotionWatcher? = null
+    private var firstUrl: String? = null
+
+    private var pausedByUser = false
+    private var pausedByDriving = false
+
+    /** Taps from the car, performed by [TouchService] when the user has turned it on. */
+    private val touch = object : MirrorControl {
+        override val touchAvailable: Boolean get() = TouchService.instance != null
+
+        override fun perform(gesture: Gesture): Boolean {
+            val service = TouchService.instance ?: return false
+            service.perform(gesture)
+            return true
+        }
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> start(intent)
             ACTION_STOP -> stopMirroring(problem = null)
+            ACTION_PAUSE -> setPausedByUser(true)
+            ACTION_RESUME -> setPausedByUser(false)
             // Started some other way, e.g. by "always-on VPN" in settings: nothing to do.
             else -> if (projection == null) stopSelf()
         }
@@ -67,8 +93,13 @@ class MirrorService : VpnService() {
     private fun start(intent: Intent) {
         if (projection != null) return
         createChannel()
-        // Android 14 requires the foreground service to be running before the projection is created.
-        startForeground(NOTIFICATION_ID, notification("Starting…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        val watchMotion = intent.getBooleanExtra(EXTRA_PAUSE_WHILE_MOVING, false) &&
+            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        // Android 14 requires the foreground service to be running before the projection is
+        // created, and it may only claim the location type if location permission is held.
+        var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+        if (watchMotion) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        startForeground(NOTIFICATION_ID, notification("Starting…"), types)
 
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
         val data = intent.resultData()
@@ -97,17 +128,24 @@ class MirrorService : VpnService() {
             val ourIps = if (vpn != null) listOf(CarUrls.VIRTUAL_IP) else localIps
             val frames = FrameHub()
             hub = frames
-            val httpServer = MirrorServer(frames, hostAllowed = { CarUrls.isOurHost(it, ourIps) })
+            val autoQuality = AutoQuality(max = quality.jpegQuality)
+            val httpServer = MirrorServer(
+                frames,
+                hostAllowed = { CarUrls.isOurHost(it, ourIps) },
+                control = touch,
+                autoQuality = autoQuality,
+            )
             // With the tunnel up, listen only on the virtual address. Only devices that use
             // this phone as their gateway (the hotspot) can reach it, so someone sharing a
             // café Wi-Fi network with the phone cannot open the stream.
             val port = bind(httpServer, if (vpn != null) InetAddress.getByName(CarUrls.VIRTUAL_IP) else null)
             server = httpServer
 
-            capture = ScreenCapture(this, mp, frames, quality).also { it.start() }
+            capture = ScreenCapture(this, mp, frames, quality, autoQuality).also { it.start() }
             keepScreenOn()
 
             val urls = if (vpn != null) CarUrls.forVirtualIp(port) else CarUrls.forLocalAddresses(port, localIps)
+            firstUrl = urls.firstOrNull()
             val problem = when {
                 vpn != null -> null
                 wantTunnel -> "Test mode: the VPN could not be started (is another VPN app on?), so the car's " +
@@ -116,11 +154,47 @@ class MirrorService : VpnService() {
                     "These addresses work from a laptop on the same hotspot. Tap Stop, then Start, and allow it."
             }
             MirrorState.started(tunnelUp = vpn != null, urls = urls, server = httpServer, problem = problem)
-            service<NotificationManager>()
-                .notify(NOTIFICATION_ID, notification(urls.firstOrNull() ?: "No network address found"))
+
+            if (watchMotion) {
+                val watcher = MotionWatcher(this) { moving ->
+                    pausedByDriving = moving
+                    applyPause()
+                }
+                if (watcher.start()) {
+                    motion = watcher
+                    MirrorState.watchingMotion = true
+                }
+            }
+            applyPause()
+            MirrorTileService.refresh(this)
         } catch (e: Exception) {
             stopMirroring("Could not start: ${e.message ?: e.javaClass.simpleName}")
         }
+    }
+
+    private fun setPausedByUser(value: Boolean) {
+        if (projection == null) return
+        pausedByUser = value
+        applyPause()
+    }
+
+    /** Pushes the combined pause state to the car, the encoder, the screen and the notification. */
+    private fun applyPause() {
+        val reason = when {
+            pausedByUser -> "privacy"
+            pausedByDriving -> "driving"
+            else -> null
+        }
+        hub?.setPaused(reason)
+        capture?.setPaused(reason != null)
+        MirrorState.paused = reason
+        val text = when (reason) {
+            "privacy" -> "Paused. The car's screen is blank."
+            "driving" -> "Paused while the car is moving."
+            else -> firstUrl ?: "No network address found"
+        }
+        service<NotificationManager>().notify(NOTIFICATION_ID, notification(text))
+        MirrorTileService.refresh(this)
     }
 
     private fun establishTunnel(): ParcelFileDescriptor? = try {
@@ -176,6 +250,8 @@ class MirrorService : VpnService() {
 
     /** Tears everything down. Safe to call more than once. */
     private fun release() {
+        motion?.stop()
+        motion = null
         capture?.stop()
         capture = null
         hub?.close()
@@ -192,6 +268,8 @@ class MirrorService : VpnService() {
         tunnel = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
+        pausedByUser = false
+        pausedByDriving = false
     }
 
     private fun stopMirroring(problem: String?) {
@@ -199,6 +277,7 @@ class MirrorService : VpnService() {
         MirrorState.stopped(problem)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+        MirrorTileService.refresh(this)
     }
 
     private fun createChannel() {
@@ -207,26 +286,34 @@ class MirrorService : VpnService() {
         service<NotificationManager>().createNotificationChannel(channel)
     }
 
+    private fun action(label: String, action: String, requestCode: Int): Notification.Action {
+        val intent = PendingIntent.getService(
+            this, requestCode,
+            Intent(this, MirrorService::class.java).setAction(action),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        return Notification.Action.Builder(null as Icon?, label, intent).build()
+    }
+
     private fun notification(text: String): Notification {
         val open = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        val stop = PendingIntent.getService(
-            this, 1,
-            Intent(this, MirrorService::class.java).setAction(ACTION_STOP),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
-        return Notification.Builder(this, CHANNEL_ID)
+        val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Mirroring to your car")
+            .setContentTitle(if (MirrorState.paused != null) "Mirroring paused" else "Mirroring to your car")
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
-            .addAction(Notification.Action.Builder(null as Icon?, "Stop", stop).build())
-            .build()
+        if (projection != null) {
+            builder.addAction(
+                if (pausedByUser) action("Resume", ACTION_RESUME, 2) else action("Pause", ACTION_PAUSE, 3),
+            )
+        }
+        return builder.addAction(action("Stop", ACTION_STOP, 1)).build()
     }
 
     private fun Intent.resultData(): Intent? =
@@ -240,10 +327,13 @@ class MirrorService : VpnService() {
     companion object {
         const val ACTION_START = "io.github.fmercadx.carmirror.START"
         const val ACTION_STOP = "io.github.fmercadx.carmirror.STOP"
+        const val ACTION_PAUSE = "io.github.fmercadx.carmirror.PAUSE"
+        const val ACTION_RESUME = "io.github.fmercadx.carmirror.RESUME"
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT_DATA = "resultData"
         const val EXTRA_QUALITY = "quality"
         const val EXTRA_TUNNEL = "tunnel"
+        const val EXTRA_PAUSE_WHILE_MOVING = "pauseWhileMoving"
 
         private const val CHANNEL_ID = "mirroring"
         private const val NOTIFICATION_ID = 1

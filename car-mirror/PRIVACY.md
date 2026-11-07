@@ -1,6 +1,6 @@
 # Car Mirror privacy policy
 
-Effective November 7, 2026.
+Effective November 7, 2026 (touch control and the driving pause added the same day).
 
 Car Mirror shows your Android phone's screen in your car's web browser. This policy covers
 the Car Mirror app.
@@ -36,15 +36,31 @@ browser through public DNS, like any web address. That lookup reveals only the a
 itself, which is the same for every user. The app does not contact sslip.io or any other
 service.
 
+## Touch control (optional)
+
+If you turn on touch control, Car Mirror uses Android's Accessibility permission to perform
+the taps and swipes you make on your car's screen. That is all it does with it: it is set up
+so it cannot read what is on your screen or what you type, and it receives no information
+about other apps. Taps are performed on your phone and not recorded. It is off until you
+turn it on in Android's settings, and you can turn it off there any time.
+
+## Pause while the car is moving (optional)
+
+If you turn this on, Car Mirror reads your phone's GPS speed while mirroring, only to decide
+whether the car is moving. Location is used on your phone and is never stored, logged or
+sent anywhere. When mirroring stops, so does the GPS.
+
 ## Permissions
 
 | Permission | Why |
 | --- | --- |
 | Screen capture | To mirror your screen. Android asks you each time you start. |
 | VPN | To add the address your car can open, as described above. |
-| Notifications | To show that mirroring is on, with a Stop button. |
+| Notifications | To show that mirroring is on, with Pause and Stop buttons. |
 | Network access | So your car can connect to the app. |
 | Keep screen on | A screen that turns off has nothing to mirror. |
+| Accessibility (optional) | Touch control, as described above. |
+| Location (optional) | Pause while the car is moving, as described above. |
 
 ## Children
 

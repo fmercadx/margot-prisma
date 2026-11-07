@@ -24,10 +24,22 @@ class MirrorServerTest {
         hostAllowed: (String) -> Boolean = { true },
         longPollMs: Long = 200,
         maxConnections: Int = 16,
+        control: MirrorControl? = null,
+        autoQuality: AutoQuality? = null,
     ): Int {
-        val s = MirrorServer(hub, hostAllowed, longPollMs = longPollMs, maxConnections = maxConnections)
+        val s = MirrorServer(hub, hostAllowed, control, autoQuality, longPollMs = longPollMs, maxConnections = maxConnections)
         server = s
         return s.start(0, loopback)
+    }
+
+    /** Stands in for the phone's touch service. */
+    private class FakePhone(var touchOn: Boolean = true, var succeeds: Boolean = true) : MirrorControl {
+        val performed = mutableListOf<Gesture>()
+        override val touchAvailable get() = touchOn
+        override fun perform(gesture: Gesture): Boolean {
+            performed += gesture
+            return succeeds
+        }
     }
 
     @AfterTest
@@ -292,5 +304,154 @@ class MirrorServerTest {
         } finally {
             second.stop()
         }
+    }
+
+    // ---- Touch control ----
+
+    private fun post(port: Int, body: String, token: String?, extraHeaders: String = ""): Response =
+        connect(port).use { socket ->
+            val tokenHeader = if (token == null) "" else "X-Car-Mirror-Token: $token\r\n"
+            val bytes = body.toByteArray()
+            socket.getOutputStream().write(
+                ("POST /input HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n$tokenHeader" +
+                    "Content-Length: ${bytes.size}\r\n$extraHeaders\r\n").toByteArray() + bytes,
+            )
+            readResponse(BufferedInputStream(socket.getInputStream()))
+        }
+
+    @Test
+    fun `a tap reaches the phone only with this session's token`() {
+        val phone = FakePhone()
+        val port = startServer(control = phone)
+        val token = server!!.token
+        assertEquals(403, post(port, "d=60&p=0.5,0.5", token = null).status)
+        assertEquals(403, post(port, "d=60&p=0.5,0.5", token = "from-an-earlier-session").status)
+        assertTrue(phone.performed.isEmpty(), "performed a gesture without the token")
+
+        assertEquals(204, post(port, "d=60&p=0.5,0.25", token).status)
+        assertEquals(0.25f, phone.performed.single().points.single().y)
+        assertTrue(MirrorServer(hub).token != token, "tokens must differ between sessions")
+    }
+
+    @Test
+    fun `refuses taps while paused, while touch is off, or when the phone can't`() {
+        val phone = FakePhone()
+        val port = startServer(control = phone)
+        val token = server!!.token
+
+        hub.setPaused("privacy")
+        assertEquals(409, post(port, "d=60&p=0.5,0.5", token).status)
+        hub.setPaused(null)
+
+        phone.touchOn = false
+        assertEquals(409, post(port, "d=60&p=0.5,0.5", token).status)
+        phone.touchOn = true
+
+        phone.succeeds = false
+        assertEquals(409, post(port, "d=60&p=0.5,0.5", token).status)
+        assertEquals(1, phone.performed.size, "only the last attempt should have reached the phone")
+    }
+
+    @Test
+    fun `rejects malformed, oversized and unlengthed input`() {
+        val phone = FakePhone()
+        val port = startServer(control = phone)
+        val token = server!!.token
+        assertEquals(400, post(port, "d=60&p=2,2", token).status)
+        assertEquals(413, post(port, "d=60&p=" + "0.5,0.5;".repeat(1000), token).status)
+        connect(port).use { socket ->
+            socket.getOutputStream().write("POST /input HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Car-Mirror-Token: $token\r\n\r\n".toByteArray())
+            assertEquals(411, readResponse(BufferedInputStream(socket.getInputStream())).status)
+        }
+        assertTrue(phone.performed.isEmpty())
+    }
+
+    @Test
+    fun `without touch support the endpoint does not exist`() {
+        val port = startServer(control = null)
+        assertEquals(404, post(port, "d=60&p=0.5,0.5", server!!.token).status)
+    }
+
+    @Test
+    fun `refuses a cross-site preflight, so other pages cannot send taps`() {
+        val port = startServer(control = FakePhone())
+        connect(port).use { socket ->
+            send(socket, "/input", method = "OPTIONS",
+                extra = "Origin: http://evil.example\r\nAccess-Control-Request-Method: POST\r\n" +
+                    "Access-Control-Request-Headers: x-car-mirror-token\r\n")
+            val response = readResponse(BufferedInputStream(socket.getInputStream()))
+            assertEquals(405, response.status)
+            assertTrue(response.headers.keys.none { it.startsWith("access-control-") }, "sent CORS headers")
+        }
+    }
+
+    @Test
+    fun `status reports touch, quality and the session token`() {
+        val port = startServer(control = FakePhone(), autoQuality = AutoQuality(max = 70))
+        val json = get(port, "/status").text
+        assertTrue("\"touch\":true" in json, json)
+        assertTrue("\"jpegQuality\":70" in json, json)
+        assertTrue("\"token\":\"${server!!.token}\"" in json, json)
+        assertTrue("\"paused\":null" in json, json)
+    }
+
+    // ---- Pause ----
+
+    @Test
+    fun `a paused viewer gets the pause, never the frame`() {
+        val port = startServer(longPollMs = 150)
+        hub.publish(byteArrayOf(1, 2, 3), 2, 2)
+        hub.setPaused("privacy")
+
+        val first = get(port, "/frame?after=0")
+        assertEquals(204, first.status)
+        assertEquals("privacy", first.headers["x-mirror-paused"])
+
+        // Knowing it is paused, the viewer waits the full poll and still gets nothing.
+        val started = System.nanoTime()
+        val waiting = get(port, "/frame?after=0&paused=privacy")
+        assertEquals(204, waiting.status)
+        assertTrue((System.nanoTime() - started) / 1_000_000 >= 100, "did not wait while paused")
+
+        hub.setPaused(null)
+        val resumed = get(port, "/frame?after=0&paused=privacy")
+        assertEquals(204, resumed.status)
+        assertEquals("", resumed.headers["x-mirror-paused"])
+
+        val live = get(port, "/frame?after=0")
+        assertEquals(200, live.status)
+        assertEquals("", live.headers["x-mirror-paused"])
+    }
+
+    @Test
+    fun `the MJPEG fallback goes black while paused`() {
+        val port = startServer()
+        hub.publish(byteArrayOf(9, 8, 7), 2, 2)
+        connect(port).use { socket ->
+            send(socket, "/stream.mjpeg")
+            val input = BufferedInputStream(socket.getInputStream())
+            val (_, headers) = readHead(input)
+            val boundary = headers["content-type"]!!.substringAfter("boundary=")
+            assertEquals("--$boundary", readLine(input))
+            assertContentEquals(byteArrayOf(9, 8, 7), readResponseBodyOfPart(input))
+
+            hub.setPaused("privacy")
+            readLine(input) // CRLF after the previous part
+            assertEquals("--$boundary", readLine(input))
+            val black = readResponseBodyOfPart(input)
+            assertEquals(0xFF.toByte(), black[0])
+            assertEquals(0xD8.toByte(), black[1], "not a JPEG")
+            assertTrue(black.size > 100, "too small to be the black frame")
+        }
+    }
+
+    @Test
+    fun `tells auto quality how many frames the car skipped`() {
+        val quality = AutoQuality(max = 70, min = 40, windowMs = 0)
+        val port = startServer(autoQuality = quality)
+        repeat(5) { hub.publish(byteArrayOf(it.toByte()), 1, 1) }
+        // The car drew frame 1 and now gets frame 5: it skipped 2, 3 and 4.
+        assertEquals("5", get(port, "/frame?after=1").headers["x-frame-seq"])
+        assertEquals(60, quality.current)
     }
 }

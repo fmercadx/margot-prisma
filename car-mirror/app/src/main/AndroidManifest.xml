@@ -8,6 +8,16 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Keeps the phone screen on (dimmed) while mirroring; a screen that turns off has nothing to mirror. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!--
+        Only for the opt-in "pause the picture while the car is moving": GPS speed, read while
+        mirroring, never stored or sent. Asked for when the user turns that switch on.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <!-- GPS is only needed for the optional driving pause; the app works without it. -->
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
     <application
         android:allowBackup="false"
@@ -25,20 +35,49 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Long-press the app icon: "Start mirroring". -->
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         </activity>
 
         <!--
             One service does both jobs: it captures the screen (a media-projection foreground
             service) and it is the VpnService that gives the phone an address the car's
             browser will open. The VPN carries no traffic; see MirrorService.establishTunnel.
+            The location type is claimed only when the driving pause is on.
         -->
         <service
             android:name=".MirrorService"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection"
+            android:foregroundServiceType="mediaProjection|location"
             android:permission="android.permission.BIND_VPN_SERVICE">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
+        <!-- Touch control. Performs gestures only; see res/xml/touch_service.xml. -->
+        <service
+            android:name=".TouchService"
+            android:exported="true"
+            android:label="@string/touch_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/touch_service" />
+        </service>
+
+        <!-- Quick Settings tile: start and stop mirroring. -->
+        <service
+            android:name=".MirrorTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_notification"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
     </application>

@@ -19,8 +19,10 @@ alone also runs on branch pushes, because each build publishes a release.
 
 **`car-mirror/` network exposure is deliberate.** Its VPN covers only the app
 and routes a single `/32`, and its server binds only that address and checks
-the Host header. Widening any of these would expose the phone's screen to
-whoever shares a network with it.
+the Host header. `POST /input` (touch control) also needs the per-session token
+from `/status` in a custom header, and the server never sends CORS headers.
+Widening any of these would let whoever shares a network with the phone, or
+any page open in the car's browser, see the screen or tap on the phone.
 
 **Two Railway services, two configs.** The root `railway.json` and `Procfile`
 belong to the credit analyzer's Flask app. `shepherds-whisper/railway.json` and
@@ -127,8 +129,8 @@ cd shepherds-whisper && npm ci && npm run build && npm run smoke
 # The APK itself cannot build here (dl.google.com is blocked); CI builds it.
 # Maven Central sometimes answers 429 through the proxy: just rerun.
 cd car-mirror && ./gradlew -PcoreOnly :core:test
-cd car-mirror && ./gradlew -PcoreOnly :core:demoServer --args="8090" &   # wait for READY
-cd car-mirror && NODE_PATH=$(npm root -g) node tools/viewer-smoke.cjs http://127.0.0.1:8090/
+cd car-mirror && ./gradlew -PcoreOnly :core:demoServer --args="8090 --control $PWD/build/smoke" &   # wait for READY
+cd car-mirror && NODE_PATH=$(npm root -g) node tools/viewer-smoke.cjs http://127.0.0.1:8090/ --control $PWD/build/smoke
 ```
 
 The smoke scripts take `--browser <path>` if Playwright's Chromium is not on

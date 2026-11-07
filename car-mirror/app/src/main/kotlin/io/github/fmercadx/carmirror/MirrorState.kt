@@ -18,6 +18,12 @@ object MirrorState {
     @Volatile var server: MirrorServer? = null
         private set
 
+    /** Null while live; otherwise why the picture is withheld: "privacy" or "driving". */
+    @Volatile var paused: String? = null
+
+    /** Whether "pause while moving" is actually watching GPS this session. */
+    @Volatile var watchingMotion: Boolean = false
+
     /** Why mirroring stopped or is degraded; null when all is well. */
     @Volatile var problem: String? = null
 
@@ -26,6 +32,7 @@ object MirrorState {
         this.urls = urls
         this.server = server
         this.problem = problem
+        paused = null
         running = true
     }
 
@@ -34,6 +41,8 @@ object MirrorState {
         tunnelUp = false
         urls = emptyList()
         server = null
+        paused = null
+        watchingMotion = false
         this.problem = problem
     }
 }

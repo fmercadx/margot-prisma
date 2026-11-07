@@ -44,15 +44,17 @@ jobs:
 
       # The page the car's browser loads, driven in Chromium against a fake
       # phone: draws frames, letterboxes, recovers from a dropped connection,
-      # and makes no request off the phone. See tools/viewer-smoke.cjs.
+      # sends taps and swipes to the right spot, blanks while paused, and makes
+      # no request off the phone. See tools/viewer-smoke.cjs.
       - name: Viewer page in Chromium
         run: |
           npm install --no-save --no-package-lock playwright@1.49.1
           npx playwright install --with-deps chromium
-          ./gradlew -PcoreOnly :core:demoServer --args="8090" --console=plain > demo.log 2>&1 &
+          CONTROL="$PWD/build/smoke-control"
+          ./gradlew -PcoreOnly :core:demoServer --args="8090 --control $CONTROL" --console=plain > demo.log 2>&1 &
           DEMO=$!
           for i in $(seq 1 180); do grep -q READY demo.log && break; sleep 1; done
-          node tools/viewer-smoke.cjs http://127.0.0.1:8090/ || { cat demo.log; exit 1; }
+          node tools/viewer-smoke.cjs http://127.0.0.1:8090/ --control "$CONTROL" || { cat demo.log; exit 1; }
           kill $DEMO || true
 
       - run: ./gradlew :app:assembleRelease -PbuildNumber=${{ github.run_number }} --console=plain
