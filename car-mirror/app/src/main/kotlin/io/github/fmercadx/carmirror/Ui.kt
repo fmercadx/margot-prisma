@@ -76,21 +76,40 @@ internal class Ui(private val context: Context) {
         minHeight = dp(heightDp)
         minimumHeight = dp(heightDp)
         setPadding(dp(18), 0, dp(18), 0)
+        restyle(this, style, heightDp)
+        setOnClickListener { onClick() }
+    }
+
+    /** Changes a button's emphasis, e.g. Resume becomes the main action while paused. */
+    fun restyle(button: Button, style: Style, heightDp: Int = 56) {
         val (fill, fg) = when (style) {
             Style.PRIMARY -> R.color.accent to R.color.on_accent
             Style.SECONDARY -> R.color.surface_variant to R.color.on_surface
             Style.DANGER -> R.color.danger_container to R.color.danger
             Style.QUIET -> android.R.color.transparent to R.color.accent
         }
-        setTextColor(color(fg))
+        button.setTextColor(color(fg))
         val radius = heightDp / 2
-        background = RippleDrawable(
+        button.background = RippleDrawable(
             ColorStateList.valueOf(color(R.color.ripple)),
             rounded(color(fill), radius),
             rounded(Color.WHITE, radius),
         )
-        setOnClickListener { onClick() }
     }
+
+    /** A bulleted list whose wrapped lines stay indented under their text. */
+    fun bullets(items: List<CharSequence>, sizeSp: Float = 15f, colorId: Int = R.color.on_surface, gapDp: Int = 12) =
+        vertical().apply {
+            items.forEachIndexed { i, item ->
+                addView(horizontal().apply {
+                    gravity = Gravity.TOP
+                    addView(dot(6, R.color.muted), LinearLayout.LayoutParams(dp(6), dp(6)).apply {
+                        topMargin = dp(sizeSp * 0.6f)
+                    })
+                    addView(text(item, sizeSp, colorId), weighted(startDp = 12))
+                }, matchWidth(topDp = if (i == 0) 0 else gapDp))
+            }
+        }
 
     fun divider() = View(context).apply {
         setBackgroundColor(color(R.color.outline))

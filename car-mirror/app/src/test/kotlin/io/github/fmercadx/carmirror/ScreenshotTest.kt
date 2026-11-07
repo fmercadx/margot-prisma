@@ -73,7 +73,7 @@ class ScreenshotTest {
         mirroring()
         shoot("5-page-wont-load-light") { page ->
             click(page, "Page won't load?")
-            assertTrue("troubleshooting tips did not open", findText(page) { it.startsWith("• Type the address") }?.isShown == true)
+            assertTrue("troubleshooting tips did not open", findText(page) { it.startsWith("Type the address exactly") }?.isShown == true)
         }
     }
 
@@ -84,6 +84,7 @@ class ScreenshotTest {
         shoot("6-paused-light") { page ->
             assertVisible(page, "Resume")
             assertVisible(page, "Paused")
+            assertHidden(page, "Pause")
         }
     }
 

@@ -52,7 +52,9 @@ class MainActivity : Activity() {
     private lateinit var runningBlock: LinearLayout
     private lateinit var addressView: TextView
     private lateinit var pauseButton: Button
-    private lateinit var troubleView: TextView
+    private lateinit var troubleBox: LinearLayout
+    private var troubleShownFor: List<String>? = null
+    private var pauseShownAsResume: Boolean? = null
 
     // Checklist card (only before starting)
     private lateinit var checklistCard: LinearLayout
@@ -319,8 +321,17 @@ class MainActivity : Activity() {
         val urls = MirrorState.urls
         addressView.text = urls.firstOrNull()?.removePrefix("http://")?.removeSuffix("/") ?: ""
         addressView.alpha = if (paused != null) 0.45f else 1f
-        pauseButton.text = if (paused == "privacy") "Resume" else "Pause"
-        troubleView.text = troubleText(urls)
+        val resume = paused == "privacy"
+        if (pauseShownAsResume != resume) {
+            pauseShownAsResume = resume
+            pauseButton.text = if (resume) "Resume" else "Pause"
+            ui.restyle(pauseButton, if (resume) Ui.Style.PRIMARY else Ui.Style.SECONDARY)
+        }
+        if (troubleShownFor != urls) {
+            troubleShownFor = urls
+            troubleBox.removeAllViews()
+            troubleBox.addView(ui.bullets(troubleTips(urls), sizeSp = 14f, colorId = R.color.muted, gapDp = 8))
+        }
 
         // Checklist: tick the hotspot step when the phone can tell it is on.
         val hotspotOn = Hotspot.looksOn()
@@ -352,17 +363,17 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun troubleText(urls: List<String>): String {
-        val lines = mutableListOf(
-            "• Type the address exactly, including \":8080\".",
-            "• Still nothing? Type http:// in front of it.",
+    private fun troubleTips(urls: List<String>): List<String> {
+        val tips = mutableListOf(
+            "Type the address exactly, including \":8080\".",
+            "Still nothing? Type http:// in front of it.",
         )
         if (urls.size > 1) {
-            lines += "• These open the same page:\n" + urls.drop(1).joinToString("\n") { "    $it" }
+            tips += "These open the same page:\n" + urls.drop(1).joinToString("\n") { it.removeSuffix("/") }
         }
-        lines += "• Check the car is on your phone's hotspot: Wi-Fi icon at the top of the car's screen."
-        lines += "• Turn off any other VPN app on your phone, then Stop and Start again."
-        return lines.joinToString("\n")
+        tips += "Check the car is on your phone's hotspot: the Wi-Fi icon at the top of the car's screen."
+        tips += "Turn off any other VPN app on your phone, then Stop and Start again."
+        return tips
     }
 
     // ---- Layout ----
@@ -448,11 +459,14 @@ class MainActivity : Activity() {
                 addView(ui.button("Stop", Ui.Style.DANGER) { onStopMirroring() }, ui.weighted(startDp = 10))
             }, ui.matchWidth(topDp = 16))
 
-            troubleView = ui.text("", 14f, R.color.muted, topDp = 4).apply { visibility = View.GONE }
+            troubleBox = ui.vertical().apply {
+                visibility = View.GONE
+                setPadding(0, ui.dp(4), 0, 0)
+            }
             addView(ui.button("Page won't load?", Ui.Style.QUIET, heightDp = 44) {
-                troubleView.visibility = if (troubleView.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                troubleBox.visibility = if (troubleBox.visibility == View.VISIBLE) View.GONE else View.VISIBLE
             }, ui.matchWidth(topDp = 6))
-            addView(troubleView, ui.matchWidth())
+            addView(troubleBox, ui.matchWidth())
         }
         addView(runningBlock, ui.matchWidth())
     }
@@ -540,13 +554,7 @@ class MainActivity : Activity() {
             "Keep your phone plugged in. Mirroring uses battery.",
             "Don't watch video while driving. Treat it like a phone on a dash mount.",
         )
-        tips.forEachIndexed { i, tip ->
-            addView(ui.horizontal().apply {
-                gravity = Gravity.TOP
-                addView(ui.dot(6, R.color.muted), LinearLayout.LayoutParams(ui.dp(6), ui.dp(6)).apply { topMargin = ui.dp(9) })
-                addView(ui.text(tip, 15f), ui.weighted(startDp = 12))
-            }, ui.matchWidth(topDp = if (i == 0) 0 else 12))
-        }
+        addView(ui.bullets(tips))
     }
 
     /** Dark status-bar icons on the light theme, light icons on the dark one. */
