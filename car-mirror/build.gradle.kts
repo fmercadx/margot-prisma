@@ -7,7 +7,7 @@ buildscript {
         if (!coreOnly) google()
     }
     dependencies {
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0")
-        if (!coreOnly) classpath("com.android.tools.build:gradle:8.7.3")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.2.21")
+        if (!coreOnly) classpath("com.android.tools.build:gradle:8.13.0")
     }
 }

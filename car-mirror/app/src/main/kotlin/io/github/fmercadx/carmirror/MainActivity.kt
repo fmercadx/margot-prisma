@@ -2,6 +2,7 @@ package io.github.fmercadx.carmirror
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -101,13 +102,26 @@ class MainActivity : Activity() {
         val consent = VpnService.prepare(this)
         if (consent == null) {
             askForScreen(tunnel = true)
-        } else {
-            try {
-                startActivityForResult(consent, REQUEST_VPN)
-            } catch (e: ActivityNotFoundException) {
-                askForScreen(tunnel = false)
-            }
+            return
         }
+        // Android's own VPN prompt says nothing about why. Explain first, so the user can
+        // make an informed choice; Google Play also expects VPN use to be disclosed in-app.
+        AlertDialog.Builder(this)
+            .setTitle("Why Car Mirror uses a VPN")
+            .setMessage(VPN_EXPLANATION)
+            .setPositiveButton("Continue") { _, _ ->
+                try {
+                    startActivityForResult(consent, REQUEST_VPN)
+                } catch (e: ActivityNotFoundException) {
+                    askForScreen(tunnel = false)
+                }
+            }
+            .setNegativeButton("Cancel") { _, _ ->
+                MirrorState.problem = "Mirroring needs the VPN step so the car can reach your phone."
+                render()
+            }
+            .setCancelable(false)
+            .show()
     }
 
     private fun askForScreen(tunnel: Boolean) {
@@ -230,7 +244,12 @@ class MainActivity : Activity() {
                 textSize = 16f
             })
         }
-        qualityGroup.check(QUALITY_ID_BASE + Quality.BALANCED.ordinal)
+        val settings = getSharedPreferences(SETTINGS, MODE_PRIVATE)
+        val saved = Quality.entries.firstOrNull { it.name == settings.getString(KEY_QUALITY, null) } ?: Quality.BALANCED
+        qualityGroup.check(QUALITY_ID_BASE + saved.ordinal)
+        qualityGroup.setOnCheckedChangeListener { _, _ ->
+            settings.edit().putString(KEY_QUALITY, selectedQuality().name).apply()
+        }
         column += qualityGroup
 
         column += text("Setting up", 18f, bold = true, top = 28)
@@ -288,5 +307,16 @@ class MainActivity : Activity() {
         const val REQUEST_VPN = 2
         const val REQUEST_SCREEN = 3
         const val QUALITY_ID_BASE = 1000
+        const val SETTINGS = "settings"
+        const val KEY_QUALITY = "quality"
+
+        const val VPN_EXPLANATION =
+            "Your Tesla's browser won't open the kind of address a phone hotspot uses. " +
+                "Car Mirror gives your phone one extra address that the car will open, and " +
+                "Android only allows that through its VPN feature.\n\n" +
+                "This VPN carries no traffic. Your apps use the internet exactly as before, " +
+                "nothing is sent through it, and nothing leaves your phone except the picture " +
+                "going to your car over the hotspot.\n\n" +
+                "Next, Android will ask you to allow the connection."
     }
 }

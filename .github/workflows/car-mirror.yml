@@ -26,6 +26,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Set once the Google Play upload key is added as repo secrets; see car-mirror/README.md.
+      HAS_UPLOAD_KEY: ${{ secrets.CAR_MIRROR_UPLOAD_KEYSTORE != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -56,11 +59,31 @@ jobs:
 
       - run: cp app/build/outputs/apk/release/app-release.apk car-mirror-${{ github.run_number }}.apk
 
+      # The bundle Google Play takes, signed with the private upload key rather than the
+      # shared one. It is a workflow artifact only, never attached to the public release.
+      - name: Google Play bundle
+        if: env.HAS_UPLOAD_KEY == 'true'
+        env:
+          UPLOAD_KEYSTORE_BASE64: ${{ secrets.CAR_MIRROR_UPLOAD_KEYSTORE }}
+          CAR_MIRROR_UPLOAD_PASSWORD: ${{ secrets.CAR_MIRROR_UPLOAD_PASSWORD }}
+        run: |
+          export CAR_MIRROR_UPLOAD_KEYSTORE="$RUNNER_TEMP/upload.keystore"
+          echo "$UPLOAD_KEYSTORE_BASE64" | base64 -d > "$CAR_MIRROR_UPLOAD_KEYSTORE"
+          ./gradlew :app:bundleRelease -PplayUpload -PbuildNumber=${{ github.run_number }} --console=plain
+          cp app/build/outputs/bundle/release/app-release.aab car-mirror-${{ github.run_number }}.aab
+          rm -f "$CAR_MIRROR_UPLOAD_KEYSTORE"
+
       # Paths below are repo-root relative: `defaults.run` does not apply to `uses:` steps.
       - uses: actions/upload-artifact@v4
         with:
           name: car-mirror-apk
           path: car-mirror/car-mirror-*.apk
+
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_UPLOAD_KEY == 'true'
+        with:
+          name: car-mirror-play-bundle
+          path: car-mirror/car-mirror-*.aab
 
       - uses: softprops/action-gh-release@v2
         with:
