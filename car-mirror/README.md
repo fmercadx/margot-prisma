@@ -18,13 +18,14 @@ isn't on `main`). Installing a newer one replaces the old one.
 ## Use it in the car
 
 1. Turn on the phone's **hotspot**.
-2. In the car, open **Controls → Wi-Fi** and join the hotspot.
+2. In the car, open **Controls → Wi-Fi** and join the hotspot, not your home Wi-Fi.
 3. Open **Car Mirror** and tap **Start mirroring**. Allow the VPN, then screen sharing.
    Choose **Entire screen**: a single shared app goes black when you switch apps.
 4. In the car's browser, type the address the app shows, for example
-   `100-73-0-1.sslip.io:8080`.
+   `169-254-73-1.sslip.io:8080`. If it doesn't load, try the others the app lists, in order.
 
-When the car reaches the phone, the app shows **Car connected**. The **⋯** button in the
+When the car reaches the phone, the app shows **Connected to your car** and which address
+the car opened. The **⋯** button in the
 car screen's top-left corner shows the frame rate and goes full screen.
 
 Quicker next time: add the **Car Mirror** tile to Quick Settings, or long-press the app
@@ -51,25 +52,33 @@ app can skip that.
  phone                                              car
  ┌────────────────────────────────────┐   hotspot   ┌─────────────────┐
  │ screen → JPEG frames → web server  │◄───────────►│ browser shows   │
- │                 at 100.73.0.1:8080 │    Wi-Fi    │ the frames      │
+ │   at 169.254.73.1 or hotspot :8080 │    Wi-Fi    │ the frames      │
  └────────────────────────────────────┘             └─────────────────┘
 ```
 
 - The phone captures its own screen (Android's screen-sharing API), compresses each change
   to a JPEG, and serves it from a small web server inside the app. The car's browser asks
   for the next frame as soon as it has drawn the last one.
-- **Why there's a VPN.** Tesla's browser refuses private addresses like `192.168.x.x`, and
-  those are the only addresses a phone hotspot hands out. So the app gives the phone a
-  second address, `100.73.0.1`, which isn't private. The car can reach it because the
-  phone is the car's gateway. Android only allows adding an address like this through a
-  VPN. This VPN covers only this app and routes only that one address. Your other apps'
-  traffic is untouched and nothing is sent anywhere.
-- **Why the odd hostname.** `100-73-0-1.sslip.io` is a public DNS name that always
-  resolves to `100.73.0.1`, for browsers that won't open a bare IP address. Looking it up
+- **Two ways in.** The car can open the phone at the hotspot's own address (like
+  `192.168.43.1`), or at `169.254.73.1`, an extra address the app adds. Tesla's browser has
+  been reported to refuse private addresses like `192.168.x.x`, which is all a hotspot hands
+  out, so the extra address is there in case it does. Which one your car accepts isn't
+  documented; the app lists them all, most likely first.
+- **Why there's a VPN.** Android only lets an app add an address through a VPN. This VPN
+  covers only this app and routes only that one address. Your other apps' traffic is
+  untouched and nothing is sent anywhere.
+- **Why link-local.** Since Android 13, the system drops packets that arrive from outside a
+  VPN addressed to the VPN's own address, unless the address is link-local (`169.254.x.x`).
+  The first version used `100.73.0.1`, and Android dropped the car's requests to it, which
+  showed in the car as `ERR_CONNECTION_TIMED_OUT`.
+- **Why the odd hostname.** `169-254-73-1.sslip.io` is a public DNS name that always
+  resolves to `169.254.73.1`, for browsers that won't open a bare IP address. Looking it up
   needs the hotspot to have internet. After that, the frames go directly from phone to car.
-- **Who can watch.** The server listens only on `100.73.0.1`, which only devices on your
-  hotspot can reach. It also refuses requests that name any other host, so a web page can't
-  point its own domain at your phone and read the screen.
+- **Who can watch.** The server answers only connections that arrive on the extra address
+  or the hotspot's own address, which only devices on your hotspot can reach; a connection
+  from, say, a café Wi-Fi network the phone is on is closed unanswered. It also refuses
+  requests that name any other host, so a web page can't point its own domain at your phone
+  and read the screen.
 - **Who can tap.** A tap must carry a token that changes every session and that only the
   car's own Car Mirror page can read. Another web page open in the car can't send taps.
 

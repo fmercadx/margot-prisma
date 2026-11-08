@@ -27,18 +27,18 @@ import io.github.fmercadx.carmirror.core.MirrorControl
 import io.github.fmercadx.carmirror.core.MirrorServer
 import io.github.fmercadx.carmirror.core.Quality
 import java.io.IOException
-import java.net.Inet4Address
 import java.net.InetAddress
-import java.net.NetworkInterface
 
 /**
  * Captures the screen and serves it to the car's browser.
  *
- * It is a [VpnService] only to get [CarUrls.VIRTUAL_IP] onto the phone: the Tesla browser
- * will not open the private address a hotspot hands out, but it will open this one, and the
- * car's packets for it come to the phone because the phone is the car's gateway. The VPN is
- * limited to this app, routes nothing but that one address, and is bypassable, so every other
- * app's traffic, and this app's, flows as if it were not there.
+ * It is a [VpnService] only to get [CarUrls.VIRTUAL_IP] onto the phone, as a second way in
+ * besides the hotspot's own address, which is private and which the Tesla browser may
+ * refuse. The car's packets for it come to the phone because the phone is the car's gateway.
+ * The address is link-local because Android 13+ drops packets from outside a VPN addressed to
+ * any other kind of VPN address (see [CarUrls]). The VPN is limited to this app, routes
+ * nothing but that one address, and is bypassable, so every app's traffic, this one's
+ * included, flows as if it were not there.
  *
  * The picture can be paused two ways: by the user (privacy) or, when they opted in, by GPS
  * while the car is moving (driving). While paused the car gets no frames and no taps.
@@ -53,7 +53,9 @@ class MirrorService : VpnService() {
     private var tunnel: ParcelFileDescriptor? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var motion: MotionWatcher? = null
-    private var firstUrl: String? = null
+
+    /** The hotspot's addresses, looked up at most every few seconds by the server threads. */
+    @Volatile private var hotspotIps: Pair<Long, List<String>> = 0L to emptyList()
 
     private var pausedByUser = false
     private var pausedByDriving = false
@@ -124,36 +126,35 @@ class MirrorService : VpnService() {
 
             val vpn = if (wantTunnel) establishTunnel() else null
             tunnel = vpn
-            val localIps = localIpv4Addresses()
-            val ourIps = if (vpn != null) listOf(CarUrls.VIRTUAL_IP) else localIps
             val frames = FrameHub()
             hub = frames
             val autoQuality = AutoQuality(max = quality.jpegQuality)
+            // Answer only on the VPN address and the hotspot's own addresses: devices that use
+            // this phone as their gateway. Someone sharing a café Wi-Fi network with the phone
+            // reaches it on its Wi-Fi address, and that connection is closed unanswered.
+            val ourIps = { listOfNotNull(if (vpn != null) CarUrls.VIRTUAL_IP else null) + currentHotspotIps() }
             val httpServer = MirrorServer(
                 frames,
-                hostAllowed = { CarUrls.isOurHost(it, ourIps) },
+                hostAllowed = { CarUrls.isOurHost(it, ourIps()) },
                 control = touch,
                 autoQuality = autoQuality,
+                acceptLocal = { local -> local.hostAddress in ourIps() },
             )
-            // With the tunnel up, listen only on the virtual address. Only devices that use
-            // this phone as their gateway (the hotspot) can reach it, so someone sharing a
-            // café Wi-Fi network with the phone cannot open the stream.
-            val port = bind(httpServer, if (vpn != null) InetAddress.getByName(CarUrls.VIRTUAL_IP) else null)
+            // IPv4 wildcard: the hotspot may come up, or change address, after mirroring starts.
+            val port = bind(httpServer, InetAddress.getByName("0.0.0.0"))
             server = httpServer
 
             capture = ScreenCapture(this, mp, frames, quality, autoQuality).also { it.start() }
             keepScreenOn()
 
-            val urls = if (vpn != null) CarUrls.forVirtualIp(port) else CarUrls.forLocalAddresses(port, localIps)
-            firstUrl = urls.firstOrNull()
             val problem = when {
                 vpn != null -> null
-                wantTunnel -> "Test mode: the VPN could not be started (is another VPN app on?), so the car's " +
-                    "browser cannot open the phone. These addresses work from a laptop on the same hotspot."
-                else -> "Test mode: the VPN was not allowed, so the car's browser cannot open the phone. " +
-                    "These addresses work from a laptop on the same hotspot. Tap Stop, then Start, and allow it."
+                wantTunnel -> "The VPN didn't start (is another VPN app on?), so only your hotspot's own " +
+                    "address is offered. If the car won't open it, turn off the other VPN, then Stop and Start."
+                else -> "Without the VPN, only your hotspot's own address is offered. If the car won't open " +
+                    "it, tap Stop, then Start, and allow the VPN."
             }
-            MirrorState.started(tunnelUp = vpn != null, urls = urls, server = httpServer, problem = problem)
+            MirrorState.started(tunnelUp = vpn != null, port = port, server = httpServer, problem = problem)
 
             if (watchMotion) {
                 val watcher = MotionWatcher(this) { moving ->
@@ -191,7 +192,8 @@ class MirrorService : VpnService() {
         val text = when (reason) {
             "privacy" -> "Paused. The car's screen is blank."
             "driving" -> "Paused while the car is moving."
-            else -> firstUrl ?: "No network address found"
+            else -> MirrorState.urls(this).firstOrNull()?.let { "In the car's browser: ${CarUrls.typed(it)}" }
+                ?: "Turn on your hotspot, then connect the car to it."
         }
         service<NotificationManager>().notify(NOTIFICATION_ID, notification(text))
         MirrorTileService.refresh(this)
@@ -227,16 +229,11 @@ class MirrorService : VpnService() {
         throw lastError ?: IOException("could not listen for the car")
     }
 
-    private fun localIpv4Addresses(): List<String> = try {
-        NetworkInterface.getNetworkInterfaces().toList()
-            .filter { it.isUp && !it.isLoopback && !it.name.startsWith("tun") }
-            // Hotspot interfaces first; names vary by phone.
-            .sortedBy { iface -> if (HOTSPOT_PREFIXES.any { iface.name.startsWith(it) }) 0 else 1 }
-            .flatMap { it.inetAddresses.toList() }
-            .filterIsInstance<Inet4Address>()
-            .mapNotNull { it.hostAddress }
-    } catch (e: Exception) {
-        emptyList()
+    private fun currentHotspotIps(): List<String> {
+        val (at, ips) = hotspotIps
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - at < HOTSPOT_LOOKUP_MS) return ips
+        return Hotspot.ipv4(this).also { hotspotIps = now to it }
     }
 
     @Suppress("DEPRECATION") // FLAG_KEEP_SCREEN_ON needs a window; a background service has none.
@@ -338,6 +335,6 @@ class MirrorService : VpnService() {
         private const val CHANNEL_ID = "mirroring"
         private const val NOTIFICATION_ID = 1
         private const val WAKE_LOCK_MAX_MS = 6 * 60 * 60 * 1000L
-        private val HOTSPOT_PREFIXES = listOf("ap", "swlan", "softap", "wlan1", "wlan2")
+        private const val HOTSPOT_LOOKUP_MS = 3_000L
     }
 }

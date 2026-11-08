@@ -44,6 +44,12 @@ class MirrorServer(
     private val hostAllowed: (String) -> Boolean = { true },
     private val control: MirrorControl? = null,
     private val autoQuality: AutoQuality? = null,
+    /**
+     * Which of the phone's own addresses a connection may arrive on. Connections to any other
+     * address are closed unanswered, so the server can listen on all addresses and still
+     * serve only the hotspot and the VPN address, never the phone's Wi-Fi or cellular side.
+     */
+    private val acceptLocal: (InetAddress) -> Boolean = { true },
     private val longPollMs: Long = 10_000,
     private val idleTimeoutMs: Int = 30_000,
     private val maxConnections: Int = 16,
@@ -122,6 +128,11 @@ class MirrorServer(
                 server.accept()
             } catch (e: IOException) {
                 break
+            }
+            val local: InetAddress? = client.localAddress
+            if (local == null || !acceptLocal(local)) {
+                closeQuietly(client)
+                continue
             }
             if (connections.size >= maxConnections) {
                 try {

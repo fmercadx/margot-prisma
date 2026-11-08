@@ -26,8 +26,10 @@ class MirrorServerTest {
         maxConnections: Int = 16,
         control: MirrorControl? = null,
         autoQuality: AutoQuality? = null,
+        acceptLocal: (InetAddress) -> Boolean = { true },
     ): Int {
-        val s = MirrorServer(hub, hostAllowed, control, autoQuality, longPollMs = longPollMs, maxConnections = maxConnections)
+        val s = MirrorServer(hub, hostAllowed, control, autoQuality, acceptLocal,
+            longPollMs = longPollMs, maxConnections = maxConnections)
         server = s
         return s.start(0, loopback)
     }
@@ -292,6 +294,22 @@ class MirrorServerTest {
             }
             assertTrue((System.nanoTime() - started) / 1_000_000 < 3_000, "stop did not release the waiting request")
         }
+    }
+
+    @Test
+    fun `closes connections that arrive on an address it should not serve`() {
+        val seen = mutableListOf<InetAddress>()
+        val port = startServer(acceptLocal = { seen += it; false })
+        connect(port).use { socket ->
+            send(socket, "/")
+            val result = try {
+                socket.getInputStream().read()
+            } catch (_: IOException) {
+                -1
+            }
+            assertEquals(-1, result, "answered on an address it should not serve")
+        }
+        assertEquals(loopback, seen.single(), "the filter should see the address the connection arrived on")
     }
 
     @Test

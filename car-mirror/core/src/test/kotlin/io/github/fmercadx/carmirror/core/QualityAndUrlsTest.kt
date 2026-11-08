@@ -26,33 +26,51 @@ class QualityAndUrlsTest {
     }
 
     @Test
-    fun `the first address uses a hostname, not a bare IP`() {
-        val urls = CarUrls.forVirtualIp(8080)
-        assertEquals("http://100-73-0-1.sslip.io:8080/", urls.first())
-        assertTrue("http://100.73.0.1:8080/" in urls)
+    fun `offers hostnames first, the VPN address before the hotspot, and bare IPs last`() {
+        val urls = CarUrls.toTry(8080, CarUrls.VIRTUAL_IP, listOf("192.168.43.1"))
+        assertEquals(
+            listOf(
+                "http://169-254-73-1.sslip.io:8080/",
+                "http://192-168-43-1.sslip.io:8080/",
+                "http://169.254.73.1:8080/",
+                "http://192.168.43.1:8080/",
+            ),
+            urls,
+        )
+        assertEquals("169-254-73-1.sslip.io:8080", CarUrls.typed(urls.first()))
     }
 
     @Test
-    fun `the virtual address is outside the ranges the car's browser blocks`() {
+    fun `without the VPN, only the hotspot addresses are offered`() {
+        assertEquals(
+            listOf("http://10-1-2-1.sslip.io:8080/", "http://10.1.2.1:8080/"),
+            CarUrls.toTry(8080, virtualIp = null, hotspotIps = listOf("10.1.2.1")),
+        )
+    }
+
+    @Test
+    fun `the VPN address is link-local, which Android 13+ still delivers, and not private`() {
+        // Android drops packets from outside a VPN addressed to the VPN's own address unless
+        // the address is link-local (ConnectivityService.generateIngressDiscardRules).
+        assertTrue(CarUrls.isLinkLocal(CarUrls.VIRTUAL_IP))
         val octets = CarUrls.VIRTUAL_IP.split('.').map { it.toInt() }
-        val private = octets[0] == 10 ||
+        val rfc1918 = octets[0] == 10 ||
             (octets[0] == 172 && octets[1] in 16..31) ||
-            (octets[0] == 192 && octets[1] == 168) ||
-            octets[0] == 127 || (octets[0] == 169 && octets[1] == 254)
-        assertFalse(private, "${CarUrls.VIRTUAL_IP} is a private address")
+            (octets[0] == 192 && octets[1] == 168)
+        assertFalse(rfc1918, "${CarUrls.VIRTUAL_IP} is in a private (RFC 1918) range")
     }
 
     @Test
     fun `accepts only hosts that name the phone`() {
         val ips = listOf(CarUrls.VIRTUAL_IP, "192.168.43.1")
         for (host in listOf(
-            "100-73-0-1.sslip.io:8080", "100-73-0-1.SSLIP.io", "100-73-0-1.nip.io:8081",
-            "100.73.0.1:8080", "100.73.0.1", "192.168.43.1:8080",
+            "169-254-73-1.sslip.io:8080", "169-254-73-1.SSLIP.io", "169-254-73-1.nip.io:8081",
+            "169.254.73.1:8080", "169.254.73.1", "192.168.43.1:8080", "192-168-43-1.sslip.io:8080",
         )) assertTrue(CarUrls.isOurHost(host, ips), host)
 
         for (host in listOf(
-            "", "evil.example:8080", "100-73-0-1.sslip.io.evil.example", "x100-73-0-1.sslip.io",
-            "[::1]:8080", "10.0.0.1:8080",
+            "", "evil.example:8080", "169-254-73-1.sslip.io.evil.example", "x169-254-73-1.sslip.io",
+            "[::1]:8080", "10.0.0.1:8080", "100-73-0-1.sslip.io:8080",
         )) assertFalse(CarUrls.isOurHost(host, ips), host)
     }
 }

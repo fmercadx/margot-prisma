@@ -28,6 +28,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
+import io.github.fmercadx.carmirror.core.CarUrls
 import io.github.fmercadx.carmirror.core.Quality
 
 /**
@@ -51,6 +52,8 @@ class MainActivity : Activity() {
     private lateinit var startButton: Button
     private lateinit var runningBlock: LinearLayout
     private lateinit var addressView: TextView
+    private lateinit var alternativesBox: LinearLayout
+    private var alternativesShownFor: List<String>? = null
     private lateinit var pauseButton: Button
     private lateinit var troubleBox: LinearLayout
     private var troubleShownFor: List<String>? = null
@@ -295,14 +298,17 @@ class MainActivity : Activity() {
         val running = MirrorState.running
         val paused = MirrorState.paused
         val viewer = MirrorState.server?.recentViewers()?.firstOrNull()
+        val urls = MirrorState.urls(this)
 
         // Status: one line that says what is going on, and one that says what to do next.
         val (tone, title, detail) = when {
             !running -> Triple(Tone.IDLE, "Ready to mirror", "Tap Start, then type the address it shows into your Tesla's browser.")
             paused == "privacy" -> Triple(Tone.ATTENTION, "Paused", "Your car's screen is blank. Tap Resume when you're ready.")
             paused == "driving" -> Triple(Tone.ATTENTION, "Paused while driving", "The picture comes back a few seconds after the car stops.")
-            !MirrorState.tunnelUp -> Triple(Tone.ATTENTION, "Test mode", "Your car can't reach the phone yet. See the note below.")
-            viewer != null -> Triple(Tone.GOOD, "Connected to your car", "Your screen is showing on the car.")
+            viewer != null -> Triple(Tone.GOOD, "Connected to your car",
+                "Your screen is showing on the car. It opened ${viewer.host.ifEmpty { viewer.remoteAddress }}.")
+            urls.isEmpty() -> Triple(Tone.ATTENTION, "Turn on your hotspot",
+                "Your car connects through your phone's hotspot. Turn it on, then connect the car to it.")
             else -> Triple(Tone.WAITING, "Waiting for your car", "In your Tesla's browser, go to this address:")
         }
         (statusDot.background as android.graphics.drawable.GradientDrawable).setColor(ui.color(tone.dot))
@@ -318,23 +324,39 @@ class MainActivity : Activity() {
         runningBlock.visibility = if (running) View.VISIBLE else View.GONE
         checklistCard.visibility = if (running) View.GONE else View.VISIBLE
 
-        val urls = MirrorState.urls
-        addressView.text = urls.firstOrNull()?.removePrefix("http://")?.removeSuffix("/") ?: ""
+        addressView.visibility = if (urls.isEmpty()) View.GONE else View.VISIBLE
+        addressView.text = urls.firstOrNull()?.let { CarUrls.typed(it) }.orEmpty()
         addressView.alpha = if (paused != null) 0.45f else 1f
+        // Until the car connects, show every other address too: which one the car's browser
+        // accepts isn't known in advance, and the first that loads is the one to use.
+        val alternatives = if (viewer == null && paused == null) urls.drop(1) else emptyList()
+        if (alternativesShownFor != alternatives) {
+            alternativesShownFor = alternatives
+            alternativesBox.removeAllViews()
+            if (alternatives.isNotEmpty()) {
+                alternativesBox.addView(ui.text("If it doesn't load, try these in order:", 14f, R.color.muted))
+                alternatives.forEachIndexed { i, url ->
+                    alternativesBox.addView(ui.text("${i + 2}.  ${CarUrls.typed(url)}", 16f).apply {
+                        typeface = Typeface.MONOSPACE
+                        setTextIsSelectable(true)
+                    }, ui.matchWidth(topDp = 6))
+                }
+            }
+            alternativesBox.visibility = if (alternatives.isEmpty()) View.GONE else View.VISIBLE
+        }
         val resume = paused == "privacy"
         if (pauseShownAsResume != resume) {
             pauseShownAsResume = resume
             pauseButton.text = if (resume) "Resume" else "Pause"
             ui.restyle(pauseButton, if (resume) Ui.Style.PRIMARY else Ui.Style.SECONDARY)
         }
-        if (troubleShownFor != urls) {
+        if (troubleShownFor == null) {
             troubleShownFor = urls
-            troubleBox.removeAllViews()
-            troubleBox.addView(ui.bullets(troubleTips(urls), sizeSp = 14f, colorId = R.color.muted, gapDp = 8))
+            troubleBox.addView(ui.bullets(TROUBLE_TIPS, sizeSp = 14f, colorId = R.color.muted, gapDp = 8))
         }
 
         // Checklist: tick the hotspot step when the phone can tell it is on.
-        val hotspotOn = Hotspot.looksOn()
+        val hotspotOn = Hotspot.looksOn(this)
         hotspotBadge.text = if (hotspotOn) "✓" else "1"
         hotspotBadge.setTextColor(ui.color(if (hotspotOn) R.color.on_accent else R.color.accent))
         hotspotBadge.background = ui.rounded(ui.color(if (hotspotOn) R.color.success else R.color.accent_container), 14)
@@ -361,19 +383,6 @@ class MainActivity : Activity() {
             running && wantsMotion != MirrorState.watchingMotion -> "Takes effect the next time you start."
             else -> "Blanks the car's screen while you drive, maps included. Uses GPS on your phone only."
         }
-    }
-
-    private fun troubleTips(urls: List<String>): List<String> {
-        val tips = mutableListOf(
-            "Type the address exactly, including \":8080\".",
-            "Still nothing? Type http:// in front of it.",
-        )
-        if (urls.size > 1) {
-            tips += "These open the same page:\n" + urls.drop(1).joinToString("\n") { it.removeSuffix("/") }
-        }
-        tips += "Check the car is on your phone's hotspot: the Wi-Fi icon at the top of the car's screen."
-        tips += "Turn off any other VPN app on your phone, then Stop and Start again."
-        return tips
     }
 
     // ---- Layout ----
@@ -452,6 +461,8 @@ class MainActivity : Activity() {
                 setPadding(ui.dp(12), ui.dp(16), ui.dp(12), ui.dp(16))
             }
             addView(addressView, ui.matchWidth(topDp = 14))
+            alternativesBox = ui.vertical().apply { visibility = View.GONE }
+            addView(alternativesBox, ui.matchWidth(topDp = 12))
 
             addView(ui.horizontal().apply {
                 pauseButton = ui.button("Pause", Ui.Style.SECONDARY) { onPauseToggle() }
@@ -482,8 +493,8 @@ class MainActivity : Activity() {
         addView(hotspot.row, ui.matchWidth(topDp = 14))
 
         addView(step("2", "Connect your Tesla to it",
-            "On the car's screen, tap the Wi-Fi icon at the top and pick your phone's hotspot. " +
-                "The car remembers it next time.").row, ui.matchWidth(topDp = 16))
+            "On the car's screen, tap the Wi-Fi icon at the top and pick your phone's hotspot, " +
+                "not your home Wi-Fi. The car remembers it next time.").row, ui.matchWidth(topDp = 16))
 
         addView(step("3", "Tap Start mirroring",
             "Allow what Android asks, then type the address the app shows into the car's browser.").row,
@@ -585,6 +596,14 @@ class MainActivity : Activity() {
         private const val SETTINGS = "settings"
         private const val KEY_QUALITY = "quality"
         private const val KEY_PAUSE_WHILE_MOVING = "pauseWhileMoving"
+
+        private val TROUBLE_TIPS = listOf(
+            "Check the car is on your phone's hotspot, not your home Wi-Fi: tap the Wi-Fi icon at " +
+                "the top of the car's screen.",
+            "Type the address exactly, including \":8080\".",
+            "Still nothing? Type http:// in front of it.",
+            "Turn off any other VPN app on your phone, then Stop and Start again.",
+        )
 
         private val QUALITY_HELP = mapOf(
             Quality.SMOOTH to "Smoothest motion, slightly softer. Good for video while parked.",

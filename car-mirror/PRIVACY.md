@@ -31,7 +31,7 @@ traffic, and it sends nothing anywhere.
 
 ## The address your car looks up
 
-The address the app shows, such as `100-73-0-1.sslip.io`, is looked up by your car's
+The address the app shows, such as `169-254-73-1.sslip.io`, is looked up by your car's
 browser through public DNS, like any web address. That lookup reveals only the address
 itself, which is the same for every user. The app does not contact sslip.io or any other
 service.

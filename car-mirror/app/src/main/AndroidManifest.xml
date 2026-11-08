@@ -3,6 +3,8 @@
 
     <!-- Server sockets need INTERNET even though nothing leaves the phone's hotspot. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- To tell the networks the phone is a client of from the hotspot it serves (Hotspot.kt). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

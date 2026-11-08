@@ -18,8 +18,10 @@ path-filtered so no product's changes run another's tests. `car-mirror.yml`
 alone also runs on branch pushes, because each build publishes a release.
 
 **`car-mirror/` network exposure is deliberate.** Its VPN covers only the app
-and routes a single `/32`, and its server binds only that address and checks
-the Host header. `POST /input` (touch control) also needs the per-session token
+and routes a single link-local `/32` (link-local because Android 13+ drops
+packets from other interfaces to any other VPN address). Its server listens on
+all addresses but closes connections that don't arrive on that address or the
+hotspot's own (`acceptLocal`), and checks the Host header. `POST /input` (touch control) also needs the per-session token
 from `/status` in a custom header, and the server never sends CORS headers.
 Widening any of these would let whoever shares a network with the phone, or
 any page open in the car's browser, see the screen or tap on the phone.

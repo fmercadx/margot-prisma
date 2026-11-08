@@ -12,6 +12,7 @@ import io.github.fmercadx.carmirror.core.CarUrls
 import io.github.fmercadx.carmirror.core.FrameHub
 import io.github.fmercadx.carmirror.core.MirrorServer
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -36,8 +37,16 @@ import java.io.File
 class ScreenshotTest {
     private val outDir = File(System.getProperty("screenshotDir") ?: "build/screenshots").apply { mkdirs() }
 
+    @Before
+    fun fakeHotspot() {
+        Hotspot.override = listOf("192.168.43.1")
+    }
+
     @After
-    fun reset() = MirrorState.stopped(null)
+    fun reset() {
+        MirrorState.stopped(null)
+        Hotspot.override = null
+    }
 
     @Test
     fun readyLight() = shoot("1-ready-light") { page ->
@@ -54,7 +63,9 @@ class ScreenshotTest {
     fun waitingLight() {
         mirroring()
         shoot("3-waiting-light") { page ->
-            assertVisible(page, "100-73-0-1.sslip.io:8080")
+            assertVisible(page, "169-254-73-1.sslip.io:8080")
+            assertVisible(page, "If it doesn't load, try these in order:")
+            assertVisible(page, "2.  192-168-43-1.sslip.io:8080")
             assertVisible(page, "Stop")
             assertHidden(page, "Start mirroring")
             assertHidden(page, "Before you start")
@@ -96,10 +107,19 @@ class ScreenshotTest {
         }
     }
 
-    private fun mirroring() {
+    @Test
+    fun noHotspotLight() {
+        Hotspot.override = emptyList()
+        mirroring(tunnelUp = false)
+        shoot("8-no-hotspot-light") { page ->
+            assertVisible(page, "Turn on your hotspot")
+        }
+    }
+
+    private fun mirroring(tunnelUp: Boolean = true) {
         MirrorState.started(
-            tunnelUp = true,
-            urls = CarUrls.forVirtualIp(CarUrls.DEFAULT_PORT),
+            tunnelUp = tunnelUp,
+            port = CarUrls.DEFAULT_PORT,
             server = MirrorServer(FrameHub()),
             problem = null,
         )

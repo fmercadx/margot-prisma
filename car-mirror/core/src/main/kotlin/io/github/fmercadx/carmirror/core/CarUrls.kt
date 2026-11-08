@@ -1,35 +1,40 @@
 package io.github.fmercadx.carmirror.core
 
 /**
- * Addresses to type into the car's browser.
+ * Addresses to type into the car's browser, and the rules for which ones the phone answers.
  *
- * The Tesla browser refuses private addresses such as 192.168.x.x, which is exactly what a
- * phone hotspot hands out. So the phone also answers on [VIRTUAL_IP], an address outside the
- * private ranges that exists only on the phone, and the car reaches it because the phone is
- * the car's gateway while the car is on the hotspot.
+ * The car reaches the phone over the phone's hotspot. Two kinds of address can work, and
+ * which ones the Tesla browser accepts is not documented, so the app offers both:
  *
- * Wildcard DNS services turn the address into a hostname (100-73-0-1.sslip.io resolves to
- * 100.73.0.1), for browsers that refuse bare IP addresses. Lookups need internet, which the
- * hotspot provides.
+ *  - The hotspot's own address (192.168.x.1 or similar). Simple, but it is a private
+ *    address, and the Tesla browser has been reported to refuse those.
+ *  - [VIRTUAL_IP], which the app adds to the phone through a VPN. It is link-local, not
+ *    private, and it must be link-local: since Android 13 the system drops packets that
+ *    arrive from outside a VPN addressed to the VPN's own address, *except* for link-local
+ *    addresses (ConnectivityService.generateIngressDiscardRules). 100.73.0.1, used before,
+ *    was dropped that way.
+ *
+ * Each is offered as a hostname too (169-254-73-1.sslip.io resolves to 169.254.73.1), for
+ * a browser that refuses bare IP addresses. Lookups need internet, which the hotspot provides.
  */
 object CarUrls {
-    /** Not in any private range, so the car's browser does not block it. */
-    const val VIRTUAL_IP = "100.73.0.1"
+    /** Link-local, so Android delivers the car's packets to it (see above). */
+    const val VIRTUAL_IP = "169.254.73.1"
 
     const val DEFAULT_PORT = 8080
 
-    /** Most likely to work first; later entries are fallbacks to try in order. */
-    fun forVirtualIp(port: Int, ip: String = VIRTUAL_IP): List<String> {
-        val dashed = ip.replace('.', '-')
-        return listOf(
-            "http://$dashed.sslip.io:$port/",
-            "http://$dashed.nip.io:$port/",
-            "http://$ip:$port/",
-        )
+    /**
+     * Every address the car could use, most likely to work first: hostnames before bare IPs,
+     * and the VPN address (not private) before the hotspot's (private).
+     */
+    fun toTry(port: Int, virtualIp: String?, hotspotIps: List<String>): List<String> {
+        val ips = listOfNotNull(virtualIp) + hotspotIps
+        return ips.map { "http://${it.replace('.', '-')}.sslip.io:$port/" } +
+            ips.map { "http://$it:$port/" }
     }
 
-    /** For checking from a laptop or tablet on the same hotspot; the car will refuse these. */
-    fun forLocalAddresses(port: Int, ips: List<String>): List<String> = ips.map { "http://$it:$port/" }
+    /** "http://169-254-73-1.sslip.io:8080/" as the user types it: "169-254-73-1.sslip.io:8080". */
+    fun typed(url: String): String = url.removePrefix("http://").removeSuffix("/")
 
     /**
      * True when a request's Host header names one of [ips] directly or through the wildcard
@@ -46,4 +51,7 @@ object CarUrls {
             host == ip || host == "$dashed.sslip.io" || host == "$dashed.nip.io"
         }
     }
+
+    /** Whether [ip] is in 169.254.0.0/16. */
+    fun isLinkLocal(ip: String): Boolean = ip.startsWith("169.254.")
 }
