@@ -1,0 +1,14 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    // TypeScript 6 no longer loads every @types package by default.
+    "types": ["jest"]
+  },
+  // Listed explicitly: with `allowJs` from the Expo base, the default glob
+  // would also type-check the exported bundle in dist/.
+  "include": ["App.tsx", "index.ts", "src", "__tests__"]
+}

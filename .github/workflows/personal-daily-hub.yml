@@ -1,0 +1,52 @@
+name: personal-daily-hub app
+
+# Path-filtered, like the other products' workflows, so changes elsewhere in
+# the repo never run this. Nothing here publishes: app-store builds go
+# through EAS, which this workflow does not touch.
+on:
+  pull_request:
+    paths:
+      - 'personal-daily-hub/**'
+      - '.github/workflows/personal-daily-hub.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'personal-daily-hub/**'
+      - '.github/workflows/personal-daily-hub.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: personal-daily-hub-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: personal-daily-hub
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: personal-daily-hub/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      # Reducer, money parsing, local-date keys, the storage layer, and the
+      # whole screen rendered: the paywall on the 4th note, persistence, and
+      # rolling over at midnight.
+      - run: npm test -- --ci
+
+      # Proves Metro can bundle every platform — tsc and Jest do not resolve
+      # platform files (reminders.web.ts) or Hermes-compile anything.
+      - run: npx expo export --platform android --platform ios --platform web --output-dir dist

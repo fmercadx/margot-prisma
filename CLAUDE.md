@@ -1,6 +1,6 @@
 # Working in this repo
 
-Three unrelated products share this repository:
+Four unrelated products share this repository:
 
 - **the salon site** — React + Vite + Tailwind, at the repo root, serving
   `fmercadx.github.io/margot-prisma/`
@@ -8,10 +8,12 @@ Three unrelated products share this repository:
   `fmercadx.github.io/margot-prisma/analyzer/`
 - **`shepherds-whisper/`** — the marketing site for an Oregon adult foster
   home, deployed on Railway, not on Pages
+- **`personal-daily-hub/`** — a React Native + Expo (SDK 58) daily dashboard
+  app; built for phones through EAS, not deployed from this repo
 
 They are independent. `deploy.yml` builds the first two into one `dist/`, and
-`credit-analyzer.yml` and `shepherds-whisper.yml` are path-filtered so no
-product's changes run another's tests.
+`credit-analyzer.yml`, `shepherds-whisper.yml` and `personal-daily-hub.yml` are
+path-filtered so no product's changes run another's tests.
 
 **Two Railway services, two configs.** The root `railway.json` and `Procfile`
 belong to the credit analyzer's Flask app. `shepherds-whisper/railway.json` and
@@ -113,6 +115,11 @@ cd credit-analyzer/mobile  && npm test
 
 # The adult family home site: build, then browser checks against dist/
 cd shepherds-whisper && npm ci && npm run build && npm run smoke
+
+# The daily hub app: types, 54 Jest tests, then bundle every platform.
+# `expo install` and `expo export` need EXPO_OFFLINE=1 here — see below.
+cd personal-daily-hub && npm ci && npm run typecheck && npm test
+EXPO_OFFLINE=1 npx expo export --platform android --platform ios --platform web --output-dir dist
 ```
 
 The smoke scripts take `--browser <path>` if Playwright's Chromium is not on
@@ -176,7 +183,10 @@ addresses only.** Everything else answers `403` to CONNECT — including
 `api.cloudflare.com`, `workers.dev`, Railway, and `fmercadx.github.io` itself.
 
 So deploys that need those hosts cannot be done from here, and the live Pages
-site cannot be fetched to verify. Check with
+site cannot be fetched to verify. The Expo CLI calls `api.expo.dev` to check
+versions and fails on the 403; `EXPO_OFFLINE=1` makes `npx expo install` use
+the SDK's bundled version map instead, and `docs.expo.dev` is unreachable, so
+read the installed packages' `.d.ts` files for current APIs. Check with
 `curl -sS "$HTTPS_PROXY/__agentproxy/status"` rather than assuming either way.
 
 Chromium for Playwright is at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`.
