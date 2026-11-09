@@ -73,4 +73,26 @@ class QualityAndUrlsTest {
             "[::1]:8080", "10.0.0.1:8080", "100-73-0-1.sslip.io:8080",
         )) assertFalse(CarUrls.isOurHost(host, ips), host)
     }
+
+    @Test
+    fun `an address kind that worked before is offered first`() {
+        val urls = CarUrls.toTry(8080, CarUrls.VIRTUAL_IP, listOf("192.168.43.1"), preferred = CarUrls.Kind.HOTSPOT_IP)
+        assertEquals("http://192.168.43.1:8080/", urls.first())
+        assertEquals(4, urls.size)
+        // A remembered kind that isn't available this time (no VPN) just falls back to the usual order.
+        assertEquals(
+            "http://10-0-0-1.sslip.io:8080/",
+            CarUrls.toTry(8080, null, listOf("10.0.0.1"), preferred = CarUrls.Kind.VPN_NAME).first(),
+        )
+    }
+
+    @Test
+    fun `recognises which kind of address the car typed`() {
+        val hotspot = listOf("192.168.43.1")
+        assertEquals(CarUrls.Kind.VPN_NAME, CarUrls.kindOf("169-254-73-1.sslip.io:8080", CarUrls.VIRTUAL_IP, hotspot))
+        assertEquals(CarUrls.Kind.VPN_IP, CarUrls.kindOf("169.254.73.1:8080", CarUrls.VIRTUAL_IP, hotspot))
+        assertEquals(CarUrls.Kind.HOTSPOT_NAME, CarUrls.kindOf("192-168-43-1.nip.io:8080", CarUrls.VIRTUAL_IP, hotspot))
+        assertEquals(CarUrls.Kind.HOTSPOT_IP, CarUrls.kindOf("192.168.43.1", CarUrls.VIRTUAL_IP, hotspot))
+        assertEquals(null, CarUrls.kindOf("evil.example:8080", CarUrls.VIRTUAL_IP, hotspot))
+    }
 }

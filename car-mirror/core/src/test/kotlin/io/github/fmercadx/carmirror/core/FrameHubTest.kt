@@ -88,6 +88,19 @@ class FrameHubTest {
     }
 
     @Test
+    fun `knows whether anyone is watching`() {
+        val hub = FrameHub()
+        assertTrue(!hub.hasViewers(), "nobody has asked yet")
+        val waiter = thread { hub.next(0, 300) }
+        Thread.sleep(50)
+        assertTrue(hub.hasViewers(), "a viewer is waiting")
+        waiter.join()
+        assertTrue(hub.hasViewers(withinMs = 2_000), "a viewer that just got its answer will ask again")
+        Thread.sleep(150)
+        assertTrue(!hub.hasViewers(withinMs = 100), "nobody has asked for a while")
+    }
+
+    @Test
     fun `close wakes waiting viewers`() {
         val hub = FrameHub()
         val done = CountDownLatch(1)

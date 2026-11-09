@@ -60,6 +60,22 @@ class MirrorService : VpnService() {
     private var pausedByUser = false
     private var pausedByDriving = false
 
+    /** Whether a car was watching at the last check, and when one last was. */
+    private var carConnected = false
+    private var lastCarAt = 0L
+
+    /**
+     * Every few seconds: keep the notification's car status current, remember which kind of
+     * address the car used, and stop if no car has been watching for a long while, so a
+     * forgotten session doesn't keep the phone's screen on and the battery draining.
+     */
+    private val carCheck = object : Runnable {
+        override fun run() {
+            checkCar()
+            mainHandler.postDelayed(this, CAR_CHECK_MS)
+        }
+    }
+
     /** Taps from the car, performed by [TouchService] when the user has turned it on. */
     private val touch = object : MirrorControl {
         override val touchAvailable: Boolean get() = TouchService.instance != null
@@ -170,6 +186,9 @@ class MirrorService : VpnService() {
                     MirrorState.watchingMotion = true
                 }
             }
+            lastCarAt = android.os.SystemClock.elapsedRealtime()
+            carConnected = false
+            mainHandler.postDelayed(carCheck, CAR_CHECK_MS)
             applyPause()
             MirrorTileService.refresh(this)
         } catch (e: Exception) {
@@ -193,14 +212,38 @@ class MirrorService : VpnService() {
         hub?.setPaused(reason)
         capture?.setPaused(reason != null)
         MirrorState.paused = reason
-        val text = when (reason) {
-            "privacy" -> "Paused. The car's screen is blank."
-            "driving" -> "Paused while the car is moving."
-            else -> MirrorState.urls(this).firstOrNull()?.let { "In the car's browser: ${CarUrls.typed(it)}" }
+        updateNotification()
+        MirrorTileService.refresh(this)
+    }
+
+    private fun updateNotification() {
+        val text = when {
+            MirrorState.paused == "privacy" -> "Paused. The car's screen is blank."
+            MirrorState.paused == "driving" -> "Paused while the car is moving."
+            carConnected -> "Your car is connected."
+            else -> MirrorState.urls(this).firstOrNull()?.let { "Waiting for your car: ${CarUrls.typed(it)}" }
                 ?: "Turn on your hotspot, then connect the car to it."
         }
         service<NotificationManager>().notify(NOTIFICATION_ID, notification(text))
-        MirrorTileService.refresh(this)
+    }
+
+    private fun checkCar() {
+        val httpServer = server ?: return
+        val now = android.os.SystemClock.elapsedRealtime()
+        val viewer = httpServer.recentViewers(CAR_GONE_MS).firstOrNull()
+        val connected = viewer != null
+        if (connected) {
+            lastCarAt = now
+            CarUrls.kindOf(viewer!!.host, if (tunnel != null) CarUrls.VIRTUAL_IP else null, currentHotspotIps())
+                ?.let { WorkingAddress.remember(this, it) }
+        }
+        if (connected != carConnected) {
+            carConnected = connected
+            updateNotification()
+        }
+        if (now - lastCarAt >= AUTO_STOP_MS) {
+            stopMirroring("Stopped after ${AUTO_STOP_MS / 60_000} minutes without your car, to save battery.")
+        }
     }
 
     private fun establishTunnel(): ParcelFileDescriptor? = try {
@@ -251,6 +294,7 @@ class MirrorService : VpnService() {
 
     /** Tears everything down. Safe to call more than once. */
     private fun release() {
+        mainHandler.removeCallbacks(carCheck)
         motion?.stop()
         motion = null
         capture?.stop()
@@ -343,5 +387,9 @@ class MirrorService : VpnService() {
         private const val NOTIFICATION_ID = 1
         private const val WAKE_LOCK_MAX_MS = 6 * 60 * 60 * 1000L
         private const val HOTSPOT_LOOKUP_MS = 3_000L
+        private const val CAR_CHECK_MS = 5_000L
+        /** A car whose page hasn't asked for anything for this long has gone. */
+        private const val CAR_GONE_MS = 15_000L
+        private const val AUTO_STOP_MS = 10 * 60_000L
     }
 }

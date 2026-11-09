@@ -34,7 +34,7 @@ object MirrorState {
      */
     fun urls(context: Context): List<String> =
         if (!running) emptyList()
-        else CarUrls.toTry(port, if (tunnelUp) CarUrls.VIRTUAL_IP else null, Hotspot.ipv4(context))
+        else CarUrls.toTry(port, if (tunnelUp) CarUrls.VIRTUAL_IP else null, Hotspot.ipv4(context), WorkingAddress.known(context))
 
     fun started(tunnelUp: Boolean, port: Int, server: MirrorServer, problem: String?) {
         this.tunnelUp = tunnelUp

@@ -296,17 +296,24 @@ class MainActivity : Activity() {
             return
         }
         val restrictedNote = if (Build.VERSION.SDK_INT >= 33) {
-            "\n\nIf Android says it's a restricted setting: open Settings → Apps → Car Mirror, " +
-                "tap ⋮ (top right) → Allow restricted settings, then try again."
+            "\n\nIf it's greyed out or Android says \"App was denied access\": tap App info below, " +
+                "then ⋮ (top right) → Allow restricted settings, then come back and switch it on. " +
+                "Android asks this once, for apps not installed from the Play Store."
         } else {
             ""
         }
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Turn on touch control")
             .setMessage(TOUCH_EXPLANATION + restrictedNote)
             .setPositiveButton("Open settings") { _, _ -> openAccessibilitySettings() }
             .setNegativeButton("Not now", null)
-            .show()
+        if (Build.VERSION.SDK_INT >= 33) {
+            // For "App was denied access": the Allow restricted settings switch is on this page.
+            dialog.setNeutralButton("App info") { _, _ ->
+                openFirst(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName")))
+            }
+        }
+        dialog.show()
     }
 
     private fun openAccessibilitySettings() = openFirst(
@@ -375,7 +382,9 @@ class MainActivity : Activity() {
         addressView.alpha = if (paused != null) 0.45f else 1f
         // Until the car connects, show every other address too: which one the car's browser
         // accepts isn't known in advance, and the first that loads is the one to use.
-        val alternatives = if (viewer == null && paused == null) urls.drop(1) else emptyList()
+        // Once the car has shown which kind of address it accepts, offer only that one.
+        val knownGood = WorkingAddress.known(this) != null
+        val alternatives = if (viewer == null && paused == null && !knownGood) urls.drop(1) else emptyList()
         if (alternativesShownFor != alternatives) {
             alternativesShownFor = alternatives
             alternativesBox.removeAllViews()
@@ -396,9 +405,14 @@ class MainActivity : Activity() {
             pauseButton.text = if (resume) "Resume" else "Pause"
             ui.restyle(pauseButton, if (resume) Ui.Style.PRIMARY else Ui.Style.SECONDARY)
         }
-        if (troubleShownFor == null) {
+        if (troubleShownFor != urls) {
             troubleShownFor = urls
-            troubleBox.addView(ui.bullets(TROUBLE_TIPS, sizeSp = 14f, colorId = R.color.muted, gapDp = 8))
+            troubleBox.removeAllViews()
+            val tips = TROUBLE_TIPS.toMutableList()
+            if (knownGood && urls.size > 1) {
+                tips += "Other addresses that reach the same page:\n" + urls.drop(1).joinToString("\n") { CarUrls.typed(it) }
+            }
+            troubleBox.addView(ui.bullets(tips, sizeSp = 14f, colorId = R.color.muted, gapDp = 8))
         }
 
         // Checklist: tick the hotspot step when the phone can tell it is on.
@@ -630,6 +644,8 @@ class MainActivity : Activity() {
         val tips = listOf(
             "Full screen in the car: tap the Tesla browser's full-screen button, the two arrows " +
                 "at the left of its address bar. Videos fill the screen on their own.",
+            "Smoothest picture: set your phone's hotspot to 5 GHz (in hotspot settings, Band). " +
+                "It carries about twice as much as 2.4 GHz.",
             "Sound plays through your car over Bluetooth, as usual.",
             "Quicker start: add the Car Mirror tile to Quick Settings, or long-press the app icon.",
             "Keep your phone plugged in. Mirroring uses battery.",
@@ -671,6 +687,7 @@ class MainActivity : Activity() {
         private val TROUBLE_TIPS = listOf(
             "Check the car is on your phone's hotspot, not your home Wi-Fi: tap the Wi-Fi icon at " +
                 "the top of the car's screen.",
+            "Choppy picture? Set your hotspot to 5 GHz (hotspot settings, Band), then reconnect the car.",
             "Type the address exactly, including \":8080\".",
             "Still nothing? Type http:// in front of it.",
             "Turn off any other VPN app on your phone, then Stop and Start again.",

@@ -24,6 +24,8 @@ class FrameHub {
     private var nextSeq = 1L
     private var paused: String? = null
     private var closed = false
+    private var waiting = 0
+    private var lastWaitEndedNs = Long.MIN_VALUE / 2
 
     fun publish(jpeg: ByteArray, width: Int, height: Int): Frame = synchronized(lock) {
         val frame = Frame(nextSeq++, jpeg, width, height)
@@ -58,17 +60,32 @@ class FrameHub {
     fun awaitUpdate(after: Long, viewerPaused: String?, timeoutMs: Long): Update? {
         val deadline = System.nanoTime() + timeoutMs * 1_000_000
         synchronized(lock) {
-            val seen = if (after >= nextSeq) 0 else after
-            while (true) {
-                if (closed) return null
-                if (paused != viewerPaused) return Update(null, paused)
-                val frame = latest
-                if (paused == null && frame != null && frame.seq > seen) return Update(frame, null)
-                val remainingMs = (deadline - System.nanoTime()) / 1_000_000
-                if (remainingMs <= 0) return null
-                lock.wait(remainingMs)
+            waiting++
+            try {
+                val seen = if (after >= nextSeq) 0 else after
+                while (true) {
+                    if (closed) return null
+                    if (paused != viewerPaused) return Update(null, paused)
+                    val frame = latest
+                    if (paused == null && frame != null && frame.seq > seen) return Update(frame, null)
+                    val remainingMs = (deadline - System.nanoTime()) / 1_000_000
+                    if (remainingMs <= 0) return null
+                    lock.wait(remainingMs)
+                }
+            } finally {
+                waiting--
+                lastWaitEndedNs = System.nanoTime()
             }
         }
+    }
+
+    /**
+     * Whether any viewer wants frames: one is waiting now, or one finished waiting within
+     * [withinMs] (it is decoding and will ask again). With nobody watching, the phone can skip
+     * compressing frames altogether.
+     */
+    fun hasViewers(withinMs: Long = 2_000): Boolean = synchronized(lock) {
+        waiting > 0 || System.nanoTime() - lastWaitEndedNs < withinMs * 1_000_000
     }
 
     /** Wakes every waiting viewer; later waits return immediately. */

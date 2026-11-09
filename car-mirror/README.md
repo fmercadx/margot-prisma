@@ -50,6 +50,11 @@ app can skip that.
   it (a phone is longer than a video). The car's page trims bars that are symmetrical and
   hold still for a few seconds, so the video fills the car's screen, and shows the whole
   picture again the moment anything appears in them. Taps still land in the right place.
+- **Remembers what works.** Once the car connects, the app notes which kind of address it
+  used and from then on shows only that one (the rest stay under "Page won't load?").
+- **Looks after the battery.** Frames are compressed only while a car is watching, and
+  mirroring stops by itself after 10 minutes without the car, putting brightness back and
+  letting the phone's screen sleep. The notification says whether the car is connected.
 - **Dim this phone** (off by default). Turns the phone's brightness right down while
   mirroring and puts it back afterwards. Covering the screen would black out the car's
   picture too; brightness doesn't affect it. Needs "Modify system settings".
@@ -132,6 +137,11 @@ an APK your phone would accept as an update to this app. **Install Car Mirror on
 this repo's releases page**, never from a file someone sends you.
 
 ## Selling on Google Play
+
+The store kit is in [`store/`](store/): the listing text ([listing.md](store/listing.md)), the
+512 px icon and the feature graphic, and suggested answers for every Play Console form
+([play-console-answers.md](store/play-console-answers.md)). Each GitHub release also carries
+`store-*.png`, 1080 × 1920 screenshots of the real app.
 
 Already in place:
 

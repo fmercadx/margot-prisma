@@ -28,8 +28,8 @@ import java.nio.ByteBuffer
  * one encoded, including the last one before the screen goes still.
  *
  * JPEG quality comes from [autoQuality], which lowers it when the car can't keep up. While
- * paused, images are still copied (cheap) but not encoded, and the newest one is encoded
- * the moment mirroring resumes.
+ * paused, or while no car is watching, images are still copied (cheap) but not compressed
+ * (the expensive part); the newest one is compressed as soon as someone wants it.
  *
  * Everything after [start] runs on one background thread, so none of the state below needs
  * locking.
@@ -96,6 +96,15 @@ class ScreenCapture(
             imageReader.surface, null, handler,
         )
         displayManager.registerDisplayListener(displayListener, handler)
+        handler.postDelayed(viewerCheck, VIEWER_CHECK_MS)
+    }
+
+    /** Compresses a frame held back while nobody was watching, once a car shows up. */
+    private val viewerCheck = object : Runnable {
+        override fun run() {
+            scheduleEncode()
+            handler.postDelayed(this, VIEWER_CHECK_MS)
+        }
     }
 
     /** Stops or resumes encoding. Safe to call from any thread. */
@@ -110,6 +119,7 @@ class ScreenCapture(
         handler.post {
             displayManager.unregisterDisplayListener(displayListener)
             handler.removeCallbacks(encodeTask)
+            handler.removeCallbacks(viewerCheck)
             display?.release()
             display = null
             reader?.close()
@@ -167,7 +177,7 @@ class ScreenCapture(
     }
 
     private fun scheduleEncode() {
-        if (paused || !dirty || encodeScheduled) return
+        if (paused || !dirty || encodeScheduled || !hub.hasViewers()) return
         encodeScheduled = true
         val wait = (lastEncodeAt + quality.frameIntervalMs - SystemClock.uptimeMillis()).coerceAtLeast(0)
         handler.postDelayed(encodeTask, wait)
@@ -223,5 +233,9 @@ class ScreenCapture(
         jpeg.reset()
         frame.compress(Bitmap.CompressFormat.JPEG, autoQuality.current, jpeg)
         hub.publish(jpeg.toByteArray(), width, height)
+    }
+
+    private companion object {
+        const val VIEWER_CHECK_MS = 300L
     }
 }

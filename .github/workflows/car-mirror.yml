@@ -67,8 +67,14 @@ jobs:
       - name: Phone screen previews
         run: |
           ./gradlew :app:testDebugUnitTest --console=plain
-          for f in app/build/screenshots/*.png; do cp "$f" "preview-$(basename "$f")"; done
-          ls -l preview-*.png
+          for f in app/build/screenshots/*.png; do
+            name=$(basename "$f")
+            case "$name" in
+              store-*) cp "$f" "$name" ;;          # 1080x1920 Play Store screenshots
+              *) cp "$f" "preview-$name" ;;        # full-page previews for review
+            esac
+          done
+          ls -l preview-*.png store-*.png
 
       # The bundle Google Play takes, signed with the private upload key rather than the
       # shared one. It is a workflow artifact only, never attached to the public release.
@@ -105,9 +111,11 @@ jobs:
           files: |
             car-mirror/car-mirror-*.apk
             car-mirror/preview-*.png
+            car-mirror/store-*.png
           body: |
             Open this page on your Android phone and tap **car-mirror-${{ github.run_number }}.apk** below to install it.
             Installing over an earlier build keeps your settings. Setup steps: car-mirror/README.md.
-            The preview-*.png files show what each screen of this build looks like.
+            The preview-*.png files show what each screen of this build looks like; the store-*.png
+            files are Play Store screenshots (1080 x 1920).
 
             Built from ${{ github.sha }} on `${{ github.ref_name }}`.
