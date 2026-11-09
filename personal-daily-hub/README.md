@@ -20,22 +20,59 @@ npm ci
 npx expo start          # then scan the QR code with Expo Go, or press i / a / w
 ```
 
-Everything except the daily reminder runs in Expo Go. Expo Go's support for
-expo-notifications varies by platform and SDK, so if the reminder toggle does
-not work there, use a development build (`npx expo run:android` /
-`npx expo run:ios`, or `eas build --profile development`). The reminder is
-hidden on the web build.
+The reminder is hidden on the web build.
+
+## On an Android phone
+
+**Install the APK — no computer needed.** Every push that touches this
+folder runs `.github/workflows/personal-daily-hub-android.yml`, which builds
+a release APK. Open the run under the repo's **Actions** tab, download the
+**personal-daily-hub-apk** artifact, unzip it, and open `app-release.apk` on
+the phone (allow "install unknown apps" for your browser or Files app when
+asked). The run's summary shows the package name and SHA-256.
+
+That APK is signed with the template's debug key: fine for testing, not
+accepted by the Play Store. For Play, build with EAS, which manages a real
+upload key: `npx eas-cli build -p android`.
+
+**Or live-reload with Expo Go.** Install Expo Go from the Play Store (it must
+support SDK 58), run `npx expo start` on a computer on the same Wi-Fi, and
+scan the QR code. Everything works, including the 8 PM reminder: Expo Go on
+Android only lacks *push* notifications, which this app does not use. It
+does log two expo-notifications warnings saying so; they are harmless.
+
+Android specifics already handled:
+
+- Package `com.fmercadx.personaldailyhub` (`app.json`). It becomes
+  permanent the first time it is uploaded to Play, so change it before then
+  if you want a different one.
+- Dark splash screen and dark system UI (`expo-splash-screen`,
+  `expo-system-ui`), so there is no white flash at launch.
+- A white-on-transparent notification icon
+  (`assets/notification-icon.png`); Android renders a full-colour icon as
+  a blank square in the status bar.
+- The notification channel is created before asking permission — Android
+  13+ shows no prompt for an app without one. The reminder survives a
+  reboot (expo-notifications re-arms it).
+- No storage permissions: the template's `READ`/`WRITE_EXTERNAL_STORAGE`
+  are blocked, since the app never touches files.
+- Edge-to-edge: content is padded by the system-bar insets, and the
+  keyboard is handled by a `KeyboardAvoidingView` (Android only; iOS uses
+  the ScrollView's own keyboard insets).
+- Text fields drop Android's default underline and use the app's cursor and
+  selection colours. The back gesture closes the paywall.
 
 ## Checks
 
 ```bash
 npm run typecheck
-npm test                 # 54 tests: logic, storage, and the whole screen
+npm test                 # runs every test twice: as iOS, then as Android
 npx expo export --platform android --platform ios --platform web --output-dir dist
 ```
 
 CI (`.github/workflows/personal-daily-hub.yml`) runs all three, path-filtered
-to this folder.
+to this folder. The suite covers logic, storage, the whole rendered screen,
+and platform branches such as Android's notification channel.
 
 ## How data is stored
 
@@ -99,8 +136,7 @@ Before release, replace that one function:
 
 ## Before shipping
 
-- `ios.bundleIdentifier` and `android.package` are not set in `app.json`;
-  EAS will ask for them.
+- `ios.bundleIdentifier` is not set in `app.json`; EAS will ask for it.
 - The icon and splash images in `assets/` are Expo's template placeholders.
 
 ## Layout

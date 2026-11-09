@@ -12,8 +12,8 @@ Four unrelated products share this repository:
   app; built for phones through EAS, not deployed from this repo
 
 They are independent. `deploy.yml` builds the first two into one `dist/`, and
-`credit-analyzer.yml`, `shepherds-whisper.yml` and `personal-daily-hub.yml` are
-path-filtered so no product's changes run another's tests.
+`credit-analyzer.yml`, `shepherds-whisper.yml` and the two `personal-daily-hub*`
+workflows are path-filtered so no product's changes run another's tests.
 
 **Two Railway services, two configs.** The root `railway.json` and `Procfile`
 belong to the credit analyzer's Flask app. `shepherds-whisper/railway.json` and
@@ -116,8 +116,11 @@ cd credit-analyzer/mobile  && npm test
 # The adult family home site: build, then browser checks against dist/
 cd shepherds-whisper && npm ci && npm run build && npm run smoke
 
-# The daily hub app: types, 54 Jest tests, then bundle every platform.
-# `expo install` and `expo export` need EXPO_OFFLINE=1 here — see below.
+# The daily hub app: types, Jest (every test runs as iOS and as Android),
+# then bundle every platform. `expo install`, `expo export` and
+# `expo prebuild` need EXPO_OFFLINE=1 here — see below. Gradle cannot run
+# here (Maven is not on the allowlist); personal-daily-hub-android.yml
+# builds the APK on GitHub instead.
 cd personal-daily-hub && npm ci && npm run typecheck && npm test
 EXPO_OFFLINE=1 npx expo export --platform android --platform ios --platform web --output-dir dist
 ```

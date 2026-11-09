@@ -5,7 +5,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { clockTime } from '../lib/date';
 import { formatCents, parseAmountToCents } from '../lib/money';
 import { EXPENSE_LABEL_MAX_LENGTH, type Expense } from '../lib/store';
-import { colors, HIT, radius, space, type } from '../theme';
+import { colors, inputColors, HIT, radius, space, type } from '../theme';
 import { Card } from './Card';
 import { IconButton } from './IconButton';
 
@@ -58,7 +58,7 @@ export function ExpenseLogger({ expenses, totalCents, onAdd, onDelete }: Props) 
               setError(null);
             }}
             placeholder="0.00"
-            placeholderTextColor={colors.textMuted}
+            {...inputColors}
             keyboardType="decimal-pad"
             style={styles.amountInput}
             maxLength={12}
@@ -71,7 +71,7 @@ export function ExpenseLogger({ expenses, totalCents, onAdd, onDelete }: Props) 
           onChangeText={setLabel}
           onSubmitEditing={submit}
           placeholder="What for?"
-          placeholderTextColor={colors.textMuted}
+          {...inputColors}
           style={styles.labelInput}
           maxLength={EXPENSE_LABEL_MAX_LENGTH}
           returnKeyType="done"
@@ -145,7 +145,17 @@ const styles = StyleSheet.create({
   },
   invalid: { borderColor: colors.danger },
   currency: { ...type.body, color: colors.textSecondary, marginRight: 2 },
-  amountInput: { flex: 1, minWidth: 0, color: colors.text, ...type.body, paddingRight: space.sm },
+  // Explicit zero padding: Android's default EditText padding would push
+  // the digits away from the "$".
+  amountInput: {
+    flex: 1,
+    minWidth: 0,
+    color: colors.text,
+    ...type.body,
+    paddingVertical: 0,
+    paddingLeft: 0,
+    paddingRight: space.sm,
+  },
   labelInput: { ...field, flex: 1, minWidth: 0, paddingHorizontal: space.md },
   add: {
     width: HIT + 4,

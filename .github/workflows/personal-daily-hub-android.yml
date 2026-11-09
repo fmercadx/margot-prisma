@@ -1,0 +1,95 @@
+name: personal-daily-hub Android APK
+
+# Builds an APK you can install straight onto an Android phone, with no Expo
+# account: `expo prebuild` generates android/ from app.json, then Gradle
+# builds it. android/ is never committed (Expo's Continuous Native
+# Generation), so this is the only place it exists.
+#
+# The release APK is signed with the template's debug key. That is enough to
+# sideload and test, but the Play Store needs your own upload key (EAS can
+# hold it for you: `npx eas-cli build -p android`).
+#
+# Runs on pushes to any branch that touch the app, so a branch's APK is
+# ready without a PR; `cancel-in-progress` drops superseded builds.
+on:
+  push:
+    paths:
+      - 'personal-daily-hub/**'
+      - '.github/workflows/personal-daily-hub-android.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: personal-daily-hub-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: personal-daily-hub
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: personal-daily-hub/package-lock.json
+
+      # React Native 0.88's Gradle plugin uses a JDK 17 toolchain, and
+      # Gradle 9 will not start on anything older.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - run: npm ci
+
+      - run: npx expo prebuild --platform android --no-install
+
+      # Every 64-bit phone, older 32-bit ARM phones, and x86_64 emulators.
+      # Skips 32-bit x86, which only very old emulators use.
+      - name: Build release APK
+        working-directory: personal-daily-hub/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86_64
+
+      - name: Check the APK is the app we meant to build
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          aapt2="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/aapt2"
+          "$aapt2" dump badging "$apk" > badging.txt
+          grep -E "^package:|^application-label:|uses-permission" badging.txt
+          grep -q "^package: name='com.fmercadx.personaldailyhub'" badging.txt
+          grep -q "POST_NOTIFICATIONS" badging.txt
+          # Not `! grep`: bash's -e ignores a negated command, so it could never fail.
+          if grep -q "EXTERNAL_STORAGE" badging.txt; then
+            echo "::error::Storage permission is back in the APK; app.json blocks it"
+            exit 1
+          fi
+          {
+            echo "### Personal Daily Hub APK"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Package | \`$(sed -n "s/^package: name='\([^']*\)'.*/\1/p" badging.txt)\` |"
+            echo "| Version | $(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" badging.txt) |"
+            echo "| Size | $(du -h "$apk" | cut -f1) |"
+            echo "| SHA-256 | \`$(sha256sum "$apk" | cut -d' ' -f1)\` |"
+            echo
+            echo "Download **personal-daily-hub-apk** below, unzip it, and open the .apk on the phone."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: personal-daily-hub-apk
+          path: personal-daily-hub/android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30

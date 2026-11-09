@@ -7,7 +7,9 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~58.0.23",
     "expo-notifications": "~58.1.8",
+    "expo-splash-screen": "~58.0.13",
     "expo-status-bar": "~58.0.4",
+    "expo-system-ui": "~58.0.7",
     "lucide-react-native": "^1.70.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -35,12 +37,25 @@
   },
   "private": true,
   "jest": {
-    "preset": "jest-expo",
-    "setupFiles": [
-      "./jest.setup.js"
-    ],
-    "moduleNameMapper": {
-      "^lucide-react-native/icons/(.*)$": "<rootDir>/node_modules/lucide-react-native/dist/cjs/icons/$1.js"
-    }
+    "projects": [
+      {
+        "preset": "jest-expo/ios",
+        "setupFiles": [
+          "./jest.setup.js"
+        ],
+        "moduleNameMapper": {
+          "^lucide-react-native/icons/(.*)$": "<rootDir>/node_modules/lucide-react-native/dist/cjs/icons/$1.js"
+        }
+      },
+      {
+        "preset": "jest-expo/android",
+        "setupFiles": [
+          "./jest.setup.js"
+        ],
+        "moduleNameMapper": {
+          "^lucide-react-native/icons/(.*)$": "<rootDir>/node_modules/lucide-react-native/dist/cjs/icons/$1.js"
+        }
+      }
+    ]
   }
 }

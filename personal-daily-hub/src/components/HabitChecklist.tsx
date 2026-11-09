@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { HABIT_MAX_LENGTH, type Habit } from '../lib/store';
-import { colors, HIT, radius, space, type } from '../theme';
+import { colors, inputColors, HIT, radius, space, type } from '../theme';
 import { Card } from './Card';
 import { IconButton } from './IconButton';
 
@@ -98,7 +98,7 @@ export function HabitChecklist(props: Props) {
               }}
               onSubmitEditing={submit}
               placeholder="e.g. Stretch for 5 minutes"
-              placeholderTextColor={colors.textMuted}
+              {...inputColors}
               style={styles.input}
               maxLength={HABIT_MAX_LENGTH}
               autoFocus

@@ -52,3 +52,15 @@ export const type = {
 
 /** Minimum touch target, per the iOS and Material guidelines. */
 export const HIT = 44;
+
+/**
+ * Spread onto every TextInput. Android otherwise draws its own underline,
+ * a theme-coloured cursor and teal selection handles.
+ */
+export const inputColors = {
+  placeholderTextColor: colors.textMuted,
+  underlineColorAndroid: 'transparent',
+  cursorColor: colors.text,
+  selectionColor: tint(colors.notes, 0.45),
+  selectionHandleColor: colors.notes,
+} as const;

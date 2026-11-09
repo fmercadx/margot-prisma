@@ -4,7 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { clockTime } from '../lib/date';
 import { FREE_NOTES_PER_DAY } from '../lib/premium';
 import { NOTE_MAX_LENGTH, type Note } from '../lib/store';
-import { colors, HIT, radius, space, tint, type } from '../theme';
+import { colors, inputColors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
 import { IconButton } from './IconButton';
 
@@ -50,7 +50,7 @@ export function QuickCapture({ notes, isPremium, draft, onDraftChange, onSubmit,
           onChangeText={onDraftChange}
           onSubmitEditing={() => canSend && onSubmit()}
           placeholder="A thought, a task, an idea…"
-          placeholderTextColor={colors.textMuted}
+          {...inputColors}
           style={styles.input}
           maxLength={NOTE_MAX_LENGTH}
           returnKeyType="done"
