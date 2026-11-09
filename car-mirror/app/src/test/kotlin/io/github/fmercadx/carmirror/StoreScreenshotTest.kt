@@ -79,7 +79,7 @@ class StoreScreenshotTest {
     @Test
     fun settings() {
         mirroring()
-        shoot("store-4-settings", scrollTo = "SETTINGS") { page -> assertShown(page, "Touch control") }
+        shoot("store-4-settings", scrollTo = "Settings") { page -> assertShown(page, "Touch control") }
     }
 
     private fun mirroring() {
@@ -101,10 +101,15 @@ class StoreScreenshotTest {
         if (scrollTo != null) {
             val heading = findText(page) { it.equals(scrollTo, ignoreCase = true) } ?: error("no \"$scrollTo\" heading")
             scroll.scrollTo(0, heading.top - (16 * activity.resources.displayMetrics.density).toInt())
+            assertTrue("scrolling to \"$scrollTo\" did nothing", scroll.scrollY > 0)
         }
+        scroll.isVerticalScrollBarEnabled = false // on a phone it fades away; in a still it doesn't
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.drawColor(activity.getColor(R.color.background))
+        // A view's own scroll offset is applied by its parent when drawing it, so drawing the
+        // scroll view directly has to apply it here.
+        canvas.translate(-scroll.scrollX.toFloat(), -scroll.scrollY.toFloat())
         scroll.draw(canvas)
         File(outDir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         assertTrue("store screenshots must be 1080 x 1920, got ${bitmap.width} x ${bitmap.height}",

@@ -391,9 +391,17 @@ class MainActivity : Activity() {
             if (alternatives.isNotEmpty()) {
                 alternativesBox.addView(ui.text("If it doesn't load, try these in order:", 14f, R.color.muted))
                 alternatives.forEachIndexed { i, url ->
-                    alternativesBox.addView(ui.text("${i + 2}.  ${CarUrls.typed(url)}", 16f).apply {
-                        typeface = Typeface.MONOSPACE
-                        setTextIsSelectable(true)
+                    // Number and address side by side; the address shrinks to fit rather than
+                    // wrapping onto a second line on narrow phones.
+                    alternativesBox.addView(ui.horizontal().apply {
+                        addView(ui.text("${i + 2}.", 16f).apply { typeface = Typeface.MONOSPACE },
+                            LinearLayout.LayoutParams(ui.dp(32), WRAP_CONTENT))
+                        addView(ui.text(CarUrls.typed(url), 16f).apply {
+                            typeface = Typeface.MONOSPACE
+                            maxLines = 1
+                            setAutoSizeTextTypeUniformWithConfiguration(10, 16, 1, TypedValue.COMPLEX_UNIT_SP)
+                            setTextIsSelectable(true)
+                        }, LinearLayout.LayoutParams(0, ui.dp(24), 1f))
                     }, ui.matchWidth(topDp = 6))
                 }
             }

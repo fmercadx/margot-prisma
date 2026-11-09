@@ -65,7 +65,7 @@ class ScreenshotTest {
         shoot("3-waiting-light") { page ->
             assertVisible(page, "169-254-73-1.sslip.io:8080")
             assertVisible(page, "If it doesn't load, try these in order:")
-            assertVisible(page, "2.  192-168-43-1.sslip.io:8080")
+            assertVisible(page, "192-168-43-1.sslip.io:8080")
             assertVisible(page, "Stop")
             assertVisible(page, "Turn on touch control") // offered while mirroring, since it's off
             assertVisible(page, "Dim this phone while mirroring")
