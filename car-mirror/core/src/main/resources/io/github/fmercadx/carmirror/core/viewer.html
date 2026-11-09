@@ -9,12 +9,14 @@
   body { -webkit-user-select: none; user-select: none; touch-action: none; }
   #screen { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
   #mjpeg { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; display: none; }
-  #msg {
-    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  #msg, #toast {
+    position: fixed; left: 50%; transform: translate(-50%, -50%);
     max-width: 70vw; padding: 20px 28px; border-radius: 14px; pointer-events: none;
     background: rgba(0, 0, 0, .8); color: #f2f2f2; text-align: center;
     font: 500 28px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
+  #msg { top: 50%; }
+  #toast { top: 82%; display: none; font-size: 22px; }
   #msg small { display: block; margin-top: 12px; color: #9a9a9a; font-size: 18px; font-weight: 400; }
   #info {
     position: fixed; left: 16px; bottom: 16px; display: none; pointer-events: none;
@@ -37,6 +39,7 @@
 <canvas id="screen"></canvas>
 <img id="mjpeg" alt="Phone screen">
 <div id="msg">Connecting to your phone…</div>
+<div id="toast"></div>
 <div id="info"></div>
 <div id="menu" role="button" aria-label="Show details and go full screen">⋯</div>
 <script>
@@ -47,18 +50,19 @@
   var ctx = canvas.getContext('2d', { alpha: false });
   var img = document.getElementById('mjpeg');
   var msg = document.getElementById('msg');
+  var toast = document.getElementById('toast');
   var info = document.getElementById('info');
   var menu = document.getElementById('menu');
 
-  var seq = 0;              // newest frame drawn; sent back so the phone only answers with newer ones
   var bitmap = null;        // last decoded frame, kept for redraws on resize
-  var rect = null;          // where the picture sits on screen, in CSS pixels
+  var drawn = null;         // where the last frame went: { rect (screen, CSS px), src (frame px), fw, fh }
   var paused = '';          // '' while live, otherwise why the phone is withholding the picture
   var failures = 0;
   var framesThisSecond = 0;
   var fps = 0;
   var phone = { token: '', touch: false, quality: 0 };
-  var POLL_TIMEOUT_MS = 15000; // the phone answers within 10 s; anything longer is a dead connection
+  var forced = (location.search.match(/[?&]mode=(\w+)/) || [])[1] || '';
+  var mode = forced === 'poll' ? 'poll' : 'stream';
 
   function show(text, detail) {
     msg.textContent = text || '';
@@ -69,6 +73,21 @@
     }
     msg.style.display = text ? 'block' : 'none';
   }
+
+  var toastTimer = 0;
+  function flash(text) {
+    toast.textContent = text;
+    toast.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.style.display = 'none'; }, 3500);
+  }
+
+  function lostConnection() {
+    show('Lost the connection to your phone.',
+      'Retrying… Check that mirroring is still on and the car is on the phone’s hotspot.');
+  }
+
+  // ---- Drawing, with black bars around a video trimmed off ----
 
   function fitCanvas() {
     var ratio = window.devicePixelRatio || 1;
@@ -85,15 +104,78 @@
     var cw = canvas.width, ch = canvas.height;
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, cw, ch);
-    if (!bitmap) { rect = null; return; }
-    var scale = Math.min(cw / bitmap.width, ch / bitmap.height);
-    var w = Math.round(bitmap.width * scale), h = Math.round(bitmap.height * scale);
+    if (!bitmap) { drawn = null; return; }
+    var src = crop || { x: 0, y: 0, w: bitmap.width, h: bitmap.height };
+    var scale = Math.min(cw / src.w, ch / src.h);
+    var w = Math.round(src.w * scale), h = Math.round(src.h * scale);
     var x = Math.round((cw - w) / 2), y = Math.round((ch - h) / 2);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(bitmap, x, y, w, h);
+    ctx.drawImage(bitmap, src.x, src.y, src.w, src.h, x, y, w, h);
     var ratio = cw / canvas.clientWidth || 1;
-    rect = { x: x / ratio, y: y / ratio, w: w / ratio, h: h / ratio };
+    drawn = { rect: { x: x / ratio, y: y / ratio, w: w / ratio, h: h / ratio }, src: src, fw: bitmap.width, fh: bitmap.height };
+  }
+
+  // A video played full screen on a phone is surrounded by black bars, because a phone is
+  // longer than the video. Those bars are part of the mirrored picture, so the video would
+  // sit small in the middle of the car's screen. Find them and draw only what is inside.
+  //
+  // Real bars hold still and come in matching pairs; a dark scene does neither. So bars are
+  // trimmed only when they are symmetrical and have held for a few seconds, and the picture
+  // grows back the moment anything appears in them.
+  var crop = null, candidate = null, votes = 0, lastProbe = 0, cropFor = '';
+  var probe = document.createElement('canvas');
+  var probeCtx = probe.getContext('2d', { willReadFrequently: true });
+
+  function sameBox(a, b, fw, fh) {
+    if (!a || !b) return a === b;
+    return Math.abs(a.x - b.x) <= fw * 0.02 && Math.abs(a.w - b.w) <= fw * 0.02 &&
+      Math.abs(a.y - b.y) <= fh * 0.02 && Math.abs(a.h - b.h) <= fh * 0.02;
+  }
+
+  function findBars(bmp) {
+    var now = performance.now();
+    var size = bmp.width + 'x' + bmp.height;
+    if (size !== cropFor) { cropFor = size; crop = null; candidate = null; votes = 0; }
+    if (now - lastProbe < 500) return;
+    lastProbe = now;
+    var pw = 160, ph = Math.max(1, Math.round(pw * bmp.height / bmp.width));
+    probe.width = pw;
+    probe.height = ph;
+    probeCtx.drawImage(bmp, 0, 0, pw, ph);
+    var d = probeCtx.getImageData(0, 0, pw, ph).data;
+    var top = -1, bottom = -1, left = pw, right = -1;
+    for (var y = 0; y < ph; y++) {
+      for (var x = 0; x < pw; x++) {
+        var i = (y * pw + x) * 4;
+        if (d[i] + d[i + 1] + d[i + 2] > 84) {
+          if (top < 0) top = y;
+          bottom = y;
+          if (x < left) left = x;
+          if (x > right) right = x;
+        }
+      }
+    }
+    if (top < 0) return; // an all-dark frame tells us nothing; keep what we have
+    var sx = bmp.width / pw, sy = bmp.height / ph;
+    var box = { x: Math.max(0, (left - 1) * sx), y: Math.max(0, (top - 1) * sy) };
+    box.w = Math.min(bmp.width, (right + 2) * sx) - box.x;
+    box.h = Math.min(bmp.height, (bottom + 2) * sy) - box.y;
+    var leftBar = box.x, rightBar = bmp.width - box.x - box.w;
+    var topBar = box.y, bottomBar = bmp.height - box.y - box.h;
+    var symmetric = Math.abs(leftBar - rightBar) <= bmp.width * 0.03 && Math.abs(topBar - bottomBar) <= bmp.height * 0.03;
+    var worthIt = box.w < bmp.width * 0.94 || box.h < bmp.height * 0.94;
+    var sane = box.w > bmp.width * 0.4 && box.h > bmp.height * 0.4;
+    var next = symmetric && worthIt && sane ? box : null;
+
+    if (crop && (box.x < crop.x - sx || box.y < crop.y - sy ||
+        box.x + box.w > crop.x + crop.w + sx || box.y + box.h > crop.y + crop.h + sy)) {
+      crop = null; // something appeared in the bars: show the whole screen again, at once
+    }
+    if (sameBox(next, candidate, bmp.width, bmp.height)) votes++;
+    else { candidate = next; votes = 1; }
+    if (candidate && votes >= 6 && !sameBox(crop, candidate, bmp.width, bmp.height)) crop = candidate;
+    if (!candidate && votes >= 2) crop = null;
   }
 
   function updateInfo() {
@@ -101,6 +183,8 @@
     var parts = [bitmap ? bitmap.width + '×' + bitmap.height : 'no frame yet', fps + ' fps'];
     if (phone.quality) parts.push('quality ' + phone.quality);
     parts.push(phone.touch ? 'touch on' : 'touch off');
+    parts.push(mode);
+    if (crop) parts.push('bars trimmed');
     parts.push(location.host);
     info.textContent = parts.join(' · ');
   }
@@ -132,6 +216,7 @@
       // Drop the last picture: whatever the phone is hiding must not stay on the car's screen.
       if (bitmap && bitmap.close) bitmap.close();
       bitmap = null;
+      pending = null;
       draw();
       if (paused === 'driving') show('Paused while the car is moving.', 'The picture comes back when you stop.');
       else show('Paused on the phone.', 'Tap Resume on the phone to continue.');
@@ -140,10 +225,111 @@
     }
   }
 
-  // ---- Frames ----
+  // ---- Decoding: always the newest frame, never a queue ----
 
-  // Written with plain promises rather than async/await so that an older browser can still
-  // parse this script and reach the MJPEG fallback below.
+  var pending = null, decoding = false;
+
+  function decodeNewest() {
+    if (decoding || !pending) return;
+    var blob = pending;
+    pending = null;
+    decoding = true;
+    createImageBitmap(blob).then(function (decoded) {
+      if (paused) { if (decoded.close) decoded.close(); return; }
+      if (bitmap && bitmap.close) bitmap.close();
+      bitmap = decoded;
+      findBars(bitmap);
+      draw();
+      framesThisSecond++;
+      show('');
+    }, function () { /* a bad frame: skip it */ }).then(function () {
+      decoding = false;
+      decodeNewest();
+    });
+  }
+
+  // ---- Frames, pushed by the phone over one long response ----
+  //
+  // Records: a type byte, a 4-byte big-endian length, then the payload.
+  //   1 frame  (width u16, height u16, JPEG)   2 pause state (UTF-8)   3 ping (empty)
+
+  function ByteQueue() { this.chunks = []; this.length = 0; }
+  ByteQueue.prototype.push = function (chunk) { this.chunks.push(chunk); this.length += chunk.length; };
+  ByteQueue.prototype.read = function (n, keep) {
+    var out = new Uint8Array(n), off = 0, i = 0, rest = this.chunks.slice();
+    while (off < n) {
+      var c = rest[i], k = Math.min(c.length, n - off);
+      out.set(c.subarray(0, k), off);
+      off += k;
+      if (k === c.length) i++; else rest[i] = c.subarray(k);
+    }
+    if (!keep) { this.chunks = rest.slice(i); this.length -= n; }
+    return out;
+  };
+
+  var decoder = typeof TextDecoder === 'function' ? new TextDecoder() : null;
+
+  function onRecord(type, payload) {
+    if (type === 1) {
+      pending = new Blob([payload.subarray(4)], { type: 'image/jpeg' });
+      decodeNewest();
+    } else if (type === 2) {
+      setPaused(decoder ? decoder.decode(payload) : String.fromCharCode.apply(null, payload));
+    }
+  }
+
+  var streamAbort = null, lastData = 0;
+
+  function streamLoop() {
+    var controller = new AbortController();
+    streamAbort = controller;
+    lastData = Date.now();
+    fetch('frames?paused=' + encodeURIComponent(paused), { cache: 'no-store', signal: controller.signal })
+      .then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        if (!response.body || !response.body.getReader) { mode = 'poll'; throw new Error('no streaming'); }
+        var reader = response.body.getReader(), queue = new ByteQueue();
+        if (!bitmap && !paused) show('Connected.', 'Waiting for the phone screen…');
+        function pump() {
+          return reader.read().then(function (part) {
+            if (part.done) throw new Error('stream ended');
+            lastData = Date.now();
+            if (failures >= 3) refreshStatus(); // back after an outage: the phone may have restarted
+            failures = 0;
+            queue.push(part.value);
+            while (queue.length >= 5) {
+              var head = queue.read(5, true);
+              var length = ((head[1] << 24) | (head[2] << 16) | (head[3] << 8) | head[4]) >>> 0;
+              if (queue.length < 5 + length) break;
+              queue.read(5);
+              onRecord(head[0], queue.read(length));
+            }
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .catch(function () {
+        streamAbort = null;
+        if (mode === 'poll') { pollLoop(); return; }
+        failures++;
+        if (failures >= 3) lostConnection();
+        setTimeout(streamLoop, Math.min(3000, 250 * failures));
+      });
+  }
+
+  // The phone pings every 2 s when there is nothing else to send; silence means it is gone.
+  setInterval(function () {
+    if (streamAbort && Date.now() - lastData > 7000) streamAbort.abort();
+  }, 2000);
+
+  // ---- Fallback: ask for one frame at a time (older browsers) ----
+
+  var seq = 0;
+  var POLL_TIMEOUT_MS = 15000; // the phone answers within 10 s; anything longer is a dead connection
+
+  // Plain promises rather than async/await, so an older browser can still parse this script
+  // and reach the MJPEG fallback below.
   function fetchFrame() {
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
     var timer = controller ? setTimeout(function () { controller.abort(); }, POLL_TIMEOUT_MS) : 0;
@@ -162,31 +348,22 @@
 
   function pollOnce() {
     return fetchFrame().then(function (frame) {
-      if (failures >= 3) refreshStatus(); // back after an outage: the phone may have restarted
+      if (failures >= 3) refreshStatus();
       failures = 0;
       if (!frame) {
         if (!bitmap && !paused) show('Connected.', 'Waiting for the phone screen…');
         return;
       }
       seq = frame.seq; // advance even if this one fails to decode, so a bad frame is skipped
-      return createImageBitmap(frame.blob).then(function (decoded) {
-        if (paused) { if (decoded.close) decoded.close(); return; }
-        if (bitmap && bitmap.close) bitmap.close();
-        bitmap = decoded;
-        draw();
-        framesThisSecond++;
-        show('');
-      });
+      pending = frame.blob;
+      decodeNewest();
     });
   }
 
   function pollLoop() {
     pollOnce().then(pollLoop, function () {
       failures++;
-      if (failures >= 3) {
-        show('Lost the connection to your phone.',
-          'Retrying… Check that mirroring is still on and the car is on the phone’s hotspot.');
-      }
+      if (failures >= 3) lostConnection();
       setTimeout(pollLoop, Math.min(3000, 250 * failures));
     });
   }
@@ -204,14 +381,18 @@
 
   // ---- Details and full screen ----
 
-  function toggleDetails() {
-    info.style.display = info.style.display === 'block' ? 'none' : 'block';
-    updateInfo();
+  function goFullScreen() {
     var root = document.documentElement;
     if (!document.fullscreenElement && root.requestFullscreen) {
       var request = root.requestFullscreen();
       if (request && request.catch) request.catch(function () {});
     }
+  }
+
+  function toggleDetails() {
+    info.style.display = info.style.display === 'block' ? 'none' : 'block';
+    updateInfo();
+    goFullScreen();
   }
 
   menu.addEventListener('click', function (e) {
@@ -223,13 +404,17 @@
 
   var stroke = null;
 
-  // Where (clientX, clientY) falls on the phone screen, as fractions. Null when outside it,
-  // unless clamp is set (a swipe may run past the edge of the picture).
+  // Where (clientX, clientY) falls on the phone's screen, as fractions of the whole screen
+  // (trimmed bars included). Null when outside the picture, unless clamp is set: a swipe
+  // may run past the edge.
   function onPicture(clientX, clientY, clamp) {
-    if (!rect) return null;
-    var x = (clientX - rect.x) / rect.w, y = (clientY - rect.y) / rect.h;
-    if (clamp) return [Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y))];
-    return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? [x, y] : null;
+    if (!drawn) return null;
+    var r = drawn.rect;
+    var u = (clientX - r.x) / r.w, v = (clientY - r.y) / r.h;
+    if (!clamp && (u < 0 || u > 1 || v < 0 || v > 1)) return null;
+    u = Math.min(1, Math.max(0, u));
+    v = Math.min(1, Math.max(0, v));
+    return [(drawn.src.x + u * drawn.src.w) / drawn.fw, (drawn.src.y + v * drawn.src.h) / drawn.fh];
   }
 
   function ripple(clientX, clientY) {
@@ -248,9 +433,10 @@
   // A finished stroke as the phone expects it: `d=<ms>&p=x,y;x,y;...`. Barely moving is a tap
   // (or a long press if held); anything else is a swipe along the sampled points.
   function gestureBody(points, ms) {
+    var pxX = drawn.fw * drawn.rect.w / drawn.src.w, pxY = drawn.fh * drawn.rect.h / drawn.src.h;
     var x0 = points[0][0], y0 = points[0][1], far = 0;
     for (var i = 1; i < points.length; i++) {
-      far = Math.max(far, Math.hypot((points[i][0] - x0) * rect.w, (points[i][1] - y0) * rect.h));
+      far = Math.max(far, Math.hypot((points[i][0] - x0) * pxX, (points[i][1] - y0) * pxY));
     }
     var list, duration;
     if (far < 12) {
@@ -276,10 +462,15 @@
     }).catch(function () {});
   }
 
+  var askedFullScreen = false;
+
   canvas.addEventListener('pointerdown', function (e) {
+    if (!askedFullScreen) { askedFullScreen = true; goFullScreen(); } // needs a tap; the first one will do
     var p = onPicture(e.clientX, e.clientY, false);
-    if (!p || paused || !phone.touch || !phone.token) {
-      toggleDetails();
+    if (!p) { toggleDetails(); return; }           // the black area around the picture
+    if (paused) return;
+    if (!phone.touch || !phone.token) {
+      flash('Touch control is off. Turn it on in Car Mirror on your phone.');
       return;
     }
     e.preventDefault();
@@ -298,7 +489,7 @@
     if (!stroke || e.pointerId !== stroke.id) return;
     var s = stroke;
     stroke = null;
-    if (cancelled || !rect) return;
+    if (cancelled || !drawn) return;
     s.points.push(onPicture(e.clientX, e.clientY, true));
     sendGesture(gestureBody(s.points, e.timeStamp - s.start));
   }
@@ -308,15 +499,15 @@
 
   // ---- Start ----
 
-  var forceMjpeg = /[?&]mode=mjpeg\b/.test(location.search);
-  if (forceMjpeg || typeof fetch !== 'function' || typeof createImageBitmap !== 'function') {
+  if (forced === 'mjpeg' || typeof fetch !== 'function' || typeof createImageBitmap !== 'function') {
+    mode = 'mjpeg';
     startMjpeg(); // view only: no touch without fetch
   } else {
     window.addEventListener('resize', fitCanvas);
     fitCanvas();
     refreshStatus();
     setInterval(refreshStatus, 5000);
-    pollLoop();
+    if (mode === 'poll' || typeof AbortController !== 'function') { mode = 'poll'; pollLoop(); } else streamLoop();
   }
 })();
 </script>

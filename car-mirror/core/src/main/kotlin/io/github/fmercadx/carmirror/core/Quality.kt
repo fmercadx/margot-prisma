@@ -5,9 +5,11 @@ import kotlin.math.roundToInt
 
 /** Trade-off between sharpness and smoothness. Every frame is a JPEG, so size drives speed. */
 enum class Quality(val label: String, val maxEdge: Int, val fps: Int, val jpegQuality: Int) {
+    // Frame rates are caps; the phone sends a frame only when the screen changes. Now that
+    // frames are pushed over one stream, a hotspot's round trip no longer limits them.
     SMOOTH("Smooth", 960, 30, 60),
-    BALANCED("Balanced", 1280, 24, 70),
-    SHARP("Sharp", 1920, 15, 80);
+    BALANCED("Balanced", 1280, 30, 70),
+    SHARP("Sharp", 1920, 20, 80);
 
     val frameIntervalMs: Long get() = 1000L / fps
 

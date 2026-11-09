@@ -77,6 +77,9 @@ class MirrorService : VpnService() {
             ACTION_STOP -> stopMirroring(problem = null)
             ACTION_PAUSE -> setPausedByUser(true)
             ACTION_RESUME -> setPausedByUser(false)
+            ACTION_DIM -> if (projection != null) {
+                if (intent.getBooleanExtra(EXTRA_DIM, false)) Brightness.dim(this) else Brightness.restore(this)
+            }
             // Started some other way, e.g. by "always-on VPN" in settings: nothing to do.
             else -> if (projection == null) stopSelf()
         }
@@ -146,6 +149,7 @@ class MirrorService : VpnService() {
 
             capture = ScreenCapture(this, mp, frames, quality, autoQuality).also { it.start() }
             keepScreenOn()
+            if (intent.getBooleanExtra(EXTRA_DIM, false)) Brightness.dim(this)
 
             val problem = when {
                 vpn != null -> null
@@ -265,6 +269,7 @@ class MirrorService : VpnService() {
         tunnel = null
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
+        Brightness.restore(this)
         pausedByUser = false
         pausedByDriving = false
     }
@@ -326,11 +331,13 @@ class MirrorService : VpnService() {
         const val ACTION_STOP = "io.github.fmercadx.carmirror.STOP"
         const val ACTION_PAUSE = "io.github.fmercadx.carmirror.PAUSE"
         const val ACTION_RESUME = "io.github.fmercadx.carmirror.RESUME"
+        const val ACTION_DIM = "io.github.fmercadx.carmirror.DIM"
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT_DATA = "resultData"
         const val EXTRA_QUALITY = "quality"
         const val EXTRA_TUNNEL = "tunnel"
         const val EXTRA_PAUSE_WHILE_MOVING = "pauseWhileMoving"
+        const val EXTRA_DIM = "dim"
 
         private const val CHANNEL_ID = "mirroring"
         private const val NOTIFICATION_ID = 1

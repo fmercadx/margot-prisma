@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Keeps the phone screen on (dimmed) while mirroring; a screen that turns off has nothing to mirror. -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Optional "Dim this phone while mirroring": brightness only, restored afterwards. -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
     <!--
         Only for the opt-in "pause the picture while the car is moving": GPS speed, read while
         mirroring, never stored or sent. Asked for when the user turns that switch on.

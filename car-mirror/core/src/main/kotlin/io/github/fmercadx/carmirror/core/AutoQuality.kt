@@ -6,15 +6,15 @@ import kotlin.math.min
 /**
  * Lowers JPEG quality when the car can't keep up, and raises it back when it can.
  *
- * The signal is frames the car skipped: it asks for "anything after N" and gets frame
- * N + k, so k - 1 frames were produced that it never drew. Skipping means each frame takes
- * the car longer to fetch and decode than the phone takes to make the next one; a smaller
- * JPEG shortens both. Over each [windowMs], if more than 30% of frames were skipped the
+ * The signal is frames the car never got. On the frame stream those are frames made while a
+ * send was stuck because the link was full; when the car asks for one frame at a time, it is
+ * the gap between the frame it last drew and the one it gets. Either way the link can't
+ * carry frames as fast as the phone makes them, and a smaller JPEG helps. Over each [windowMs], if more than 30% of frames were skipped the
  * quality drops a step; after [calmMs] with almost no skips it climbs back toward [max].
  */
 class AutoQuality(
     val max: Int,
-    val min: Int = 35,
+    val min: Int = 40, // below this JPEG blocks show; dropping frames looks better
     private val windowMs: Long = 2_000,
     private val calmMs: Long = 4_000,
     private val clock: () -> Long = System::currentTimeMillis,

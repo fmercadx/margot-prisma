@@ -92,6 +92,62 @@ function setPhonePause(reason) {
 
 const near = (a, b, tolerance = 0.02) => Math.abs(a - b) <= tolerance;
 
+// Whether the canvas pixel at [x, y] (CSS px) is lit. Runs in the page.
+const litAt = ([x, y]) => {
+  const c = document.getElementById('screen');
+  const r = c.width / c.clientWidth;
+  const d = c.getContext('2d').getImageData(Math.round(x * r), Math.round(y * r), 1, 1).data;
+  return d[0] + d[1] + d[2] > 30;
+};
+// The opposite, spelled out: functions passed to the page can't call each other.
+const darkAt = ([x, y]) => {
+  const c = document.getElementById('screen');
+  const r = c.width / c.clientWidth;
+  const d = c.getContext('2d').getImageData(Math.round(x * r), Math.round(y * r), 1, 1).data;
+  return d[0] + d[1] + d[2] <= 30;
+};
+
+// Runs fn with the details line showing, then leaves it as it was. (It toggles, and other
+// taps, such as one on the screen while paused, may already have opened it.)
+async function withDetails(page, fn) {
+  const wasShowing = await page.locator('#info').isVisible();
+  if (!wasShowing) await page.click('#menu');
+  try {
+    return await fn();
+  } finally {
+    if (!wasShowing) await page.click('#menu');
+  }
+}
+
+// The details line the corner button shows.
+function detailsText(page) {
+  return withDetails(page, async () => {
+    await sleep(1200);
+    return page.locator('#info').innerText();
+  });
+}
+
+// Frames the page draws per second, averaged over three readings of the details line.
+function drawRate(page) {
+  return withDetails(page, async () => {
+    await sleep(1500);
+    const samples = [];
+    for (let i = 0; i < 3; i++) {
+      await sleep(1000);
+      samples.push(Number(((await page.locator('#info').innerText()).match(/(\d+) fps/) || [])[1] || 0));
+    }
+    return samples.reduce((a, b) => a + b, 0) / samples.length;
+  });
+}
+
+// Frames the phone makes per second.
+async function phoneRate(page) {
+  const seqNow = () => page.evaluate(() => fetch('status', { cache: 'no-store' }).then((r) => r.json()).then((s) => s.seq));
+  const a = await seqNow();
+  await sleep(2000);
+  return ((await seqNow()) - a) / 2;
+}
+
 async function main() {
   const launch = process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {};
   const browser = await chromium.launch(launch);
@@ -103,9 +159,6 @@ async function main() {
   page.on('request', (req) => { if (!req.url().startsWith(origin)) offOrigin.push(req.url()); });
   page.on('pageerror', (err) => errors.push(String(err)));
   page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
-
-  let delivered = 0;
-  page.on('response', (res) => { if (res.url().includes('/frame?') && res.status() === 200) delivered++; });
 
   await page.goto(base);
   await until(page, messageHidden, 'the first frame');
@@ -121,14 +174,12 @@ async function main() {
   // A portrait phone on a landscape car screen is letterboxed, not stretched.
   check(isBlack(await pixel(page, 20, 600)) && isBlack(await pixel(page, 1900, 600)), 'portrait phone is pillarboxed with black bars');
 
-  // Keeping up: the page should draw nearly every frame the phone produced, whatever rate
-  // the phone (here, a CI machine drawing a test pattern) manages.
-  const seq = () => page.evaluate(() => fetch('status', { cache: 'no-store' }).then((r) => r.json()).then((s) => s.seq));
-  const seqBefore = await seq();
-  delivered = 0;
-  await sleep(3000);
-  const produced = (await seq()) - seqBefore;
-  check(produced > 0 && delivered >= produced * 0.8, `keeps up with the phone: drew ${delivered} of ${produced} frames in 3 s`);
+  // Keeping up: the page should draw nearly every frame the phone makes, whatever rate the
+  // phone (here, a CI machine drawing a test pattern) manages.
+  const produced = await phoneRate(page);
+  const drawnRate = await drawRate(page);
+  check(produced > 0 && drawnRate >= produced * 0.8,
+    `keeps up with the phone: draws ${drawnRate.toFixed(1)} fps of the ${produced.toFixed(1)} it makes`);
 
   // The corner button brings up details.
   await page.click('#menu');
@@ -195,16 +246,68 @@ async function main() {
     setPhonePause('');
     await until(page, messageHidden, 'resume');
     check(!isBlack(await pixel(page, 960, 600)), 'resumes by itself with the picture back');
+
+    // A video with black bars around it: the bars are trimmed so the video fills the screen.
+    // Untrimmed, the portrait picture is 540 px wide, so x = 600 is in the black margin.
+    fs.writeFileSync(path.join(control, 'scene'), 'bars');
+    await until(page, litAt, 'the bars to be trimmed', 10000, [600, 600]);
+    check(true, 'black bars around a video are trimmed and the picture grows');
+    const trimmedInfo = await detailsText(page);
+    check(/bars trimmed/.test(trimmedInfo), `details say the bars are trimmed [${trimmedInfo}]`);
+    if (shots) await page.screenshot({ path: path.join(shots, 'viewer-bars-trimmed.png') });
+    // Taps still land in the right place: the top edge of the trimmed picture is just below
+    // the top bar, which covers the phone's top fifth.
+    count = gestures().length;
+    await page.mouse.click(960, 60);
+    g = await nextGesture(count, 'a tap on the trimmed picture');
+    check(near(g.first[0], 0.5) && near(g.first[1], 0.228, 0.015),
+      `taps on the trimmed picture land on the right spot (${g.first}, expected about 0.5,0.228)`);
+    fs.writeFileSync(path.join(control, 'scene'), '');
+    await until(page, darkAt, 'the whole picture to come back', 5000, [600, 600]);
+    check(true, 'the whole picture comes back as soon as the bars go away');
+
+    // Touch control off on the phone: tapping the picture says so instead of doing nothing.
+    fs.writeFileSync(path.join(control, 'touch'), 'off');
+    await sleep(5500); // the page re-reads what the phone allows every 5 s
+    await page.mouse.click(px(0.5), py(0.5));
+    await until(page, () => getComputedStyle(document.getElementById('toast')).display !== 'none', 'the touch hint');
+    const hint = await page.locator('#toast').innerText();
+    check(/Touch control is off/.test(hint), `tapping with touch control off explains it [${hint}]`);
+    fs.writeFileSync(path.join(control, 'touch'), 'on');
   }
 
-  // Phone unreachable for a while: the page says so, then recovers by itself.
+  // Phone unreachable for a while: the page says so, then recovers by itself. The frame
+  // stream is one long-lived connection, so block new ones and reload to drop it.
   await page.route('**/frame*', (route) => route.abort('connectionrefused'));
+  await page.reload();
   await until(page, messageIncludes, '"Lost the connection"', 10000, 'Lost the connection');
   check(true, 'shows "Lost the connection" when the phone stops answering');
   if (shots) await page.screenshot({ path: path.join(shots, 'viewer-lost-connection.png') });
   await page.unroute('**/frame*');
   await until(page, messageHidden, 'recovery');
   check(true, 'recovers on its own when the phone is back');
+
+  // A slow link: 80 ms added to every request, typical of a busy phone hotspot. Asking for
+  // each frame separately managed only about 11 fps here; the stream should not care.
+  const slow = await browser.newPage({ viewport: { width: 1920, height: 1200 } });
+  const cdp = await slow.context().newCDPSession(slow);
+  await cdp.send('Network.enable');
+  await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 80, downloadThroughput: 3000000, uploadThroughput: 1000000 });
+  await slow.goto(base);
+  await until(slow, messageHidden, 'the first frame on a slow link');
+  const slowMade = await phoneRate(slow);
+  const slowDrawn = await drawRate(slow);
+  check(slowDrawn >= slowMade * 0.8,
+    `keeps up on a slow link too: draws ${slowDrawn.toFixed(1)} fps of the ${slowMade.toFixed(1)} it makes`);
+  await slow.close();
+
+  // Fallback for browsers that can't read a stream: one request per frame.
+  const poll = await browser.newPage({ viewport: { width: 1920, height: 1200 } });
+  poll.on('request', (req) => { if (!req.url().startsWith(origin)) offOrigin.push(req.url()); });
+  await poll.goto(base + '?mode=poll');
+  await until(poll, messageHidden, 'the first frame in poll mode');
+  check(/poll/.test(await detailsText(poll)), 'the one-request-per-frame fallback shows the picture');
+  await poll.close();
 
   // Fallback for browsers without fetch/createImageBitmap.
   const mjpeg = await browser.newPage({ viewport: { width: 1920, height: 1200 } });

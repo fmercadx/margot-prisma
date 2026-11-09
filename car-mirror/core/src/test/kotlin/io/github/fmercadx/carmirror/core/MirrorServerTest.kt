@@ -296,6 +296,146 @@ class MirrorServerTest {
         }
     }
 
+    // ---- The frame stream ----
+
+    private class Record(val type: Int, val payload: ByteArray)
+
+    private fun readRecord(input: InputStream): Record {
+        val head = ByteArray(5)
+        var read = 0
+        while (read < 5) {
+            val n = input.read(head, read, 5 - read)
+            if (n < 0) throw IOException("stream ended")
+            read += n
+        }
+        val length = ((head[1].toInt() and 0xFF) shl 24) or ((head[2].toInt() and 0xFF) shl 16) or
+            ((head[3].toInt() and 0xFF) shl 8) or (head[4].toInt() and 0xFF)
+        val payload = ByteArray(length)
+        read = 0
+        while (read < length) {
+            val n = input.read(payload, read, length - read)
+            if (n < 0) throw IOException("stream ended mid-record")
+            read += n
+        }
+        return Record(head[0].toInt(), payload)
+    }
+
+    private fun openStream(port: Int, query: String = ""): Pair<Socket, InputStream> {
+        val socket = connect(port)
+        send(socket, "/frames$query")
+        val input = BufferedInputStream(socket.getInputStream())
+        val (status, headers) = readHead(input)
+        assertEquals(200, status)
+        assertEquals("application/octet-stream", headers["content-type"])
+        return socket to input
+    }
+
+    @Test
+    fun `the stream pushes each new frame without being asked again`() {
+        val port = startServer()
+        val (socket, input) = openStream(port)
+        socket.use {
+            for (n in 1..3) {
+                hub.publish(byteArrayOf(n.toByte(), 9), 640, 296)
+                val record = readRecord(input)
+                assertEquals(1, record.type)
+                assertEquals(640, ((record.payload[0].toInt() and 0xFF) shl 8) or (record.payload[1].toInt() and 0xFF))
+                assertEquals(296, ((record.payload[2].toInt() and 0xFF) shl 8) or (record.payload[3].toInt() and 0xFF))
+                assertContentEquals(byteArrayOf(n.toByte(), 9), record.payload.copyOfRange(4, record.payload.size))
+            }
+        }
+    }
+
+    @Test
+    fun `a car that falls behind gets the newest frame, not a backlog`() {
+        val port = startServer()
+        repeat(5) { hub.publish(byteArrayOf(it.toByte()), 1, 1) }
+        val (socket, input) = openStream(port)
+        socket.use {
+            val record = readRecord(input)
+            assertEquals(1, record.type)
+            assertEquals(4, record.payload[4].toInt(), "should start from the newest frame")
+        }
+    }
+
+    @Test
+    fun `the stream carries pauses and sends no frames while paused`() {
+        val port = startServer()
+        hub.publish(byteArrayOf(1), 1, 1)
+        val (socket, input) = openStream(port)
+        socket.use {
+            assertEquals(1, readRecord(input).type)
+            hub.setPaused("privacy")
+            val state = readRecord(input)
+            assertEquals(2, state.type)
+            assertEquals("privacy", String(state.payload))
+            hub.publish(byteArrayOf(2), 1, 1) // made while paused: must not be sent
+            hub.setPaused(null)
+            val resumed = readRecord(input)
+            assertEquals(2, resumed.type)
+            assertEquals("", String(resumed.payload))
+            val next = readRecord(input)
+            assertEquals(1, next.type)
+            assertEquals(2, next.payload[4].toInt())
+        }
+    }
+
+    @Test
+    fun `an idle stream sends pings so a vanished car is noticed`() {
+        val s = MirrorServer(hub, streamPingMs = 100)
+        server = s
+        val port = s.start(0, loopback)
+        val (socket, input) = openStream(port)
+        socket.use {
+            assertEquals(3, readRecord(input).type)
+        }
+    }
+
+    @Test
+    fun `when the link can't keep up, frames are skipped and auto quality steps down`() {
+        val quality = AutoQuality(max = 70, min = 40, windowMs = 0)
+        val port = startServer(autoQuality = quality)
+        // A car that reads slowly: a tiny receive buffer, and nothing read until frames pile up.
+        val socket = Socket().apply {
+            receiveBufferSize = 4 * 1024
+            soTimeout = 5_000
+            connect(java.net.InetSocketAddress(loopback, port))
+        }
+        socket.use {
+            send(socket, "/frames")
+            val input = BufferedInputStream(socket.getInputStream())
+            readHead(input)
+            hub.publish(byteArrayOf(1), 1, 1)
+            assertEquals(1, readRecord(input).type) // the stream is live
+            hub.publish(ByteArray(4 * 1024 * 1024), 1, 1) // far bigger than every buffer: the write blocks
+            Thread.sleep(200)
+            repeat(3) { hub.publish(byteArrayOf(9), 1, 1) } // made while the write is stuck
+            val big = readRecord(input)
+            assertEquals(4 * 1024 * 1024 + 4, big.payload.size)
+            val next = readRecord(input)
+            assertEquals(9, next.payload[4].toInt())
+            assertEquals(60, quality.current, "skipping two frames out of three should lower quality")
+        }
+    }
+
+    @Test
+    fun `frames withheld during a pause don't count as the car falling behind`() {
+        val quality = AutoQuality(max = 70, min = 40, windowMs = 0)
+        val port = startServer(autoQuality = quality)
+        val (socket, input) = openStream(port)
+        socket.use {
+            hub.publish(byteArrayOf(1), 1, 1)
+            readRecord(input)
+            hub.setPaused("privacy")
+            readRecord(input)
+            repeat(4) { hub.publish(byteArrayOf(2), 1, 1) }
+            hub.setPaused(null)
+            readRecord(input) // resumed
+            assertEquals(1, readRecord(input).type)
+            assertEquals(70, quality.current)
+        }
+    }
+
     @Test
     fun `closes connections that arrive on an address it should not serve`() {
         val seen = mutableListOf<InetAddress>()

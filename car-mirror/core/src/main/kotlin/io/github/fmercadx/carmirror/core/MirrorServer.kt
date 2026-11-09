@@ -30,6 +30,8 @@ data class Viewer(val remoteAddress: String, val host: String, val lastSeenMs: L
  *   GET  /frame?after=N&paused=R    long-poll: the newest JPEG with seq > N, or 204 when the
  *                                   pause state differs from R or after [longPollMs]. Every
  *                                   response carries the state in X-Mirror-Paused.
+ *   GET  /frames?paused=R           one long response that pushes every new frame as it is made
+ *                                   (see [serveFrameStream]): no round trip per frame
  *   GET  /stream.mjpeg              multipart MJPEG, for browsers without fetch/createImageBitmap
  *   GET  /status                    JSON: frame size, viewers, touch, quality, session token
  *   POST /input                     a [Gesture] from the car, when [control] allows touch
@@ -51,6 +53,7 @@ class MirrorServer(
      */
     private val acceptLocal: (InetAddress) -> Boolean = { true },
     private val longPollMs: Long = 10_000,
+    private val streamPingMs: Long = 2_000,
     private val idleTimeoutMs: Int = 30_000,
     private val maxConnections: Int = 16,
     private val clock: () -> Long = System::currentTimeMillis,
@@ -204,6 +207,10 @@ class MirrorServer(
         when (request.path) {
             "/", "/index.html" -> respond(out, 200, "text/html; charset=utf-8", viewerHtml, keepAlive, headOnly, PAGE_HEADERS)
             "/frame" -> serveFrame(request, socket, out, keepAlive, headOnly)
+            "/frames" -> {
+                serveFrameStream(request, socket, out)
+                return false
+            }
             "/stream.mjpeg" -> {
                 serveMjpeg(request, socket, out)
                 return false
@@ -277,6 +284,77 @@ class MirrorServer(
             val skipped = if (after in 1 until frame.seq) (frame.seq - after - 1).toInt() else 0
             autoQuality?.onFrameServed(skipped)
         }
+    }
+
+    /**
+     * Pushes frames over one response for as long as the car keeps it open. Asking for each
+     * frame separately costs a full round trip over the hotspot per frame, which on a phone
+     * hotspot (often 50 to 100 ms) caps the picture at 10 to 15 fps however small the frames.
+     *
+     * The body is a series of records, each a type byte, a 4-byte big-endian length and a
+     * payload:
+     *
+     *   1  frame  width (2 bytes), height (2 bytes), then the JPEG
+     *   2  state  the pause reason in UTF-8, empty when live
+     *   3  ping   no payload; sent when nothing else has been, so a dead car is noticed
+     *
+     * The socket's send buffer is kept small. When the link can't keep up, a write blocks,
+     * frames made meanwhile are skipped, and the next write is the newest frame: the picture
+     * drops frames instead of falling behind. Skipped frames also tell [autoQuality] to shrink
+     * the JPEGs.
+     */
+    private fun serveFrameStream(request: Request, socket: Socket, out: OutputStream) {
+        noteViewer(socket, request)
+        try {
+            socket.sendBufferSize = STREAM_SEND_BUFFER
+        } catch (_: IOException) {
+        }
+        val head = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: application/octet-stream\r\n" +
+            "Cache-Control: no-store\r\n" +
+            "X-Content-Type-Options: nosniff\r\n" +
+            "Connection: close\r\n\r\n"
+        out.write(head.toByteArray(Charsets.ISO_8859_1))
+        out.flush()
+        if (request.method == "HEAD") return
+
+        var seen = 0L
+        var viewerPaused: String? = request.query["paused"]?.let { decode(it) }?.ifEmpty { null }
+        // Frames made during a pause were withheld on purpose; they don't mean the car fell behind.
+        var countSkips = false
+        while (running && !hub.isClosed) {
+            val update = hub.awaitUpdate(seen, viewerPaused, streamPingMs)
+            when {
+                update == null -> writeRecord(out, RECORD_PING, EMPTY)
+                update.frame == null -> {
+                    viewerPaused = update.paused
+                    countSkips = false
+                    writeRecord(out, RECORD_STATE, viewerPaused.orEmpty().toByteArray(Charsets.UTF_8))
+                }
+                else -> {
+                    val frame = update.frame
+                    val skipped = if (countSkips && seen in 1 until frame.seq) (frame.seq - seen - 1).toInt() else 0
+                    countSkips = true
+                    val size = byteArrayOf(
+                        (frame.width shr 8).toByte(), frame.width.toByte(),
+                        (frame.height shr 8).toByte(), frame.height.toByte(),
+                    )
+                    writeRecord(out, RECORD_FRAME, size, frame.jpeg)
+                    seen = frame.seq
+                    framesServed.incrementAndGet()
+                    autoQuality?.onFrameServed(skipped)
+                }
+            }
+            out.flush()
+            noteViewer(socket, request)
+        }
+    }
+
+    private fun writeRecord(out: OutputStream, type: Int, vararg parts: ByteArray) {
+        val length = parts.sumOf { it.size }
+        out.write(byteArrayOf(type.toByte(), (length ushr 24).toByte(), (length ushr 16).toByte(),
+            (length ushr 8).toByte(), length.toByte()))
+        for (part in parts) out.write(part)
     }
 
     private fun serveMjpeg(request: Request, socket: Socket, out: OutputStream) {
@@ -366,6 +444,12 @@ class MirrorServer(
         const val TEXT = "text/plain; charset=utf-8"
         const val PAUSED_HEADER = "X-Mirror-Paused"
         const val MAX_INPUT_BYTES = 4 * 1024
+        const val RECORD_FRAME = 1
+        const val RECORD_STATE = 2
+        const val RECORD_PING = 3
+
+        /** About one frame: enough to keep the link busy, too little to build up a backlog. */
+        const val STREAM_SEND_BUFFER = 64 * 1024
         val CRLF = "\r\n".toByteArray(Charsets.ISO_8859_1)
         val EMPTY = ByteArray(0)
 

@@ -25,8 +25,9 @@ isn't on `main`). Installing a newer one replaces the old one.
    `169-254-73-1.sslip.io:8080`. If it doesn't load, try the others the app lists, in order.
 
 When the car reaches the phone, the app shows **Connected to your car** and which address
-the car opened. The **⋯** button in the
-car screen's top-left corner shows the frame rate and goes full screen.
+the car opened. For full screen, tap the Tesla browser's own full-screen button (the two
+arrows at the left of its address bar). The **⋯** button in the car screen's top-left
+corner shows the frame rate.
 
 Quicker next time: add the **Car Mirror** tile to Quick Settings, or long-press the app
 icon and choose **Start mirroring**. Android still asks to share the screen each time; no
@@ -45,6 +46,13 @@ app can skip that.
   is why it's off by default.
 - **Auto quality.** When the Wi-Fi can't keep up, the picture gets a little softer instead
   of stuttering, then sharpens again. The picture setting you choose is the upper limit.
+- **Videos fill the screen.** A video played full screen on a phone has black bars around
+  it (a phone is longer than a video). The car's page trims bars that are symmetrical and
+  hold still for a few seconds, so the video fills the car's screen, and shows the whole
+  picture again the moment anything appears in them. Taps still land in the right place.
+- **Dim this phone** (off by default). Turns the phone's brightness right down while
+  mirroring and puts it back afterwards. Covering the screen would black out the car's
+  picture too; brightness doesn't affect it. Needs "Modify system settings".
 
 ## How it works
 
@@ -57,8 +65,11 @@ app can skip that.
 ```
 
 - The phone captures its own screen (Android's screen-sharing API), compresses each change
-  to a JPEG, and serves it from a small web server inside the app. The car's browser asks
-  for the next frame as soon as it has drawn the last one.
+  to a JPEG, and pushes it to the car's browser over one long-lived connection. (The first
+  versions had the car ask for each frame, which cost a round trip over the hotspot per
+  frame and capped the picture at 10 to 15 fps; pushed, it keeps up with the phone's 30.)
+  When the link can't keep up, frames are skipped rather than queued, so the picture never
+  falls behind.
 - **Two ways in.** The car can open the phone at the hotspot's own address (like
   `192.168.43.1`), or at `169.254.73.1`, an extra address the app adds. Tesla's browser has
   been reported to refuse private addresses like `192.168.x.x`, which is all a hotspot hands

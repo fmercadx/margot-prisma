@@ -72,6 +72,9 @@ class MainActivity : Activity() {
     private lateinit var touchButton: Button
     private lateinit var motionSwitch: Switch
     private lateinit var motionDetail: TextView
+    private lateinit var dimSwitch: Switch
+    private lateinit var dimDetail: TextView
+    private lateinit var touchPrompt: Button
 
     private val handler = Handler(Looper.getMainLooper())
     private val refresh = object : Runnable {
@@ -89,6 +92,8 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         actionBar?.hide() // the screen has its own title
         ui = Ui(this)
+        // If the app died while mirroring with the phone dimmed, put the brightness back.
+        if (!MirrorState.running) Brightness.restore(this)
         setContentView(buildLayout())
         matchSystemBarsToTheme()
         if (savedInstanceState == null) handleQuickStart(intent)
@@ -103,6 +108,14 @@ class MainActivity : Activity() {
     override fun onStart() {
         super.onStart()
         handler.post(refresh)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Back from "Modify system settings": keep the dim switch on only if it was allowed.
+        if (settings().getBoolean(KEY_DIM, false) && !Brightness.allowed(this)) {
+            settings().edit().putBoolean(KEY_DIM, false).apply()
+        }
     }
 
     override fun onStop() {
@@ -199,7 +212,8 @@ class MainActivity : Activity() {
                             .putExtra(MirrorService.EXTRA_RESULT_DATA, data)
                             .putExtra(MirrorService.EXTRA_QUALITY, savedQuality().name)
                             .putExtra(MirrorService.EXTRA_TUNNEL, tunnelAllowed)
-                            .putExtra(MirrorService.EXTRA_PAUSE_WHILE_MOVING, pauseWhileMoving()),
+                            .putExtra(MirrorService.EXTRA_PAUSE_WHILE_MOVING, pauseWhileMoving())
+                            .putExtra(MirrorService.EXTRA_DIM, dimPhone()),
                     )
                     handler.postDelayed({ render() }, 300)
                 } else {
@@ -231,6 +245,38 @@ class MainActivity : Activity() {
             return // saved once the user answers
         }
         settings().edit().putBoolean(KEY_PAUSE_WHILE_MOVING, checked).apply()
+        render()
+    }
+
+    private fun dimPhone() = settings().getBoolean(KEY_DIM, false) && Brightness.allowed(this)
+
+    private fun onDimSwitch(checked: Boolean) {
+        if (checked && !Brightness.allowed(this)) {
+            AlertDialog.Builder(this)
+                .setTitle("Dim this phone")
+                .setMessage(
+                    "To turn your phone's brightness down while mirroring, Android needs you to let " +
+                        "Car Mirror modify system settings. It only changes brightness, and puts yours " +
+                        "back when you stop mirroring.\n\nOn the next screen, switch on Allow.",
+                )
+                .setPositiveButton("Continue") { _, _ ->
+                    settings().edit().putBoolean(KEY_DIM, true).apply()
+                    openFirst(
+                        Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, android.net.Uri.parse("package:$packageName")),
+                        Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS),
+                    )
+                }
+                .setNegativeButton("Cancel") { _, _ -> render() }
+                .setOnCancelListener { render() }
+                .show()
+            return
+        }
+        settings().edit().putBoolean(KEY_DIM, checked).apply()
+        if (MirrorState.running) {
+            startService(Intent(this, MirrorService::class.java)
+                .setAction(MirrorService.ACTION_DIM)
+                .putExtra(MirrorService.EXTRA_DIM, checked))
+        }
         render()
     }
 
@@ -370,12 +416,17 @@ class MainActivity : Activity() {
         pictureDetail.text = QUALITY_HELP.getValue(quality) + if (running) " Stop mirroring to change this." else ""
 
         val touchOn = TouchService.instance != null
+        touchPrompt.visibility = if (running && !touchOn) View.VISIBLE else View.GONE
         touchDetail.text = if (touchOn) {
             "On. Tap and swipe on the car's screen to use your phone."
         } else {
             "Off. Turn it on to tap and swipe on the car's screen."
         }
         touchButton.text = if (touchOn) "Settings" else "Turn on"
+
+        if (dimSwitch.isChecked != dimPhone()) dimSwitch.isChecked = dimPhone()
+        dimDetail.text = "Turns your phone's brightness right down while mirroring, so it isn't " +
+            "glowing next to the car's screen. The car's picture isn't affected."
 
         val wantsMotion = settings().getBoolean(KEY_PAUSE_WHILE_MOVING, false)
         if (motionSwitch.isChecked != pauseWhileMoving()) motionSwitch.isChecked = pauseWhileMoving()
@@ -470,6 +521,9 @@ class MainActivity : Activity() {
                 addView(ui.button("Stop", Ui.Style.DANGER) { onStopMirroring() }, ui.weighted(startDp = 10))
             }, ui.matchWidth(topDp = 16))
 
+            touchPrompt = ui.button("Turn on touch control", Ui.Style.QUIET, heightDp = 44) { setUpTouchControl() }
+            addView(touchPrompt, ui.matchWidth(topDp = 6))
+
             troubleBox = ui.vertical().apply {
                 visibility = View.GONE
                 setPadding(0, ui.dp(4), 0, 0)
@@ -556,10 +610,26 @@ class MainActivity : Activity() {
         addView(motionSwitch, ui.matchWidth(topDp = 14))
         motionDetail = ui.text("", 14f, R.color.muted, topDp = 2)
         addView(motionDetail)
+
+        addView(ui.divider(), ui.matchWidth(topDp = 18, heightDp = 1))
+
+        dimSwitch = Switch(this@MainActivity).apply {
+            text = "Dim this phone while mirroring"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextColor(ui.color(R.color.on_surface))
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isChecked = dimPhone()
+            setOnClickListener { onDimSwitch(isChecked) }
+        }
+        addView(dimSwitch, ui.matchWidth(topDp = 14))
+        dimDetail = ui.text("", 14f, R.color.muted, topDp = 2)
+        addView(dimDetail)
     }
 
     private fun tipsCard(): View = ui.card().apply {
         val tips = listOf(
+            "Full screen in the car: tap the Tesla browser's full-screen button, the two arrows " +
+                "at the left of its address bar. Videos fill the screen on their own.",
             "Sound plays through your car over Bluetooth, as usual.",
             "Quicker start: add the Car Mirror tile to Quick Settings, or long-press the app icon.",
             "Keep your phone plugged in. Mirroring uses battery.",
@@ -596,6 +666,7 @@ class MainActivity : Activity() {
         private const val SETTINGS = "settings"
         private const val KEY_QUALITY = "quality"
         private const val KEY_PAUSE_WHILE_MOVING = "pauseWhileMoving"
+        private const val KEY_DIM = "dimPhone"
 
         private val TROUBLE_TIPS = listOf(
             "Check the car is on your phone's hotspot, not your home Wi-Fi: tap the Wi-Fi icon at " +

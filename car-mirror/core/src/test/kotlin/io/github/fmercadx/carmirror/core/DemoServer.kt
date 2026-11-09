@@ -24,7 +24,9 @@ import kotlin.math.sin
  *
  * With --control, the demo also behaves like a phone with touch control on: every gesture
  * the page sends is appended to <dir>/gestures.log, and writing "privacy" or "driving" to
- * <dir>/pause pauses the picture (an empty file resumes it).
+ * <dir>/pause pauses the picture (an empty file resumes it). Writing "bars" to <dir>/scene
+ * blacks out the top and bottom fifth of the picture, like a video played with black bars,
+ * and writing "off" to <dir>/touch turns touch control off.
  */
 fun main(args: Array<String>) {
     System.setProperty("java.awt.headless", "true")
@@ -36,18 +38,23 @@ fun main(args: Array<String>) {
 
     val hub = FrameHub()
     val quality = AutoQuality(max = 80)
+    var bars = false
+    var touchOn = true
     val control = controlDir?.let { dir ->
         dir.mkdirs()
         val log = File(dir, "gestures.log").apply { writeText("") }
         val pauseFile = File(dir, "pause").apply { writeText("") }
+        val sceneFile = File(dir, "scene").apply { writeText("") }
         thread(isDaemon = true, name = "demo-control") {
             while (true) {
                 hub.setPaused(pauseFile.readText().trim().ifEmpty { null })
+                bars = sceneFile.readText().trim() == "bars"
+                touchOn = File(dir, "touch").let { !it.exists() || it.readText().trim() != "off" }
                 Thread.sleep(100)
             }
         }
         object : MirrorControl {
-            override val touchAvailable = true
+            override val touchAvailable get() = touchOn
             override fun perform(gesture: Gesture): Boolean {
                 val first = gesture.points.first()
                 val last = gesture.points.last()
@@ -68,7 +75,9 @@ fun main(args: Array<String>) {
     val image = BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
     val out = ByteArrayOutputStream()
     var n = 0
+    val frameMs = 1000L / 30 // like the phone on its smoothest setting
     while (true) {
+        val started = System.nanoTime()
         val g = image.createGraphics()
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         g.paint = GradientPaint(0f, 0f, Color(0x1E40AF), width.toFloat(), height.toFloat(), Color(0x0F172A))
@@ -85,6 +94,11 @@ fun main(args: Array<String>) {
         g.color = Color.WHITE
         g.font = Font(Font.SANS_SERIF, Font.BOLD, minOf(width, height) / 10)
         g.drawString("Frame $n", 40, 40 + minOf(width, height) / 10)
+        if (bars) {
+            g.color = Color.BLACK
+            g.fillRect(0, 0, width, height / 5)
+            g.fillRect(0, height - height / 5, width, height / 5)
+        }
         g.dispose()
 
         out.reset()
@@ -98,6 +112,7 @@ fun main(args: Array<String>) {
         }
         hub.publish(out.toByteArray(), width, height)
         n++
-        Thread.sleep(1000L / 24)
+        val spentMs = (System.nanoTime() - started) / 1_000_000
+        Thread.sleep((frameMs - spentMs).coerceAtLeast(1))
     }
 }
