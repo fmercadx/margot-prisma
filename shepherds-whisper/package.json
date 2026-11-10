@@ -15,7 +15,8 @@
     "smoke": "node smoke.mjs",
     "standalone": "node standalone.mjs",
     "test": "node --test test-tour-request.mjs",
-    "test:form": "node test-form.mjs"
+    "test:form": "node test-form.mjs",
+    "test:privacy": "node test-privacy.mjs"
   },
   "dependencies": {
     "react": "^19.2.8",

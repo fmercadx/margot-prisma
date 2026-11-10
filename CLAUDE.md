@@ -97,6 +97,13 @@ it is filled in for real:
   dropped in beside one overrides it. Alt text says "Illustration —" while a
   slot holds a drawing. Stock photos of another home would misrepresent this one.
 
+The privacy page at `src/pages/Privacy.tsx` describes what the code actually
+does with an enquiry — the care-needs list, Resend, the one-hour IP window, and
+the deploy-log fallback when a send fails. Change any of those and the page is
+untrue until it is changed too; `npm run test:privacy` asserts each claim is
+still on the page. Its effective date and privacy contact render as visible
+markers until set, and the page says it is not yet in effect while they are.
+
 Its own README covers the deploy and the rest of the reasoning.
 
 ---

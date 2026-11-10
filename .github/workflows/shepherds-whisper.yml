@@ -61,6 +61,11 @@ jobs:
       # telling a family their request was delivered when it was not.
       - run: npm run test:form
 
+      # The privacy page states what the code does with an enquiry. This fails
+      # if the page stops saying it — a policy that drifts from the code is
+      # worse than none.
+      - run: npm run test:privacy
+
       - name: Check the built site actually serves
         run: |
           PORT=8080 node server.mjs &
