@@ -54,8 +54,17 @@ Android specifics already handled:
 - The notification channel is created before asking permission — Android
   13+ shows no prompt for an app without one. The reminder survives a
   reboot (expo-notifications re-arms it).
-- No storage permissions: the template's `READ`/`WRITE_EXTERNAL_STORAGE`
-  are blocked, since the app never touches files.
+- Only the permissions the app uses. `android.blockedPermissions` in
+  `app.json` strips what the template and libraries add but the app never
+  needs: storage (it touches no files), Firebase push
+  (`c2dm.permission.RECEIVE`; the reminder is local), and 16 launcher-badge
+  permissions from expo-notifications' badge library (the app never sets a
+  badge). The APK build reads that list and fails if any of them reappears
+  after a library update, or if the reminder's `POST_NOTIFICATIONS` /
+  `RECEIVE_BOOT_COMPLETED` go missing. `WAKE_LOCK` and
+  `ACCESS_NETWORK_STATE` stay: Firebase and Play-services code still in the
+  APK may use them, and removing a permission that code calls for crashes
+  it. Neither prompts the user.
 - Edge-to-edge: content is padded by the system-bar insets, and the
   keyboard is handled by a `KeyboardAvoidingView` (Android only; iOS uses
   the ScrollView's own keyboard insets).

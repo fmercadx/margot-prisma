@@ -66,14 +66,29 @@ jobs:
           apk=android/app/build/outputs/apk/release/app-release.apk
           aapt2="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/aapt2"
           "$aapt2" dump badging "$apk" > badging.txt
-          grep -E "^package:|^application-label:|uses-permission" badging.txt
+          grep -E "^package:|^application-label:" badging.txt
           grep -q "^package: name='com.fmercadx.personaldailyhub'" badging.txt
-          grep -q "POST_NOTIFICATIONS" badging.txt
-          # Not `! grep`: bash's -e ignores a negated command, so it could never fail.
-          if grep -q "EXTERNAL_STORAGE" badging.txt; then
-            echo "::error::Storage permission is back in the APK; app.json blocks it"
+
+          # Exact permission names in the APK, after every library's manifest merged.
+          sed -n "s/^uses-permission: name='\([^']*\)'.*/\1/p" badging.txt | sort -u > permissions.txt
+          echo "Permissions in the APK:"; sed 's/^/  /' permissions.txt
+
+          # Everything app.json blocks (storage, push, launcher badges) must be gone.
+          # Libraries re-add these whenever they update, so this reads the list
+          # from app.json rather than repeating it.
+          node -e 'for (const p of require("./app.json").expo.android.blockedPermissions) console.log(p)' \
+            | sort -u > blocked.txt
+          # `if` rather than `! grep`: bash's -e ignores a negated command.
+          if leaked=$(grep -Fx -f blocked.txt permissions.txt); then
+            echo "::error::app.json blocks these, but they are in the APK:"
+            echo "$leaked"
             exit 1
           fi
+
+          # And the daily reminder still has what it needs.
+          for p in android.permission.POST_NOTIFICATIONS android.permission.RECEIVE_BOOT_COMPLETED; do
+            grep -Fxq "$p" permissions.txt || { echo "::error::$p is missing; the daily reminder needs it"; exit 1; }
+          done
           {
             echo "### Personal Daily Hub APK"
             echo
@@ -83,6 +98,7 @@ jobs:
             echo "| Version | $(sed -n "s/.*versionName='\([^']*\)'.*/\1/p" badging.txt) |"
             echo "| Size | $(du -h "$apk" | cut -f1) |"
             echo "| SHA-256 | \`$(sha256sum "$apk" | cut -d' ' -f1)\` |"
+            echo "| Permissions | $(wc -l < permissions.txt) (none of the $(wc -l < blocked.txt) app.json blocks) |"
             echo
             echo "Download **personal-daily-hub-apk** below, unzip it, and open the .apk on the phone."
           } >> "$GITHUB_STEP_SUMMARY"
