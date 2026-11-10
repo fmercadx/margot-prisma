@@ -127,25 +127,24 @@ function detailsText(page) {
   });
 }
 
-// Frames the page draws per second, averaged over three readings of the details line.
-function drawRate(page) {
+// Frames the phone makes and frames the page draws, per second, over the same few seconds.
+// Measuring them one after the other compared different windows: on the slow link the
+// phone's count came out at 32 fps (an 80 ms request at each end of a 2 s window) and the
+// page's 25.3 looked like falling behind, though it was drawing about 84% of a real 30.
+function rates(page, seconds = 4) {
+  const seqNow = () => page.evaluate(() => fetch('status', { cache: 'no-store' }).then((r) => r.json()).then((s) => s.seq));
   return withDetails(page, async () => {
     await sleep(1500);
-    const samples = [];
-    for (let i = 0; i < 3; i++) {
+    const seq0 = await seqNow();
+    const t0 = Date.now();
+    const samples = []; // the details line shows the frames drawn in the last second
+    for (let i = 0; i < seconds; i++) {
       await sleep(1000);
       samples.push(Number(((await page.locator('#info').innerText()).match(/(\d+) fps/) || [])[1] || 0));
     }
-    return samples.reduce((a, b) => a + b, 0) / samples.length;
+    const made = ((await seqNow()) - seq0) / ((Date.now() - t0) / 1000);
+    return { made, drawn: samples.reduce((a, b) => a + b, 0) / samples.length };
   });
-}
-
-// Frames the phone makes per second.
-async function phoneRate(page) {
-  const seqNow = () => page.evaluate(() => fetch('status', { cache: 'no-store' }).then((r) => r.json()).then((s) => s.seq));
-  const a = await seqNow();
-  await sleep(2000);
-  return ((await seqNow()) - a) / 2;
 }
 
 async function main() {
@@ -176,10 +175,9 @@ async function main() {
 
   // Keeping up: the page should draw nearly every frame the phone makes, whatever rate the
   // phone (here, a CI machine drawing a test pattern) manages.
-  const produced = await phoneRate(page);
-  const drawnRate = await drawRate(page);
-  check(produced > 0 && drawnRate >= produced * 0.8,
-    `keeps up with the phone: draws ${drawnRate.toFixed(1)} fps of the ${produced.toFixed(1)} it makes`);
+  const fast = await rates(page);
+  check(fast.made > 0 && fast.drawn >= fast.made * 0.8,
+    `keeps up with the phone: draws ${fast.drawn.toFixed(1)} fps of the ${fast.made.toFixed(1)} it makes`);
 
   // The corner button brings up details.
   await page.click('#menu');
@@ -295,10 +293,9 @@ async function main() {
   await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 80, downloadThroughput: 3000000, uploadThroughput: 1000000 });
   await slow.goto(base);
   await until(slow, messageHidden, 'the first frame on a slow link');
-  const slowMade = await phoneRate(slow);
-  const slowDrawn = await drawRate(slow);
-  check(slowDrawn >= slowMade * 0.8,
-    `keeps up on a slow link too: draws ${slowDrawn.toFixed(1)} fps of the ${slowMade.toFixed(1)} it makes`);
+  const slowRates = await rates(slow);
+  check(slowRates.made > 0 && slowRates.drawn >= slowRates.made * 0.8,
+    `keeps up on a slow link too: draws ${slowRates.drawn.toFixed(1)} fps of the ${slowRates.made.toFixed(1)} it makes`);
   await slow.close();
 
   // Fallback for browsers that can't read a stream: one request per frame.
