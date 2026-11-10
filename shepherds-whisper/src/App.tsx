@@ -12,8 +12,26 @@ import Promise from './components/Promise'
 import Testimonials from './components/Testimonials'
 import TourWizard from './components/TourWizard'
 import TrustBar from './components/TrustBar'
+import Privacy from './pages/Privacy'
+import { useRoute } from './router'
 
 export default function App() {
+  const route = useRoute()
+
+  /* The privacy page is its own URL rather than a section of the home page: it
+     is linked from app store listings and emails, and it has to be reachable
+     without scrolling past a sales pitch. server.mjs falls back to the app
+     shell for extension-less paths, so /privacy lands here. */
+  if (route === '/privacy') {
+    return (
+      <>
+        <Nav />
+        <Privacy />
+        <Footer />
+      </>
+    )
+  }
+
   return (
     <>
       <a
