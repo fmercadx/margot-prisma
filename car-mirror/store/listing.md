@@ -38,7 +38,7 @@ PRIVATE BY DESIGN
 • The app uses Android's VPN feature only to give your phone an address the car's browser will open. The VPN carries no traffic and sends nothing anywhere
 
 SAFETY
-Use it like a phone on a dash mount: navigation is fine, video is not. You can turn on "Pause while driving" to blank the picture whenever the car is moving.
+"Pause while driving" is on from the start: the car's picture blanks whenever the car is moving and comes back a few seconds after you stop. It can be switched off in Settings; if you do, use it like a phone on a dash mount: navigation is fine, video is not.
 
 GOOD TO KNOW
 • Sound plays through your car over Bluetooth, as usual
@@ -54,11 +54,14 @@ Car Mirror is an independent app and is not affiliated with, endorsed by or spon
 | --- | --- | --- |
 | App icon | `icon-512.png` | 512 × 512 |
 | Feature graphic | `feature-graphic.png` | 1024 × 500 |
-| Phone screenshots | `store-*.png` on each GitHub release | 1080 × 1920 |
+| Listing screenshots, captioned | `listing-*.png` on each GitHub release | 1920 × 1080 (first), 1080 × 1920 |
+| Plain screenshots | `store-*.png` on each GitHub release | 1080 × 1920 |
 
 `icon-512.png` and `feature-graphic.png` are drawn by `tools/store-art.cjs` from the app's
 own icon shapes; rerun it after changing the icon. The screenshots are taken from the real
-app by `StoreScreenshotTest` in CI.
+app by `StoreScreenshotTest` in CI, and `tools/store-kit.cjs` adds the captions and packs
+everything, with this text, into `car-mirror-store-kit-N.zip` on each release. See
+`CHECKLIST.md` for the submission steps.
 
 ## Category and contact
 

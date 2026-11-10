@@ -8,13 +8,29 @@ differently from time to time, so match the meaning rather than the exact wordin
 
 URL of `PRIVACY.md` (see `listing.md`).
 
+## App access
+
+Choose **All or some functionality is restricted** and add these instructions, because a
+reviewer won't have a car:
+
+> No account or login. To test without a car: turn on the phone's Wi-Fi hotspot, connect a
+> laptop or a second phone to it, open Car Mirror and tap Start mirroring, and allow the
+> prompts. Then open the address the app shows (for example 169-254-73-1.sslip.io:8080, or
+> the next one listed if that doesn't load) in the laptop's web browser. The phone's screen
+> appears there. Touch control is optional: tap "Turn on touch control" to try tapping on
+> the laptop's picture.
+
+## Advertising ID
+
+Does the app use an advertising ID? **No.**
+
 ## Data safety
 
 - Does the app collect or share any of the required user data types? **No.**
 - Is all user data encrypted in transit? Not applicable: nothing is collected or sent to the
   developer. (The picture goes from the phone to the car over the phone's own hotspot.)
-- Location, used only by the optional driving pause, is processed on the device and never
-  leaves it. Google's definitions don't count on-device-only processing as "collected".
+- Location, used only by the driving pause (on by default, can be switched off), is
+  processed on the device and never leaves it. Google's definitions don't count on-device-only processing as "collected".
 
 ## Ads
 
@@ -55,13 +71,16 @@ not share the user's location with other users. Expected rating: Everyone / PEGI
 - Video: record the phone tapping Start mirroring, accepting the prompt, and the picture
   appearing in a browser on the same hotspot (a laptop works for the recording).
 
-**Location** (only declared because of the optional driving pause)
+**Location** (only declared because of the driving pause)
 
 - Use case: the closest navigation or location-tracking option for an in-car feature.
-- Description: "Optional 'Pause while driving' setting, off by default. While mirroring, the
-  app reads GPS speed to blank the car's picture when the car is moving. Location is used on
-  the device only, never stored or transmitted, and only while mirroring is on."
-- Video: turning the setting on, granting location, starting mirroring.
+- Description: "'Pause while driving' safety setting, on by default and can be switched off.
+  While mirroring, the app reads GPS speed to blank the car's picture when the car is moving.
+  The first start explains this in the app before Android's location prompt; declining
+  switches the setting off. Location is used on the device only, never stored or
+  transmitted, and only while mirroring is on."
+- Video: tapping Start mirroring, the app's explanation, granting location, and the
+  notification showing the picture paused while moving.
 
 ## Location permission
 

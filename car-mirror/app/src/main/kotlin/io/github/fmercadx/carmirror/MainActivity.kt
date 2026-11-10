@@ -130,7 +130,7 @@ class MainActivity : Activity() {
         if (!MirrorState.running) beginMirroring()
     }
 
-    // ---- Start sequence: notifications -> VPN -> screen capture -> service ----
+    // ---- Start sequence: notifications -> location (driving pause) -> VPN -> screen capture -> service ----
 
     private fun beginMirroring() {
         MirrorState.problem = null
@@ -150,19 +150,40 @@ class MainActivity : Activity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
             return
         }
-        askForVpn()
+        askForLocationThenContinue()
+    }
+
+    /**
+     * Pause while driving is on by default, so the first start explains it before Android asks
+     * for location. Declining, here or in Android's prompt, switches the setting off rather than
+     * asking again at every start; mirroring then goes ahead without it.
+     */
+    private fun askForLocationThenContinue() {
+        if (!wantsPauseWhileMoving() || hasLocationPermission()) {
+            askForVpn()
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Pause while driving")
+            .setMessage(LOCATION_EXPLANATION)
+            .setPositiveButton("Continue") { _, _ -> requestPermissions(LOCATION_PERMISSIONS, REQUEST_LOCATION_AT_START) }
+            .setNegativeButton("Turn it off") { _, _ ->
+                setPauseWhileMoving(false)
+                askForVpn()
+            }
+            .setCancelable(false)
+            .show()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         when (requestCode) {
             // Mirroring works without the notification; it is only the easy way to pause and stop.
-            REQUEST_NOTIFICATIONS -> askForVpn()
-            REQUEST_LOCATION -> {
-                val granted = hasLocationPermission()
-                settings().edit().putBoolean(KEY_PAUSE_WHILE_MOVING, granted).apply()
-                motionSwitch.isChecked = granted
-                render()
+            REQUEST_NOTIFICATIONS -> askForLocationThenContinue()
+            REQUEST_LOCATION -> setPauseWhileMoving(hasLocationPermission())
+            REQUEST_LOCATION_AT_START -> {
+                setPauseWhileMoving(hasLocationPermission())
+                askForVpn()
             }
         }
     }
@@ -233,19 +254,24 @@ class MainActivity : Activity() {
     private fun hasLocationPermission() =
         checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
-    /** On only if the user opted in and location permission is still granted. */
-    private fun pauseWhileMoving() = settings().getBoolean(KEY_PAUSE_WHILE_MOVING, false) && hasLocationPermission()
+    /** The setting: on unless the user switched it off or declined location. */
+    private fun wantsPauseWhileMoving() = settings().getBoolean(KEY_PAUSE_WHILE_MOVING, true)
+
+    /** Whether this start can actually watch GPS: the setting is on and location is granted. */
+    private fun pauseWhileMoving() = wantsPauseWhileMoving() && hasLocationPermission()
+
+    private fun setPauseWhileMoving(on: Boolean) {
+        settings().edit().putBoolean(KEY_PAUSE_WHILE_MOVING, on).apply()
+        motionSwitch.isChecked = on
+        render()
+    }
 
     private fun onMotionSwitch(checked: Boolean) {
         if (checked && !hasLocationPermission()) {
-            requestPermissions(
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
-                REQUEST_LOCATION,
-            )
+            requestPermissions(LOCATION_PERMISSIONS, REQUEST_LOCATION)
             return // saved once the user answers
         }
-        settings().edit().putBoolean(KEY_PAUSE_WHILE_MOVING, checked).apply()
-        render()
+        setPauseWhileMoving(checked)
     }
 
     private fun dimPhone() = settings().getBoolean(KEY_DIM, false) && Brightness.allowed(this)
@@ -450,10 +476,13 @@ class MainActivity : Activity() {
         dimDetail.text = "Turns your phone's brightness right down while mirroring, so it isn't " +
             "glowing next to the car's screen. The car's picture isn't affected."
 
-        val wantsMotion = settings().getBoolean(KEY_PAUSE_WHILE_MOVING, false)
-        if (motionSwitch.isChecked != pauseWhileMoving()) motionSwitch.isChecked = pauseWhileMoving()
+        val wantsMotion = wantsPauseWhileMoving()
+        if (motionSwitch.isChecked != wantsMotion) motionSwitch.isChecked = wantsMotion
         motionDetail.text = when {
             running && wantsMotion != MirrorState.watchingMotion -> "Takes effect the next time you start."
+            wantsMotion && !hasLocationPermission() ->
+                "Blanks the car's screen while you drive, maps included. You'll be asked to allow " +
+                    "location when you start."
             else -> "Blanks the car's screen while you drive, maps included. Uses GPS on your phone only."
         }
     }
@@ -626,7 +655,7 @@ class MainActivity : Activity() {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setTextColor(ui.color(R.color.on_surface))
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            isChecked = pauseWhileMoving()
+            isChecked = wantsPauseWhileMoving()
             setOnClickListener { onMotionSwitch(isChecked) }
         }
         addView(motionSwitch, ui.matchWidth(topDp = 14))
@@ -687,6 +716,9 @@ class MainActivity : Activity() {
         private const val REQUEST_VPN = 2
         private const val REQUEST_SCREEN = 3
         private const val REQUEST_LOCATION = 4
+        private const val REQUEST_LOCATION_AT_START = 5
+        private val LOCATION_PERMISSIONS =
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         private const val SETTINGS = "settings"
         private const val KEY_QUALITY = "quality"
         private const val KEY_PAUSE_WHILE_MOVING = "pauseWhileMoving"
@@ -724,5 +756,13 @@ class MainActivity : Activity() {
                 "nothing is sent through it, and nothing leaves your phone except the picture " +
                 "going to your car over the hotspot.\n\n" +
                 "Next, Android will ask you to allow the connection."
+
+        private const val LOCATION_EXPLANATION =
+            "Car Mirror blanks your car's screen while the car is moving, and brings the picture " +
+                "back a few seconds after you stop. Maps are paused too.\n\n" +
+                "To know when you're moving, it reads your phone's GPS speed while mirroring. " +
+                "Location stays on your phone: it is never stored or sent anywhere.\n\n" +
+                "Next, Android will ask for location. Choose Precise and While using the app. " +
+                "You can switch this off any time under Settings."
     }
 }

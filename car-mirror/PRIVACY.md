@@ -1,6 +1,7 @@
 # Car Mirror privacy policy
 
 Effective November 7, 2026 (touch control and the driving pause added the same day).
+Updated November 10, 2026: the driving pause is now on unless you switch it off.
 
 Car Mirror shows your Android phone's screen in your car's web browser. This policy covers
 the Car Mirror app.
@@ -46,8 +47,10 @@ turn it on in Android's settings, and you can turn it off there any time.
 
 ## Pause while the car is moving (optional)
 
-If you turn this on, Car Mirror reads your phone's GPS speed while mirroring, only to decide
-whether the car is moving. Location is used on your phone and is never stored, logged or
+This is on unless you switch it off. The first time you start mirroring, the app explains it
+and Android asks whether to allow location; if you decline, it is switched off. While it is
+on, Car Mirror reads your phone's GPS speed while mirroring, only to decide whether the car
+is moving. Location is used on your phone and is never stored, logged or
 sent anywhere. When mirroring stops, so does the GPS.
 
 ## Permissions

@@ -41,9 +41,10 @@ app can skip that.
 - **Pause.** **Pause** in the app or the notification blanks the car's screen until you
   tap **Resume**. Useful before opening messages or banking. Taps from the car are ignored
   while paused.
-- **Pause while moving** (off by default). Uses GPS speed to blank the picture while the
-  car moves, and brings it back about 5 seconds after you stop. It also pauses maps, which
-  is why it's off by default.
+- **Pause while driving** (on by default). Uses GPS speed to blank the picture while the
+  car moves, and brings it back about 5 seconds after you stop. It pauses maps too. The
+  first time you start, the app explains it before Android asks for location; declining,
+  or switching it off under Settings, turns it off and mirroring works as before.
 - **Auto quality.** When the Wi-Fi can't keep up, the picture gets a little softer instead
   of stuttering, then sharpens again. The picture setting you choose is the upper limit.
 - **Videos fill the screen.** A video played full screen on a phone has black bars around
@@ -162,8 +163,14 @@ base64 -w0 upload.keystore > upload.keystore.b64   # macOS: base64 -i upload.key
 
 Then in the repo's **Settings → Secrets and variables → Actions**, add
 `CAR_MIRROR_UPLOAD_KEYSTORE` (the contents of `upload.keystore.b64`) and
-`CAR_MIRROR_UPLOAD_PASSWORD`. The next build attaches `car-mirror-play-bundle` to the
-workflow run. Download it from the run's page and upload it in Play Console.
+`CAR_MIRROR_UPLOAD_PASSWORD`. The next build attaches `car-mirror-store-builds` to the
+workflow run: the Play bundle (`.aab`) and an APK for the Galaxy Store, both signed with this
+key. Download it from the run's page.
+
+Every release also carries `car-mirror-store-kit-N.zip`: captioned listing screenshots made
+from that build's real screens by `tools/store-kit.cjs`, the icon and banner, the listing text
+one file per form box, the Play Console answers, and `store/CHECKLIST.md`, the submission
+steps for Google Play and the Galaxy Store.
 
 What only you can do in Play Console: open a developer account; run a 12-tester, 14-day
 closed test if it is a personal account (organization accounts are exempt); and fill in:
@@ -173,7 +180,8 @@ closed test if it is a personal account (organization accounts are exempt); and 
   pause, each with a short demo video;
 - the **Accessibility API** declaration for touch control. The app shows its own
   explanation before sending users to Settings, as Play requires;
-- **location** permission details (optional feature, used on the phone only);
+- **location** permission details (the driving pause: on by default, can be switched
+  off, used on the phone only);
 - the **data safety** form: no data collected or shared.
 
 Accessibility and location get the closest review. If either holds up approval, they can
