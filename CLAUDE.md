@@ -1,6 +1,6 @@
 # Working in this repo
 
-Three unrelated products share this repository:
+Four unrelated products share this repository:
 
 - **the salon site** — React + Vite + Tailwind, at the repo root, serving
   `fmercadx.github.io/margot-prisma/`
@@ -8,10 +8,23 @@ Three unrelated products share this repository:
   `fmercadx.github.io/margot-prisma/analyzer/`
 - **`shepherds-whisper/`** — the marketing site for an Oregon adult foster
   home, deployed on Railway, not on Pages
+- **`car-mirror/`** — an Android app that mirrors the owner's phone screen to
+  their Tesla's browser. Its own Gradle build; ships as an APK on GitHub
+  Releases, not on Pages or Railway. Its README explains the design.
 
 They are independent. `deploy.yml` builds the first two into one `dist/`, and
-`credit-analyzer.yml` and `shepherds-whisper.yml` are path-filtered so no
-product's changes run another's tests.
+`credit-analyzer.yml`, `shepherds-whisper.yml` and `car-mirror.yml` are
+path-filtered so no product's changes run another's tests. `car-mirror.yml`
+alone also runs on branch pushes, because each build publishes a release.
+
+**`car-mirror/` network exposure is deliberate.** Its VPN covers only the app
+and routes a single link-local `/32` (link-local because Android 13+ drops
+packets from other interfaces to any other VPN address). Its server listens on
+all addresses but closes connections that don't arrive on that address or the
+hotspot's own (`acceptLocal`), and checks the Host header. `POST /input` (touch control) also needs the per-session token
+from `/status` in a custom header, and the server never sends CORS headers.
+Widening any of these would let whoever shares a network with the phone, or
+any page open in the car's browser, see the screen or tap on the phone.
 
 **Two Railway services, two configs.** The root `railway.json` and `Procfile`
 belong to the credit analyzer's Flask app. `shepherds-whisper/railway.json` and
@@ -113,6 +126,17 @@ cd credit-analyzer/mobile  && npm test
 
 # The adult family home site: build, then browser checks against dist/
 cd shepherds-whisper && npm ci && npm run build && npm run smoke
+
+# Car mirror: core tests (JDK only), then the viewer page in Chromium.
+# The APK itself cannot build here (dl.google.com is blocked); CI builds it.
+# Maven Central sometimes answers 429 through the proxy: just rerun.
+cd car-mirror && ./gradlew -PcoreOnly :core:test
+cd car-mirror && ./gradlew -PcoreOnly :core:demoServer --args="8090 --control $PWD/build/smoke" &   # wait for READY
+cd car-mirror && NODE_PATH=$(npm root -g) node tools/viewer-smoke.cjs http://127.0.0.1:8090/ --control $PWD/build/smoke
+
+# Car mirror phone-screen previews: Robolectric renders the real screen in each state.
+# CI only (needs Google Maven); the PNGs are attached to each release as preview-*.png.
+cd car-mirror && ./gradlew :app:testDebugUnitTest
 ```
 
 The smoke scripts take `--browser <path>` if Playwright's Chromium is not on
