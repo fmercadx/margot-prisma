@@ -76,9 +76,21 @@ jobs:
           done
           ls -l preview-*.png store-*.png
 
-      # The bundle Google Play takes, signed with the private upload key rather than the
-      # shared one. It is a workflow artifact only, never attached to the public release.
-      - name: Google Play bundle
+      # Everything a store listing needs, zipped onto the release: captioned screenshots made
+      # from this build's store-*.png, the icon and banner, the listing text one file per box,
+      # the Play Console answers and the submission checklist.
+      - name: Store kit
+        run: |
+          sudo apt-get install -y fonts-inter > /dev/null || echo "fonts-inter unavailable: captions use a fallback font"
+          node tools/store-kit.cjs --shots . --out store-kit
+          (cd store-kit && zip -qr ../car-mirror-store-kit-${{ github.run_number }}.zip .)
+          cp store-kit/screenshots/listing-*.png .
+          ls -l car-mirror-store-kit-*.zip listing-*.png
+
+      # The bundle Google Play takes and an APK for the Galaxy Store, both signed with the
+      # private upload key rather than the shared one. Workflow artifacts only, never attached
+      # to the public release.
+      - name: Store builds
         if: env.HAS_UPLOAD_KEY == 'true'
         env:
           UPLOAD_KEYSTORE_BASE64: ${{ secrets.CAR_MIRROR_UPLOAD_KEYSTORE }}
@@ -88,19 +100,23 @@ jobs:
           echo "$UPLOAD_KEYSTORE_BASE64" | base64 -d > "$CAR_MIRROR_UPLOAD_KEYSTORE"
           ./gradlew :app:bundleRelease -PplayUpload -PbuildNumber=${{ github.run_number }} --console=plain
           cp app/build/outputs/bundle/release/app-release.aab car-mirror-${{ github.run_number }}.aab
+          ./gradlew :app:assembleRelease -PplayUpload -PbuildNumber=${{ github.run_number }} --console=plain
+          cp app/build/outputs/apk/release/app-release.apk car-mirror-${{ github.run_number }}-galaxy.apk
           rm -f "$CAR_MIRROR_UPLOAD_KEYSTORE"
 
       # Paths below are repo-root relative: `defaults.run` does not apply to `uses:` steps.
       - uses: actions/upload-artifact@v4
         with:
           name: car-mirror-apk
-          path: car-mirror/car-mirror-*.apk
+          path: car-mirror/car-mirror-${{ github.run_number }}.apk
 
       - uses: actions/upload-artifact@v4
         if: env.HAS_UPLOAD_KEY == 'true'
         with:
-          name: car-mirror-play-bundle
-          path: car-mirror/car-mirror-*.aab
+          name: car-mirror-store-builds
+          path: |
+            car-mirror/car-mirror-*.aab
+            car-mirror/car-mirror-*-galaxy.apk
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -109,13 +125,17 @@ jobs:
           name: Car Mirror build ${{ github.run_number }}
           prerelease: ${{ github.ref != 'refs/heads/main' }}
           files: |
-            car-mirror/car-mirror-*.apk
+            car-mirror/car-mirror-${{ github.run_number }}.apk
             car-mirror/preview-*.png
             car-mirror/store-*.png
+            car-mirror/listing-*.png
+            car-mirror/car-mirror-store-kit-*.zip
           body: |
             Open this page on your Android phone and tap **car-mirror-${{ github.run_number }}.apk** below to install it.
             Installing over an earlier build keeps your settings. Setup steps: car-mirror/README.md.
-            The preview-*.png files show what each screen of this build looks like; the store-*.png
-            files are Play Store screenshots (1080 x 1920).
+            The preview-*.png files show what each screen of this build looks like. To sell it,
+            download **car-mirror-store-kit-${{ github.run_number }}.zip**: captioned listing
+            screenshots (listing-*.png, also attached here), icon, banner, listing text and a
+            step-by-step checklist.
 
             Built from ${{ github.sha }} on `${{ github.ref_name }}`.

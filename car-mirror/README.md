@@ -163,8 +163,14 @@ base64 -w0 upload.keystore > upload.keystore.b64   # macOS: base64 -i upload.key
 
 Then in the repo's **Settings → Secrets and variables → Actions**, add
 `CAR_MIRROR_UPLOAD_KEYSTORE` (the contents of `upload.keystore.b64`) and
-`CAR_MIRROR_UPLOAD_PASSWORD`. The next build attaches `car-mirror-play-bundle` to the
-workflow run. Download it from the run's page and upload it in Play Console.
+`CAR_MIRROR_UPLOAD_PASSWORD`. The next build attaches `car-mirror-store-builds` to the
+workflow run: the Play bundle (`.aab`) and an APK for the Galaxy Store, both signed with this
+key. Download it from the run's page.
+
+Every release also carries `car-mirror-store-kit-N.zip`: captioned listing screenshots made
+from that build's real screens by `tools/store-kit.cjs`, the icon and banner, the listing text
+one file per form box, the Play Console answers, and `store/CHECKLIST.md`, the submission
+steps for Google Play and the Galaxy Store.
 
 What only you can do in Play Console: open a developer account; run a 12-tester, 14-day
 closed test if it is a personal account (organization accounts are exempt); and fill in:

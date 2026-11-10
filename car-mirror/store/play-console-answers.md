@@ -8,6 +8,22 @@ differently from time to time, so match the meaning rather than the exact wordin
 
 URL of `PRIVACY.md` (see `listing.md`).
 
+## App access
+
+Choose **All or some functionality is restricted** and add these instructions, because a
+reviewer won't have a car:
+
+> No account or login. To test without a car: turn on the phone's Wi-Fi hotspot, connect a
+> laptop or a second phone to it, open Car Mirror and tap Start mirroring, and allow the
+> prompts. Then open the address the app shows (for example 169-254-73-1.sslip.io:8080, or
+> the next one listed if that doesn't load) in the laptop's web browser. The phone's screen
+> appears there. Touch control is optional: tap "Turn on touch control" to try tapping on
+> the laptop's picture.
+
+## Advertising ID
+
+Does the app use an advertising ID? **No.**
+
 ## Data safety
 
 - Does the app collect or share any of the required user data types? **No.**

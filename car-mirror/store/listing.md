@@ -54,11 +54,14 @@ Car Mirror is an independent app and is not affiliated with, endorsed by or spon
 | --- | --- | --- |
 | App icon | `icon-512.png` | 512 × 512 |
 | Feature graphic | `feature-graphic.png` | 1024 × 500 |
-| Phone screenshots | `store-*.png` on each GitHub release | 1080 × 1920 |
+| Listing screenshots, captioned | `listing-*.png` on each GitHub release | 1920 × 1080 (first), 1080 × 1920 |
+| Plain screenshots | `store-*.png` on each GitHub release | 1080 × 1920 |
 
 `icon-512.png` and `feature-graphic.png` are drawn by `tools/store-art.cjs` from the app's
 own icon shapes; rerun it after changing the icon. The screenshots are taken from the real
-app by `StoreScreenshotTest` in CI.
+app by `StoreScreenshotTest` in CI, and `tools/store-kit.cjs` adds the captions and packs
+everything, with this text, into `car-mirror-store-kit-N.zip` on each release. See
+`CHECKLIST.md` for the submission steps.
 
 ## Category and contact
 
