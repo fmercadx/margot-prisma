@@ -38,7 +38,7 @@ PRIVATE BY DESIGN
 • The app uses Android's VPN feature only to give your phone an address the car's browser will open. The VPN carries no traffic and sends nothing anywhere
 
 SAFETY
-Use it like a phone on a dash mount: navigation is fine, video is not. You can turn on "Pause while driving" to blank the picture whenever the car is moving.
+"Pause while driving" is on from the start: the car's picture blanks whenever the car is moving and comes back a few seconds after you stop. It can be switched off in Settings; if you do, use it like a phone on a dash mount: navigation is fine, video is not.
 
 GOOD TO KNOW
 • Sound plays through your car over Bluetooth, as usual

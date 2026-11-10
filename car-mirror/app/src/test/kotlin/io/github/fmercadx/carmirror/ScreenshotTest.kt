@@ -1,5 +1,6 @@
 package io.github.fmercadx.carmirror
 
+import android.Manifest
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Looper
@@ -19,6 +20,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
@@ -40,6 +42,10 @@ class ScreenshotTest {
     @Before
     fun fakeHotspot() {
         Hotspot.override = listOf("192.168.43.1")
+        // The usual case: location allowed for the driving pause, which is on by default.
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(
+            Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION,
+        )
     }
 
     @After
@@ -125,6 +131,7 @@ class ScreenshotTest {
             server = MirrorServer(FrameHub()),
             problem = null,
         )
+        MirrorState.watchingMotion = true
     }
 
     /** Opens the screen, runs [check] on it, then saves the full scrolling page as a PNG. */

@@ -1,5 +1,6 @@
 package io.github.fmercadx.carmirror
 
+import android.Manifest
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Looper
@@ -18,6 +19,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
@@ -41,6 +43,10 @@ class StoreScreenshotTest {
     @Before
     fun fakeHotspot() {
         Hotspot.override = listOf("192.168.43.1")
+        // The usual case: location allowed for the driving pause, which is on by default.
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(
+            Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION,
+        )
     }
 
     @After
@@ -58,6 +64,7 @@ class StoreScreenshotTest {
         val httpServer = MirrorServer(hub).also { server = it }
         val port = httpServer.start(0, InetAddress.getLoopbackAddress())
         MirrorState.started(tunnelUp = true, port = CarUrls.DEFAULT_PORT, server = httpServer, problem = null)
+        MirrorState.watchingMotion = true
         car = Socket(InetAddress.getLoopbackAddress(), port).apply {
             getOutputStream().write("GET /frame?after=0 HTTP/1.1\r\nHost: 169-254-73-1.sslip.io:8080\r\n\r\n".toByteArray())
             getOutputStream().flush()
@@ -79,11 +86,16 @@ class StoreScreenshotTest {
     @Test
     fun settings() {
         mirroring()
-        shoot("store-4-settings", scrollTo = "Settings") { page -> assertShown(page, "Touch control") }
+        shoot("store-4-settings", scrollTo = "Settings") { page ->
+            assertShown(page, "Touch control")
+            assertTrue("Pause while driving should be on by default",
+                (findText(page) { it == "Pause while driving" } as android.widget.Switch).isChecked)
+        }
     }
 
     private fun mirroring() {
         MirrorState.started(tunnelUp = true, port = CarUrls.DEFAULT_PORT, server = MirrorServer(FrameHub()), problem = null)
+        MirrorState.watchingMotion = true
     }
 
     /** Opens the screen, optionally scrolls to a heading, and saves exactly one screenful. */
