@@ -23,7 +23,33 @@ defaults:
     working-directory: car-mirror
 
 jobs:
+  # The path filter alone isn't enough: GitHub also ran this for a new branch that changed
+  # nothing here (another product's work) and for force-pushes that changed nothing (a branch
+  # reset to main after a squash merge), each publishing a stray pre-release. Off main, build
+  # only when the branch itself changed car-mirror since it left main.
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the merge base with main
+      - id: diff
+        working-directory: .
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/main" ] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet origin/main...HEAD -- car-mirror .github/workflows/car-mirror.yml; then
+            echo "This branch hasn't changed car-mirror since it left main: nothing to build."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: scope
+    if: needs.scope.outputs.changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:

@@ -15,7 +15,9 @@ Four unrelated products share this repository:
 They are independent. `deploy.yml` builds the first two into one `dist/`, and
 `credit-analyzer.yml`, `shepherds-whisper.yml` and `car-mirror.yml` are
 path-filtered so no product's changes run another's tests. `car-mirror.yml`
-alone also runs on branch pushes, because each build publishes a release.
+alone also runs on branch pushes, because each build publishes a release; its
+`scope` job skips a branch that hasn't changed car-mirror since it left `main`,
+since GitHub runs path-filtered workflows on new branches and force-pushes anyway.
 
 **`car-mirror/` network exposure is deliberate.** Its VPN covers only the app
 and routes a single link-local `/32` (link-local because Android 13+ drops
