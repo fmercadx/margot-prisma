@@ -17,7 +17,10 @@ from PIL import Image, ImageDraw, ImageFont
 from match import MATCH, REVIEW, Hit
 
 DRAFT = "DRAFT - CANDIDATE COUNTS - VERIFY EVERY ITEM BEFORE BIDDING"
-_COLOUR = {MATCH: (0, 150, 70), REVIEW: (235, 120, 0)}
+REVIEW_COLOUR = (235, 120, 0)
+# One colour per item for matches; orange is kept for review alone.
+_ITEM_COLOURS = [(0, 150, 70), (30, 90, 220), (150, 40, 170), (0, 140, 150),
+                 (200, 0, 110), (120, 80, 20), (20, 40, 110), (110, 120, 0)]
 
 
 def _font(size: int):
@@ -28,13 +31,18 @@ def _font(size: int):
 
 
 def markup(pdf_path: str, page_number: int, hits: list[Hit], scale: float = 1.5,
-           crop: tuple[float, float, float, float] | None = None) -> Image.Image:
+           crop: tuple[float, float, float, float] | None = None,
+           items: list[str] | None = None) -> Image.Image:
     """Render one page with every hit boxed and numbered.
 
-    Green is a match, orange needs review. Numbers are 1-based positions in the
-    page's hit list, the same numbers the spreadsheet's Locations tab uses.
-    `crop` (x0, top, x1, bottom in points) renders part of the page, for zooming.
+    Each item's matches get their own colour, keyed under the banner; orange
+    always means needs review. Numbers are 1-based positions in the page's hit
+    list, the same numbers the spreadsheet's Locations tab uses. `crop`
+    (x0, top, x1, bottom in points) renders part of the page, for zooming.
+    `items` fixes the colour order so it stays the same across pages.
     """
+    items = items or list(dict.fromkeys(h.item for h in hits))
+    colours = {name: _ITEM_COLOURS[i % len(_ITEM_COLOURS)] for i, name in enumerate(items)}
     pdf = pdfium.PdfDocument(pdf_path)
     page = pdf[page_number - 1]
     w, h = page.get_size()
@@ -48,16 +56,25 @@ def markup(pdf_path: str, page_number: int, hits: list[Hit], scale: float = 1.5,
                (hit.x + hit.hw + pad - x0) * scale, (hit.y + hit.hh + pad - t) * scale]
         if box[2] < 0 or box[3] < 0 or box[0] > img.width or box[1] > img.height:
             continue
-        colour = _COLOUR[hit.status]
+        colour = REVIEW_COLOUR if hit.status == REVIEW else colours[hit.item]
         draw.rectangle(box, outline=colour, width=max(2, int(scale)))
         draw.text((box[2] + 2, box[1] - 2), str(n), fill=colour, font=font)
-    banner = _font(max(14, int(10 * scale)))
+    size = max(14, int(10 * scale))
+    banner = _font(size)
     draw.text((10, 10), DRAFT, fill=(200, 0, 0), font=banner)
+    key = _font(max(11, int(7 * scale)))
+    x, y = 10, 14 + size
+    for name in items + ["needs review"]:
+        colour = REVIEW_COLOUR if name == "needs review" else colours[name]
+        draw.rectangle([x, y + 2, x + 12, y + 14], fill=colour)
+        draw.text((x + 18, y), name, fill=colour, font=key)
+        x += 40 + int(draw.textlength(name, font=key))
     return img
 
 
 def save_markup_pdf(pdf_path: str, hits_by_page: dict[int, list[Hit]], out_path: str, scale: float = 1.5) -> None:
-    pages = [markup(pdf_path, n, hits, scale) for n, hits in sorted(hits_by_page.items()) if hits]
+    items = list(dict.fromkeys(h.item for hits in hits_by_page.values() for h in hits))
+    pages = [markup(pdf_path, n, hits, scale, items=items) for n, hits in sorted(hits_by_page.items()) if hits]
     if pages:
         pages[0].save(out_path, save_all=True, append_images=pages[1:], resolution=72 * scale)
 
