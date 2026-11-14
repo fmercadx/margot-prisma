@@ -73,15 +73,47 @@ six receptacle types, every type's count matched the hand count. The only
 non-exact cases were sent to review: GFCI receptacles above a counter, a
 combination none of the six examples showed.
 
+### Across six more firms
+
+Six more public bid sets, each from a different electrical engineering firm,
+were checked the same way: one example of the plain duplex receptacle per
+power plan, then every hit and every possible miss checked by hand against an
+independent count. The threshold and code were left as they are.
+
+| Firm (sheet) | Duplexes drawn | Counted | To review | Missed | Other devices counted as duplex |
+|---|---|---|---|---|---|
+| Allen & Shariff (E-301) | 26 | 26 | 0 | 0 | 0 |
+| DCL Engineering (E202) | 80 | 80 | 0 | 0 | 0, but 42 are GFI/WP/USB by text label only |
+| MODUS Engineering (E-101.3) | 27 | 25 | 2 | 0 | 0, with a hand-drawn box (a click fails) |
+| Lawrence Perry & Associates (E-301) | 75 | 73 | 2 | 0 | 17 GFCI |
+| MEP&T Engineers (E121) | 16 | 16 | 0 | 0 | 18 tamper-resistant |
+| Czarnecki Engineering (E201) | 50 | 11 | 38 | 1 | 1 GFCI-style |
+
+It misses almost nothing: 1 of 274. What it gets wrong is telling apart
+variants that look almost alike, and that is where the work is:
+
+- **Fills.** A GFCI drawn as the duplex with its band filled solid adds no ink
+  the matcher can see: the fill's outline lies on the bars, and fills are
+  sampled only along their outline. Fills that are also stroked, or drawn in
+  another colour, are dropped altogether.
+- **Marks that don't touch.** A tamper-resistant bar drawn just clear of the
+  circle is ignored, by the same rule that ignores neighbouring symbols.
+- **Angled walls.** Only quarter turns are tried. A duplex on a 26° wall goes
+  to review rather than missing, because its circle still matches.
+- **Wires in the symbol's pen.** Growing a box from a click follows a wire
+  that touches the symbol; a hand-drawn box works.
+- **Text labels.** GFI, WP, USB, "C" for controlled are often only text beside
+  the same graphic. It counts the graphic, which is right, but the count can't
+  be priced until the labels are read.
+
 ## What it can't do yet
 
 - **Scanned sets.** There are no strokes to compare; it says so and stops.
-- **Symbols at odd angles or a different size** than the example.
+- **Symbols at angles other than quarter turns, or a different size** than the
+  example. See above.
 - **Enlarged plans** can repeat a device that is also on the floor plan. It
   counts per sheet and leaves that call to the estimator.
 - **Reading the legend.** A legend's drawing of a symbol isn't always stroke
-  for stroke the one on the plan (the tail length differed on the test set),
-  so the examples come from the plan.
+  for stroke the one on the plan (the tail length or bar spacing differed on
+  two test sets), so the examples come from the plan.
 - **Linear runs** (conduit, wire, cable tray), panel schedules and pricing.
-- Only tested against one engineering firm's drawings. Every firm draws
-  symbols its own way, which is the next thing to test.
