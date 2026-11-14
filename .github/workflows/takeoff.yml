@@ -1,0 +1,60 @@
+name: takeoff tests
+
+# Path-filtered like the other products' workflows, so no other product's
+# changes run this and this never runs theirs.
+on:
+  pull_request:
+    paths:
+      - 'takeoff/**'
+      - '.github/workflows/takeoff.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'takeoff/**'
+      - '.github/workflows/takeoff.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: takeoff-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: takeoff
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: takeoff/requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      # Runs against a synthetic drawing set the tests build themselves.
+      - run: python -m pytest test_takeoff.py -q
+
+      - name: Fail if a drawing set was committed
+        # Drawings are the engineers' copyrighted work and this repo is public.
+        # The .gitignore keeps them out; a --force or a rename could slip one
+        # in, and git history is permanent.
+        working-directory: .
+        run: |
+          leaked=$(git ls-files -- 'takeoff/**' | grep -iE '\.(pdf|png|jpe?g|tiff?)$' || true)
+          if [ -n "$leaked" ]; then
+            echo "::error::Drawing files are tracked under takeoff/:"
+            echo "$leaked"
+            exit 1
+          fi

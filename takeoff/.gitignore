@@ -1,0 +1,16 @@
+# Drawing sets are the copyrighted work of the engineers who drew them, even
+# when an agency posts them for bidding. Never commit one, or anything
+# rendered from one. CI enforces this; see README.
+*.pdf
+*.PDF
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+plans/
+out/
+
+__pycache__/
+*.pyc
+.pytest_cache/

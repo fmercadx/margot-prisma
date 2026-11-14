@@ -1,6 +1,6 @@
 # Working in this repo
 
-Four unrelated products share this repository:
+Five unrelated products share this repository:
 
 - **the salon site** — React + Vite + Tailwind, at the repo root, serving
   `fmercadx.github.io/margot-prisma/`
@@ -11,10 +11,12 @@ Four unrelated products share this repository:
 - **`car-mirror/`** — an Android app that mirrors the owner's phone screen to
   their Tesla's browser. Its own Gradle build; ships as an APK on GitHub
   Releases, not on Pages or Railway. Its README explains the design.
+- **`takeoff/`** — a test of counting symbols on CAD-exported electrical
+  drawings from one clicked example. A Python command-line tool; not deployed.
 
 They are independent. `deploy.yml` builds the first two into one `dist/`, and
-`credit-analyzer.yml`, `shepherds-whisper.yml` and `car-mirror.yml` are
-path-filtered so no product's changes run another's tests. `car-mirror.yml`
+`credit-analyzer.yml`, `shepherds-whisper.yml`, `car-mirror.yml` and
+`takeoff.yml` are path-filtered so no product's changes run another's tests. `car-mirror.yml`
 alone also runs on branch pushes, because each build publishes a release; its
 `scope` job skips a branch that hasn't changed car-mirror since it left `main`,
 since GitHub runs path-filtered workflows on new branches and force-pushes anyway.
@@ -44,6 +46,14 @@ and this repo is public with a live Pages site.
 
 CI hard-fails if a non-synthetic file is tracked under `fixtures/`. Do not
 weaken that gate. Tests run on synthetic tradelines for exactly this reason.
+
+## Never commit a drawing set
+
+Construction drawings belong to the architects and engineers who drew them,
+even when an agency posts them publicly for bidding. `takeoff/` gitignores PDFs
+and images, and `takeoff.yml` fails if one is tracked there. Test against real
+sets from a scratch directory; the tests build a synthetic set at run time.
+Nothing rendered from a real set goes into marketing without written permission.
 
 ---
 
@@ -128,6 +138,9 @@ cd credit-analyzer/mobile  && npm test
 
 # The adult family home site: build, then browser checks against dist/
 cd shepherds-whisper && npm ci && npm run build && npm run smoke
+
+# Takeoff: tests on a synthetic drawing set. Real sets stay outside the repo.
+cd takeoff && python -m pytest test_takeoff.py -q
 
 # Car mirror: core tests (JDK only), then the viewer page in Chromium.
 # The APK itself cannot build here (dl.google.com is blocked); CI builds it.
