@@ -5,6 +5,12 @@ typical set is a dozen one-segment paths for the circle and two for the bars,
 written identically each time the block is inserted, only moved or rotated.
 So shapes can be compared directly, with no rendering and no model.
 
+Solid fills are part of a symbol too: one firm draws its GFCI as the duplex
+with the band between the bars filled. A fill's outline can lie exactly on the
+strokes beside it, so symbol-sized fills also contribute their interior, as
+scanlines in the SOLID style, whatever colour they are and whether or not the
+same path is stroked. White fills are masks, not ink, and are skipped.
+
 A scanned set has no strokes at all: `load` reports that rather than guessing.
 """
 
@@ -30,6 +36,12 @@ _LEGEND_RE = re.compile(r"\bSYMBOLS? LEGEND\b|\bLEGEND OF SYMBOLS\b|\bELECTRICAL
 # Circuit labels written beside devices: R1A-8, LP-1-12, R1K-10,12, 2LA-5,7,9.
 CIRCUIT_RE = re.compile(r"^[A-Z0-9]{1,5}(?:-[A-Z0-9]{1,4})?-\d{1,3}(?:,\d{1,3})*$")
 
+# The interiors of symbol-sized fills, any colour. Larger fills are rooms,
+# walls and title blocks, and keep only their outline.
+SOLID = (("solid",), 0.0)
+SOLID_MAX = 30.0          # points, the fill's longer side
+_SOLID_STEP = 0.6         # scanline spacing inside a fill
+
 
 @dataclass
 class Page:
@@ -39,6 +51,8 @@ class Page:
     segs: np.ndarray                 # (n, 4) x0, y0, x1, y1; y grows downward
     style: np.ndarray                # (n,) index into `styles`
     styles: list[tuple]              # (stroke colour, line width) per index
+    path: np.ndarray = field(default_factory=lambda: np.zeros(0, np.int32))   # (n,) source path
+    path_extent: np.ndarray = field(default_factory=lambda: np.zeros(0))      # longer side, per path
     words: list[dict] = field(default_factory=list)
     sheet: str = ""                  # e.g. "E2.1"; "" when no title block found
     images: int = 0                  # embedded raster images on the page
@@ -57,11 +71,41 @@ def _colour(c) -> tuple:
     return tuple(round(float(v), 2) for v in c)
 
 
-def _flatten(path) -> list[tuple[float, float, float, float]]:
+def _white(c: tuple) -> bool:
+    if len(c) == 4:                      # CMYK: white is no ink at all
+        return all(v <= 0.05 for v in c)
+    return bool(c) and all(v >= 0.95 for v in c)
+
+
+def _interior(segs: list[tuple]) -> list[tuple[float, float, float, float]]:
+    """Horizontal scanlines filling a closed outline, even-odd rule."""
+    e = np.asarray(segs, dtype=np.float64)
+    if len(e) < 2:
+        return []
+    top, bottom = float(e[:, [1, 3]].min()), float(e[:, [1, 3]].max())
+    n = max(1, int((bottom - top) / _SOLID_STEP))
+    out = []
+    for y in top + (np.arange(n) + 0.5) * (bottom - top) / n:
+        lo, hi = np.minimum(e[:, 1], e[:, 3]), np.maximum(e[:, 1], e[:, 3])
+        crossing = (lo <= y) & (hi > y)
+        if crossing.sum() < 2:
+            continue
+        c = e[crossing]
+        xs = np.sort(c[:, 0] + (y - c[:, 1]) * (c[:, 2] - c[:, 0]) / (c[:, 3] - c[:, 1]))
+        for xa, xb in zip(xs[0::2], xs[1::2]):
+            if xb - xa > 0.05:
+                out.append((float(xa), float(y), float(xb), float(y)))
+    return out
+
+
+def _flatten(path, close: bool = False) -> list[tuple[float, float, float, float]]:
+    """Path commands to line segments. `close` shuts every subpath, as a fill does."""
     out, cur, start = [], None, None
     for cmd in path:
         op = cmd[0]
         if op == "m":
+            if close and cur is not None and start is not None and cur != start:
+                out.append((*cur, *start))
             cur = start = cmd[1]
         elif op == "l" and cur is not None:
             out.append((*cur, *cmd[1]))
@@ -80,6 +124,8 @@ def _flatten(path) -> list[tuple[float, float, float, float]]:
             if cur != start:
                 out.append((*cur, *start))
             cur = start
+    if close and cur is not None and start is not None and cur != start:
+        out.append((*cur, *start))
     return out
 
 
@@ -104,22 +150,46 @@ def _sheet_number(page) -> str:
 
 def load_page(pdf, index: int) -> Page:
     p = pdf.pages[index]
-    segs, style_ids, styles, lookup = [], [], [], {}
+    segs, style_ids, path_ids, extents, styles, lookup = [], [], [], [], [], {}
+
+    def sid_of(key):
+        sid = lookup.setdefault(key, len(styles))
+        if sid == len(styles):
+            styles.append(key)
+        return sid
+
     for kind in ("line", "curve", "rect"):
         for obj in p.objects.get(kind, []):
-            if obj.get("stroke"):
-                key = (_colour(obj.get("stroking_color")), round(float(obj.get("linewidth") or 0), 2))
-            elif obj.get("fill"):
-                key = (("fill",) + _colour(obj.get("non_stroking_color")), 0.0)
-            else:
+            stroked, filled = bool(obj.get("stroke")), bool(obj.get("fill"))
+            if not (stroked or filled):
                 continue
-            sid = lookup.setdefault(key, len(styles))
-            if sid == len(styles):
-                styles.append(key)
-            for s in _flatten(obj.get("path") or []):
+            fill_colour = _colour(obj.get("non_stroking_color"))
+            outline = _flatten(obj.get("path") or [], close=filled and not stroked)
+            if not outline:
+                continue
+            if stroked:
+                key = (_colour(obj.get("stroking_color")), round(float(obj.get("linewidth") or 0), 2))
+            else:
+                key = (("fill",) + fill_colour, 0.0)
+            e = np.asarray(outline)
+            extent = float(max(np.ptp(e[:, [0, 2]]), np.ptp(e[:, [1, 3]])))
+            pid = len(extents)
+            extents.append(extent)
+            sid = sid_of(key)
+            for s in outline:
                 segs.append(s)
                 style_ids.append(sid)
-    words = p.extract_words()
+                path_ids.append(pid)
+            if filled and extent <= SOLID_MAX and not _white(fill_colour):
+                solid = sid_of(SOLID)
+                for s in _interior(_flatten(obj.get("path") or [], close=True)):
+                    segs.append(s)
+                    style_ids.append(solid)
+                    path_ids.append(pid)
+    # CAD prints vertical text reading bottom to top; read sideways words that
+    # way, or a vertical "GFI" comes out as fragments.
+    words = [w for w in p.extract_words() if w["upright"]]
+    words += [w for w in p.extract_words(char_dir_rotated="btt") if not w["upright"]]
     text = " ".join(w["text"].upper() for w in words)
     return Page(
         number=index + 1,
@@ -128,6 +198,8 @@ def load_page(pdf, index: int) -> Page:
         segs=np.asarray(segs, dtype=np.float64).reshape(-1, 4),
         style=np.asarray(style_ids, dtype=np.int32),
         styles=styles,
+        path=np.asarray(path_ids, dtype=np.int32),
+        path_extent=np.asarray(extents, dtype=np.float64),
         words=words,
         sheet=_sheet_number(p),
         images=len(p.images),

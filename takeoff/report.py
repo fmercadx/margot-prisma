@@ -101,21 +101,31 @@ def write_xlsx(hits: list[Hit], sheets: dict[int, str], out_path: str, source: s
     by_item: dict[str, list[Hit]] = defaultdict(list)
     for h in hits:
         by_item[h.item].append(h)
+    grey = Font(italic=True, color="595959")
     for item, hs in by_item.items():
         per_page = Counter(h.page for h in hs if h.status == MATCH)
         rev = Counter(h.page for h in hs if h.status == REVIEW)
         ws.append([item, sum(n for p, n in per_page.items() if p not in legend),
                    sum(n for p, n in rev.items() if p not in legend)]
                   + [f"{per_page[p]}" + (f" (+{rev[p]}?)" if rev[p] else "") for p in pages])
+        # The same graphic with a different label is often a different device
+        # (GFI, WP, USB, controlled), so matches are also split by label.
+        labels = Counter(h.text for h in hs if h.status == MATCH and h.page not in legend)
+        if len(labels) > 1 or (labels and "" not in labels):
+            for text, n in labels.most_common():
+                ws.append([f"    labelled {text}" if text else "    no label", n])
+                for c in ws[ws.max_row]:
+                    c.font = grey
     ws.append([])
     ws.append(["Per-sheet cells read 'matches (+needs review?)'. Totals leave out sheets that look "
-               "like a symbol legend, which holds one copy of each symbol."])
+               "like a symbol legend, which holds one copy of each symbol. Indented rows split the "
+               "matches by the short label printed beside each one."])
     ws.column_dimensions["A"].width = 28
 
     loc = wb.create_sheet("Locations")
     loc.append(["Item", "Sheet", "Page", "No. on markup", "Status", "X (in)", "Y (in)",
-                "Orientation", "Coverage", "Purity", "Extra ink (pt)", "Nearest circuit label (unverified)",
-                "Also resembles"])
+                "Orientation", "Coverage", "Purity", "Extra ink (pt)", "Text beside it",
+                "Nearest circuit label (unverified)", "Also resembles", "Note"])
     for c in loc[1]:
         c.font = bold
     orange = PatternFill("solid", fgColor="FCE4D6")
@@ -123,8 +133,8 @@ def write_xlsx(hits: list[Hit], sheets: dict[int, str], out_path: str, source: s
     for h in sorted(hits, key=lambda h: (h.page, h.y, h.x)):
         numbered[h.page] += 1
         loc.append([h.item, h.sheet, h.page, numbered[h.page], h.status,
-                    round(h.x / 72, 2), round(h.y / 72, 2), h.orient, h.coverage, h.purity, h.extra, h.label,
-                    h.also])
+                    round(h.x / 72, 2), round(h.y / 72, 2), h.orient, h.coverage, h.purity, h.extra, h.text,
+                    h.label, h.also, h.note])
         if h.status == REVIEW:
             for c in loc[loc.max_row]:
                 c.fill = orange
@@ -134,15 +144,22 @@ def write_xlsx(hits: list[Hit], sheets: dict[int, str], out_path: str, source: s
     for line in (
         DRAFT,
         "",
-        "How these counts were made: one example of each symbol was boxed by hand, and every",
-        "stroke-for-stroke copy of it was found on each sheet, at any quarter-turn or mirrored.",
+        "How these counts were made: one example of each symbol was picked by hand, and every",
+        "stroke-for-stroke copy of it was found on each sheet, at any angle, mirrored or not.",
+        "Where two items fit one spot equally well, the item whose example covers more of the",
+        "drawing there wins.",
         "",
-        "match: the copy has all of the example's lines and nothing extra inside its box.",
+        "match: the copy has all of the example's lines and fills and nothing extra touching it.",
         "review: something differs, often a different device drawn on the same circle, a",
-        "label or wire crossing it, or a different symbol. An estimator decides.",
+        "leader or fill touching it, or a different symbol. An estimator decides.",
         "",
-        "Not found by this method: symbols at angles other than quarter-turns, symbols drawn",
-        "at a different size, symbols on scanned sheets, and devices shown only in schedules.",
+        "Text beside it: short labels printed next to the symbol (GFI, WP, USB, C, heights).",
+        "Some firms mark a different device only this way, so check the split by label on the",
+        "Summary tab. Note: flags matches that share the same separate mark beside them, which",
+        "may be a variant (e.g. tamper-resistant) that needs its own example.",
+        "",
+        "Not found by this method: symbols drawn at a different size, symbols on scanned sheets,",
+        "and devices shown only in schedules.",
         "",
         "X and Y are inches from the top-left corner of the sheet. Circuit labels are the",
         "nearest label text to each symbol and are not checked against the panel schedule.",

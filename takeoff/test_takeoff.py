@@ -268,3 +268,146 @@ def test_item_spec(spec, ok):
 def test_sampling_spacing():
     pts = match.sample(np.array([[0.0, 0.0, 4.0, 0.0]]))
     assert len(pts) == 11 and pts[-1].tolist() == [4.0, 0.0]
+
+
+# ---------------------------------------------------------------------------
+# The five things the cross-firm test found, each on a sheet of its own.
+
+def _turn(segs, deg):
+    c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+    return [(c * x0 - s * y0, s * x0 + c * y0, c * x1 - s * y1, s * x1 + c * y1) for x0, y0, x1, y1 in segs]
+
+
+def _shift(segs, x, y):
+    return [(_q(x + x0), _q(y + y0), _q(x + x1), _q(y + y1)) for x0, y0, x1, y1 in segs]
+
+
+def tamper_resistant():
+    """A duplex plus a bar just clear of the circle, opposite the tail."""
+    return duplex() + [(R + 2.2, -4.5, R + 2.2, 4.5)]
+
+
+def _band(x, y, op="f", grey=0.0):
+    """A solid band between a duplex's bars, its outline exactly on them."""
+    return [f"{grey} g 0 w {x - 15:.2f} {H - y - 1.68:.2f} {20.28:.2f} 3.36 re {op}"]
+
+
+PLAIN = [(100, 100), (200, 100), (300, 100), (400, 100)]
+GFCI = [(100, 200), (200, 200)]
+GFCI_STROKED = (300, 200)       # filled and stroked with a 0-width pen
+GFCI_GREY = (400, 200)          # filled in grey, not the pen's black
+ANGLED = [(100, 300, 30), (200, 300, 52), (300, 300, 146)]
+WIRED = (100, 400)              # a wire in the duplex's own pen runs into it
+TR = [(200, 400), (300, 400), (400, 400), (500, 400)]
+TAGGED = {(500, 100): ["GFI"], (500, 200): ["WP", "GFI"]}
+VERTICAL_TAG = (600, 100)       # "GFI" printed sideways, reading bottom to top
+ON_WALLS = [(100, 500), (200, 500), (300, 500)]   # grey devices in the walls' own pen
+
+
+@pytest.fixture(scope="module")
+def fixes(tmp_path_factory):
+    ops = []
+    for x, y in PLAIN + list(TAGGED):
+        ops += _strokes(_place(duplex(), x, y))
+    for x, y in GFCI + [GFCI_STROKED, GFCI_GREY]:
+        ops += _strokes(_place(duplex(), x, y))
+    for x, y in GFCI:
+        ops += _band(x, y)
+    ops += _band(*GFCI_STROKED, op="B")
+    ops += _band(*GFCI_GREY, grey=0.7)
+    for x, y, deg in ANGLED:
+        ops += _strokes(_shift(_turn(duplex(), deg), x, y))
+    wx, wy = WIRED
+    ops += _strokes(_place(duplex(), wx, wy))
+    ops.append(f"0 G 1.2 w {wx + R:.2f} {H - wy:.2f} m {wx + 30:.2f} {H - wy - 20:.2f} l "
+               f"{wx + 60:.2f} {H - wy - 25:.2f} l {wx + 90:.2f} {H - wy - 20:.2f} l S")
+    for x, y in TR:
+        ops += _strokes(_place(tamper_resistant(), x, y))
+    for (x, y), words in TAGGED.items():
+        for k, word in enumerate(words):
+            ops += _text(x - 6, y - 9 - 7 * (len(words) - 1 - k), 6, word)
+    vx, vy = VERTICAL_TAG
+    ops += _strokes(_place(duplex(), vx, vy))
+    ops.append(f"BT /F1 6 Tf 0 1 -1 0 {vx + 9:.2f} {H - vy - 4:.2f} Tm (GFI) Tj ET")
+    for k, (x, y) in enumerate(ON_WALLS):
+        ops += _strokes(_place(duplex(), x, y), grey=0.5, width=0.36)
+        # The wall the tail ends on: one long path, in the same pen, at a
+        # different place along it for each device.
+        ops.append(f"0.5 G 0.36 w {x - 15:.2f} {H - y + 40 + 9 * k:.2f} m {x - 15:.2f} {H - y - 60:.2f} l S")
+    ops += _text(1120, 760, 40, "E2.2")
+    path = tmp_path_factory.mktemp("fixes") / "fixes.pdf"
+    write_pdf(path, [ops])
+    return drawings.load(str(path))[0]
+
+
+def _plain_hits(page):
+    page.cache.clear()
+    return match.find(page, match.seed_at(page, *PLAIN[0]), "Duplex")
+
+
+def test_a_fill_lying_on_the_bars_still_counts_as_ink(fixes):
+    # A solid band is a lot of extra ink: never a match, and usually past
+    # even the review cut-off, like any heavily different symbol.
+    hits = _plain_hits(fixes)
+    for x, y in GFCI + [GFCI_STROKED, GFCI_GREY]:
+        assert all(h.status != match.MATCH for h in _at(hits, x, y)), (x, y)
+
+
+def test_a_filled_example_finds_its_own_kind(fixes):
+    fixes.cache.clear()
+    hits = match.find(fixes, match.seed_at(fixes, GFCI[0][0] - 10, GFCI[0][1] - 1.68), "GFCI")
+    assert all(any(h.status == match.MATCH for h in _at(hits, x, y)) for x, y in GFCI)
+    assert all(h.status != match.MATCH for x, y in PLAIN for h in _at(hits, x, y))
+
+
+def test_symbols_at_any_angle_are_found(fixes):
+    hits = _plain_hits(fixes)
+    for x, y, deg in ANGLED:
+        assert [h.status for h in _at(hits, x, y)] == [match.MATCH], deg
+
+
+def test_a_click_does_not_follow_a_wire_in_the_same_pen(fixes):
+    box, _ = match.box_at(fixes, *WIRED)
+    assert box[2] - box[0] < 25 and box[3] - box[1] < 15
+    assert [h.status for h in _at(_plain_hits(fixes), *WIRED)] == [match.MATCH]
+
+
+def test_a_separate_mark_is_flagged_and_its_own_example_wins(fixes):
+    hits = _plain_hits(fixes)
+    tr = [h for x, y in TR for h in _at(hits, x, y)]
+    assert all(h.status == match.MATCH for h in tr)        # the bar doesn't touch, so it matches...
+    notes = match.flag_marks(hits)
+    assert notes and all(h.note for h in tr)               # ...but is flagged
+    assert not any(h.note for x, y in PLAIN for h in _at(hits, x, y))
+
+    x, y = TR[0]
+    fixes.cache.clear()
+    both = hits + match.find(fixes, match.make_seed(fixes, (x - 16, y - 6.5, x + R + 3.5, y + 6.5)), "TR")
+    both = match.resolve(both)
+    for x, y in TR:
+        assert [h.item for h in _at(both, x, y)] == ["TR"]
+    for x, y in PLAIN:
+        assert [h.item for h in _at(both, x, y)] == ["Duplex"]
+
+
+def test_labels_beside_a_symbol_are_read(fixes):
+    hits = _plain_hits(fixes)
+    match.attach_text(hits, {fixes.number: fixes})
+    assert _at(hits, 500, 100)[0].text == "GFI"
+    assert _at(hits, 500, 200)[0].text == "WP GFI"
+    assert _at(hits, *PLAIN[1])[0].text == ""
+
+
+def test_devices_in_the_walls_pen_are_found_from_a_click(fixes):
+    box, _ = match.box_at(fixes, *ON_WALLS[0])
+    assert box[3] - box[1] < 15                            # the wall is not part of the example
+    fixes.cache.clear()
+    hits = match.find(fixes, match.seed_at(fixes, *ON_WALLS[0]), "Existing")
+    for x, y in ON_WALLS:
+        assert [h.status for h in _at(hits, x, y)] == [match.MATCH], (x, y)
+
+
+def test_sideways_labels_are_read_the_right_way_round(fixes):
+    hits = _plain_hits(fixes)
+    match.attach_text(hits, {fixes.number: fixes})
+    assert _at(hits, *VERTICAL_TAG)[0].text == "GFI"

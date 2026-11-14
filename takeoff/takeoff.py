@@ -57,13 +57,20 @@ def run(pdf: str, items: list[tuple[str, int, tuple[float, ...]]], pages: list[i
             hits += match.find(p, seed, name)
         p.cache.clear()
     hits = match.resolve(hits)
+    match.attach_text(hits, loaded)
 
     legend = {p.number for p in search if p.legend}
     if legend:
         log("legend sheet(s), shown but not totalled: " + ", ".join(loaded[n].sheet or f"page {n}" for n in sorted(legend)))
     for name, _, _ in items:
-        c = Counter(h.status for h in hits if h.item == name and h.page not in legend)
+        mine = [h for h in hits if h.item == name and h.page not in legend]
+        c = Counter(h.status for h in mine)
         log(f"{name}: {c[match.MATCH]} match, {c[match.REVIEW]} to review")
+        labels = Counter(h.text for h in mine if h.status == match.MATCH)
+        if len(labels) > 1 or "" not in labels:
+            log("    by label: " + ", ".join(f"{t or 'no label'} {n}" for t, n in labels.most_common()))
+    for message in match.flag_marks([h for h in hits if h.page not in legend]):
+        log("note: " + message)
     if out:
         os.makedirs(out, exist_ok=True)
         sheets = {p.number: p.sheet for p in search}
