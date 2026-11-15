@@ -67,8 +67,8 @@ REVIEW_EXTRA = 0.20
 MAX_PART = 30.0
 
 # Any-angle search. Within this many degrees of a quarter turn the exact
-# search already covers it.
-_SKIP_NEAR_QUARTER = 2.0
+# search covers it, and a near-square fit would only compete with the exact one.
+_SKIP_NEAR_QUARTER = 6.0
 _PAIR_TOL = 0.7      # two corners each off by a plotter step
 
 # Rows act on (x, y) row vectors as p @ T.T. y grows downward, so "90" turns
@@ -106,11 +106,70 @@ def _ink(page: Page, style: tuple) -> np.ndarray:
     return np.isin(page.style, ids)
 
 
+# An open run of at least this many strokes joined end to end, spanning at
+# least this far, is a wire drawn in pieces.
+_RUN_STROKES, _RUN_SPAN = 3, 12.0
+
+
 def _short(page: Page) -> np.ndarray:
-    """Per segment: does it come from a path short enough to be a symbol part?"""
-    if len(page.path) != len(page.segs):
-        return np.ones(len(page.segs), dtype=bool)
-    return page.path_extent[page.path] <= MAX_PART
+    """Per segment: could it be part of a symbol, or is it a connection?
+
+    Connections are strokes from long paths (a wire or wall drawn as one path)
+    and open runs of short strokes joined end to end (a wire drawn in pieces,
+    as one firm draws every homerun, in the receptacles' own pen). Circles,
+    boxes and triangles close on themselves and are never runs.
+    """
+    if "parts" in page.cache:
+        return page.cache["parts"]
+    n = len(page.segs)
+    if len(page.path) != n or not n:
+        return np.ones(n, dtype=bool)
+    long = page.path_extent[page.path] > MAX_PART
+    s, st = page.segs, page.style.astype(np.int64)
+    ends = np.vstack([np.column_stack([st, np.round(s[:, :2] / 0.3)]),
+                      np.column_stack([st, np.round(s[:, 2:] / 0.3)])]).astype(np.int64)
+    _, node = np.unique(ends, axis=0, return_inverse=True)
+    node = node.ravel()
+    a, b = node[:n], node[n:]
+    real = a != b
+    degree = np.bincount(np.concatenate([a[real], b[real]]), minlength=node.max() + 1)
+    # Join the two strokes meeting at every node of degree two.
+    parent = list(range(n))
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    holders: dict[int, list[int]] = {}
+    for i in np.flatnonzero(real):
+        for k in (a[i], b[i]):
+            if degree[k] == 2:
+                holders.setdefault(int(k), []).append(int(i))
+    for pair in holders.values():
+        if len(pair) == 2:
+            ra, rb = root(pair[0]), root(pair[1])
+            if ra != rb:
+                parent[ra] = rb
+    comp = np.array([root(i) for i in range(n)])
+    order = np.argsort(comp, kind="stable")
+    cs = comp[order]
+    starts = np.flatnonzero(np.r_[True, cs[1:] != cs[:-1]])
+    size = np.diff(np.r_[starts, n])
+    lo = np.minimum.reduceat(np.minimum(s[order, :2], s[order, 2:]), starts)
+    hi = np.maximum.reduceat(np.maximum(s[order, :2], s[order, 2:]), starts)
+    span = (hi - lo).max(axis=1)
+    # Closed: every node of the component is shared by two of its strokes.
+    open_ = np.zeros(len(starts), dtype=bool)
+    for k, (st0, sz) in enumerate(zip(starts, size)):
+        if sz >= _RUN_STROKES and span[k] >= _RUN_SPAN:
+            members = order[st0:st0 + sz]
+            counts = np.unique(np.concatenate([a[members], b[members]]), return_counts=True)[1]
+            open_[k] = bool((counts == 1).any())
+    run = np.zeros(n, dtype=bool)
+    run[order] = np.repeat(open_, size)
+    page.cache["parts"] = parts = ~(long | run)
+    return parts
 
 
 @dataclass
@@ -120,6 +179,7 @@ class Seed:
     style: tuple                             # the pen; fills come with it
     pts: np.ndarray                          # samples, relative to box centre
     verts: np.ndarray                        # stroke endpoints, relative to box centre
+    inner: str = ""                          # letters printed inside the box ("FB", "TV")
 
     @property
     def half(self) -> tuple[float, float]:
@@ -262,17 +322,39 @@ def make_seed(page: Page, box: tuple[float, float, float, float], style: tuple |
     v = v[(v[:, 0] >= x0) & (v[:, 0] <= x1) & (v[:, 1] >= t) & (v[:, 1] <= b)]
     if len(v) == 0:
         raise ValueError("the box cuts through strokes without enclosing any endpoint; draw it around the whole symbol")
-    return Seed(page=page.number, box=box, style=style, pts=p - c, verts=v - c)
+    return Seed(page=page.number, box=box, style=style, pts=p - c, verts=v - c, inner=_inner(page, box))
 
 
 def seed_at(page: Page, x: float, y: float) -> Seed:
-    """The example under a click: its whole symbol, in the pen that was clicked."""
-    box, style = box_at(page, x, y)
-    return make_seed(page, box, style)
+    """The example under a click: its whole symbol, in the pen that was clicked.
+
+    Built from the symbol's own strokes, not everything in its box, so the
+    first piece of a wire running into it doesn't become part of the example.
+    """
+    box, style, strokes = _grow(page, x, y)
+    c = np.array([(box[0] + box[2]) / 2, (box[1] + box[3]) / 2])
+    solid = [i for i, st in enumerate(page.styles) if st == SOLID]
+    return Seed(page=page.number, box=box, style=style,
+                pts=_distinct(sample(page.segs[strokes])) - c,
+                verts=_endpoints(page.segs[strokes[~np.isin(page.style[strokes], solid)]]) - c,
+                inner=_inner(page, box))
+
+
+def _inner(page: Page, box) -> str:
+    """Words lying wholly inside a box: the letters that name a lettered symbol."""
+    x0, t, x1, b = box
+    words = [w for w in page.words if w["x0"] >= x0 and w["x1"] <= x1 and w["top"] >= t and w["bottom"] <= b]
+    return " ".join(sorted(w["text"] for w in words))
 
 
 def box_at(page: Page, x: float, y: float, reach: float = 25.0) -> tuple[tuple[float, float, float, float], tuple]:
-    """The box around the symbol under a click, and the pen it is drawn in.
+    """The box around the symbol under a click, and the pen it is drawn in."""
+    box, pen, _ = _grow(page, x, y, reach)
+    return box, pen
+
+
+def _grow(page: Page, x: float, y: float, reach: float = 25.0):
+    """The symbol under a click: its box, its pen, and its strokes (page indices).
 
     Starts from a stroke under the click and takes in every stroke of the same
     pen that touches it, so a receptacle's tail comes along with its circle --
@@ -314,9 +396,73 @@ def box_at(page: Page, x: float, y: float, reach: float = 25.0) -> tuple[tuple[f
         if not grown:
             break
         member |= grown
+    member = _drop_wires(member, idx, page, pts, inside, first, x, y, reach)
     p = np.concatenate([pts[i][inside[i]] for i in member])
     box = (float(p[:, 0].min()) - 1, float(p[:, 1].min()) - 1, float(p[:, 0].max()) + 1, float(p[:, 1].max()) + 1)
-    return box, pen
+    return box, pen, idx[sorted(member)]
+
+
+def _drop_wires(member: set, idx, page: Page, pts, inside, first: int, x: float, y: float, reach: float) -> set:
+    """Take wires drawn as runs of short separate strokes out of a grown symbol.
+
+    One firm draws each circuit wire as a chain of 1-12 pt pieces in the
+    receptacles' own pen, touching the circle, so path length can't tell it
+    from the symbol. Shape can: circles, triangles and boxes are closed loops,
+    bars and tails are single strokes, and a wire is an open chain of three or
+    more pieces joined end to end that runs out past the rest of the symbol.
+    """
+    segs = page.segs[idx]
+    snap = 0.3
+    keys = {i: (tuple(np.round(segs[i, :2] / snap).astype(int)), tuple(np.round(segs[i, 2:] / snap).astype(int)))
+            for i in member}
+    at: dict[tuple, list[int]] = {}
+    for i, (a, b) in keys.items():
+        if a != b:
+            at.setdefault(a, []).append(i)
+            at.setdefault(b, []).append(i)
+    seen, chains = set(), []
+    for i in member:
+        if i in seen or keys[i][0] == keys[i][1]:
+            continue
+        chain, closed = [i], False
+        seen.add(i)
+        ends = []
+        for side in (0, 1):
+            cur, node = i, keys[i][side]
+            while len(at.get(node, ())) == 2:
+                nxt = at[node][0] if at[node][1] == cur else at[node][1]
+                if nxt in seen:
+                    closed = closed or nxt in chain
+                    break
+                chain.append(nxt)
+                seen.add(nxt)
+                a, b = keys[nxt]
+                node = b if a == node else a
+                cur = nxt
+            ends.append(node)
+        chains.append((chain, closed or ends[0] == ends[1]))
+    open_runs = [c for c, closed in chains if not closed and len(c) >= 3]
+    runs = {i for c in open_runs for i in c}
+    if not runs or first in runs:
+        return member
+
+    def reachable(pool):
+        kept, frontier = {first}, [first]
+        while frontier:
+            grid = _Grid(np.concatenate([pts[i] for i in frontier]), x - reach, y - reach, x + reach, y + reach)
+            frontier = [i for i in pool - kept if grid.hit(pts[i][inside[i]]).any()]
+            kept.update(frontier)
+        return kept
+
+    # The symbol proper is what touches the clicked stroke with every open run
+    # set aside; an arrowhead at a wire's far end is not part of it.
+    core = reachable(member - runs)
+    cp = np.concatenate([pts[i] for i in core])
+    lo, hi = cp.min(axis=0) - 3.0, cp.max(axis=0) + 3.0
+    wires = {i for c in open_runs
+             if (np.any(np.concatenate([pts[k] for k in c]) < lo) or np.any(np.concatenate([pts[k] for k in c]) > hi))
+             for i in c}
+    return reachable(member - wires) if wires else member
 
 
 def _anchors(verts: np.ndarray, k: int = 3) -> np.ndarray:
@@ -364,10 +510,24 @@ def _angled_hypotheses(verts: np.ndarray, seed_verts: np.ndarray, vgrid: _Grid):
     if len(seed_verts) < 3:
         return []
     dists = np.hypot(*(seed_verts[:, None, :] - seed_verts[None, :, :]).transpose(2, 0, 1))
-    a, b = np.unravel_index(np.argmax(dists), dists.shape)
-    d = float(dists[a, b])
-    if d < 4:                           # too small to fix an angle
-        return []
+    # Up to three corner pairs, far apart and sharing no corner, so one corner
+    # merged into a neighbouring line can't hide a copy.
+    pairs, used, work = [], set(), dists.copy()
+    while len(pairs) < 3:
+        a, b = np.unravel_index(np.argmax(work), work.shape)
+        if work[a, b] < 4:              # too small to fix an angle
+            break
+        pairs.append((int(a), int(b)))
+        used |= {int(a), int(b)}
+        work[list(used), :] = 0
+        work[:, list(used)] = 0
+    out = []
+    for a, b in pairs:
+        out += _angled_from_pair(verts, seed_verts, vgrid, a, b, float(dists[a, b]))
+    return out
+
+
+def _angled_from_pair(verts, seed_verts, vgrid, a, b, d):
     i, j = _pairs(verts, d, _PAIR_TOL)
     if not len(i):
         return []
@@ -393,11 +553,39 @@ def _angled_hypotheses(verts: np.ndarray, seed_verts: np.ndarray, vgrid: _Grid):
             py = tt[:, None, 1] + ss[:, None] * sv[None, :, 0] + cc[:, None] * sv[None, :, 1]
             vs = vgrid.hit(np.stack([px, py], axis=-1)).mean(axis=1)
             for k in np.flatnonzero(vs >= VERTEX_MIN):
-                R = np.array([[cc[k], -ss[k]], [ss[k], cc[k]]])
+                th_k, t_k = _refine(verts, sv, math.atan2(ss[k], cc[k]), tt[k])
+                R = np.array([[math.cos(th_k), -math.sin(th_k)], [math.sin(th_k), math.cos(th_k)]])
                 T = R @ np.diag([-1.0, 1.0]) if mirror else R
-                label = f"{math.degrees(math.atan2(ss[k], cc[k])) % 360:.0f}" + (" mirrored" if mirror else "")
-                out.append((T, tt[k], label))
+                label = f"{math.degrees(th_k) % 360:.0f}" + (" mirrored" if mirror else "")
+                out.append((T, t_k, label))
     return out
+
+
+def _refine(verts: np.ndarray, sv: np.ndarray, theta: float, t: np.ndarray, reach: float = 1.2):
+    """Best rotation and shift for one placement, fitted on every corner that lines up.
+
+    Two corners fix an angle only to about a degree; fitting all of them
+    brings the far side of the symbol back onto its strokes.
+    """
+    for _ in range(2):
+        c, s = math.cos(theta), math.sin(theta)
+        placed = np.column_stack([c * sv[:, 0] - s * sv[:, 1], s * sv[:, 0] + c * sv[:, 1]]) + t
+        a, z = np.searchsorted(verts[:, 0], [placed[:, 0].min() - reach, placed[:, 0].max() + reach])
+        near = verts[a:z]
+        if not len(near):
+            break
+        d = np.hypot(near[None, :, 0] - placed[:, None, 0], near[None, :, 1] - placed[:, None, 1])
+        j = d.argmin(axis=1)
+        ok = d[np.arange(len(sv)), j] <= reach
+        if ok.sum() < 3:
+            break
+        src_, dst = sv[ok], near[j[ok]]
+        ms, md = src_.mean(axis=0), dst.mean(axis=0)
+        p, q = src_ - ms, dst - md
+        theta = math.atan2((p[:, 0] * q[:, 1] - p[:, 1] * q[:, 0]).sum(), (p * q).sum())
+        c, s = math.cos(theta), math.sin(theta)
+        t = md - np.array([c * ms[0] - s * ms[1], s * ms[0] + c * ms[1]])
+    return theta, t
 
 
 def _nearest_label(page: Page, x: float, y: float, reach: float) -> str:
@@ -488,6 +676,11 @@ def find(page: Page, seed: Seed, item: str = "") -> list[Hit]:
                   round(pur, 3), MATCH if ok else REVIEW, round(float(extra), 1), ink=round(cov * seed_len, 1))
         if any(_iou(hit, h) > SAME_SPOT for h in hits):
             continue
+        # A square with FB in it and one with TV in it are the same strokes.
+        inner = _inner(page, (cx - bw, cy - bh, cx + bw, cy + bh))
+        if seed.inner and inner != seed.inner:
+            hit.status = REVIEW
+            hit.note = f"letters inside differ: {inner or 'none'} vs {seed.inner or 'none'}"
         hit.label = _nearest_label(page, cx, cy, reach=3 * max(hw, hh))
         # What sits just outside the example's box, short strokes only, in the
         # example's own frame: the raw material for spotting a separate mark.
@@ -551,10 +744,48 @@ def flag_marks(hits: list[Hit], min_share: float = 0.15, min_cells: int = 3) -> 
     return messages
 
 
-# Short labels printed beside a device: GFI, WP, USB, C, SR, TR, 48", +60" AFF.
-_TAG_RE = re.compile(r'^(?:[A-Z]{1,4}\.?|\+?\d{1,3}(?:\.\d)?(?:"|”|IN)(?:AFF)?|\d{1,3}"?AFF|AFF|A\.F\.F\.?)$')
-_NOT_TAGS = {"THE", "TO", "AND", "OF", "FOR", "IN", "AT", "ON", "BY", "OR", "NEW", "SEE", "TYP", "TYP.",
-             "NOTE", "ALL", "EACH", "WITH", "FROM", "ABOVE", "BELOW", "MIN", "MAX", "NO", "NO."}
+# Labels printed beside a receptacle that make it a different item to price:
+# the standard modifiers, and mounting heights. Anything else short near a
+# symbol is as likely to be a letter inside a neighbouring symbol (the J of a
+# junction box, the F of a fire alarm device) or a room name.
+_MODIFIERS = {"GFI", "GFCI", "WP", "USB", "TR", "IG", "C", "SR", "E", "ER", "EX", "R", "SP", "DED"}
+_HEIGHT_RE = re.compile(r'^(?:\+?\d{1,3}(?:\.\d)?(?:"|”|IN)(?:AFF)?|\d{1,3}"?AFF|AFF|A\.F\.F\.?)$')
+_TAG_RE = re.compile("^(?:" + "|".join(sorted(_MODIFIERS, key=len, reverse=True)) + ")$|" + _HEIGHT_RE.pattern)
+_NOT_TAGS: set[str] = set()
+
+
+def _blocks(words: list[dict]) -> list[list[dict]]:
+    """Group words into small text blocks: the lines of one label, stacked or side by side."""
+    n = len(words)
+    parent = list(range(n))
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+    cells: dict[tuple, list[int]] = {}
+    for i, w in enumerate(words):
+        cells.setdefault((int(w["x0"] // 20), int(w["top"] // 20)), []).append(i)
+    for (cx, cy), members in cells.items():
+        near = [j for dx in (-1, 0, 1) for dy in (-1, 0, 1) for j in cells.get((cx + dx, cy + dy), ())]
+        for i in members:
+            a = words[i]
+            h = max(a["bottom"] - a["top"], 1.0)
+            for j in near:
+                if j <= i:
+                    continue
+                b = words[j]
+                gx = max(b["x0"] - a["x1"], a["x0"] - b["x1"], 0.0)
+                gy = max(b["top"] - a["bottom"], a["top"] - b["bottom"], 0.0)
+                if gx <= 1.5 * h and gy <= 0.6 * h:
+                    ri, rj = root(i), root(j)
+                    if ri != rj:
+                        parent[ri] = rj
+    groups: dict[int, list[dict]] = {}
+    for i in range(n):
+        groups.setdefault(root(i), []).append(words[i])
+    return list(groups.values())
 
 
 def attach_text(hits: list[Hit], pages: dict[int, Page]) -> None:
@@ -562,25 +793,31 @@ def attach_text(hits: list[Hit], pages: dict[int, Page]) -> None:
 
     Several firms tell GFI, WP, USB or a controlled receptacle apart only by a
     label next to the same graphic. The graphic is what gets counted; the label
-    lets the estimator price it. Each label goes to the nearest hit only.
+    lets the estimator price it. Labels are often a little block of lines -- a
+    circuit number, then WP, then GFI -- so whole blocks are placed: each goes
+    to the nearest hit if any of its lines is close. Big blocks are notes, not
+    labels, and are skipped.
     """
     for number, page in pages.items():
         mine = [h for h in hits if h.page == number]
         if not mine:
             continue
         found: dict[int, list[dict]] = {}
-        for w in page.words:
-            t = w["text"].upper()
-            if t in _NOT_TAGS or CIRCUIT_RE.match(t) or not _TAG_RE.match(t):
+        for block in _blocks(page.words):
+            if len(block) > 4:
                 continue
-            cx, cy = (w["x0"] + w["x1"]) / 2, (w["top"] + w["bottom"]) / 2
+            tagged = [w for w in block if (t := w["text"].upper().strip(",;:")) not in _NOT_TAGS
+                      and not CIRCUIT_RE.match(t) and _TAG_RE.match(t)]
+            if not tagged:
+                continue
             best, best_d = None, None
             for k, h in enumerate(mine):
-                d = math.hypot(max(abs(cx - h.x) - h.hw, 0.0), max(abs(cy - h.y) - h.hh, 0.0))
-                if d <= max(6.0, 1.2 * max(h.hw, h.hh)) and (best_d is None or d < best_d):
+                d = min(math.hypot(max(w["x0"] - (h.x + h.hw), (h.x - h.hw) - w["x1"], 0.0),
+                                   max(w["top"] - (h.y + h.hh), (h.y - h.hh) - w["bottom"], 0.0)) for w in block)
+                if d <= max(8.0, 1.5 * max(h.hw, h.hh)) and (best_d is None or d < best_d):
                     best, best_d = k, d
             if best is not None:
-                found.setdefault(best, []).append(w)
+                found.setdefault(best, []).extend(tagged)
         for k, words in found.items():
             words.sort(key=lambda w: (round(w["top"] / 3), w["x0"]))
-            mine[k].text = " ".join(w["text"] for w in words)
+            mine[k].text = " ".join(w["text"].strip(",;:") for w in words)
