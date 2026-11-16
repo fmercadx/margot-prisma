@@ -99,8 +99,11 @@ jobs:
           fi
 
           # And the reminder and the app lock still have what they need.
+          # DETECT_SCREEN_CAPTURE looks removable but is not: on Android 14+
+          # expo-screen-capture registers a screenshot callback as it loads,
+          # which throws (and crashes the app at launch) without it.
           for p in android.permission.POST_NOTIFICATIONS android.permission.RECEIVE_BOOT_COMPLETED \
-                   android.permission.USE_BIOMETRIC; do
+                   android.permission.USE_BIOMETRIC android.permission.DETECT_SCREEN_CAPTURE; do
             grep -Fxq "$p" permissions.txt || { echo "::error::$p is missing; the app needs it"; exit 1; }
           done
 

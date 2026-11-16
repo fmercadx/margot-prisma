@@ -27,7 +27,7 @@ What protects what, and why each is there:
 | App lock (optional) | Fingerprint, face or phone PIN at launch and after 30 s in the background. While on, Android shows a blank preview in recent apps and blocks screenshots (FLAG_SECURE); iOS blurs the app switcher. | `src/lib/appLock.ts`, `src/hooks/useAppLock.ts` |
 | No network | The release APK has **no INTERNET permission**, so Android itself refuses any connection. The app makes none anyway. | `app.config.js` |
 | No cloud backup | `allowBackup` is off, so the data never lands in a Google backup. Export is the explicit way to take a copy. | `app.json` |
-| Fewest permissions | Push, launcher-badge and storage permissions are stripped; CI fails if one comes back. | `app.json`, APK workflow |
+| Fewest permissions | Push, launcher-badge, storage and photo (`READ_MEDIA_IMAGES`) permissions are stripped; CI fails if one comes back. | `app.json`, APK workflow |
 
 Limits worth knowing:
 
@@ -101,7 +101,12 @@ Android specifics already handled:
   `RECEIVE_BOOT_COMPLETED` go missing. `WAKE_LOCK` and
   `ACCESS_NETWORK_STATE` stay: Firebase and Play-services code still in the
   APK may use them, and removing a permission that code calls for crashes
-  it. Neither prompts the user.
+  it. Neither prompts the user. The same goes for `DETECT_SCREEN_CAPTURE`:
+  expo-screen-capture registers a screenshot callback the moment it loads on
+  Android 14+, which crashes without it, so CI requires it to be present.
+  Its `READ_MEDIA_IMAGES` (Android 13's screenshot listener, which this app
+  never starts) is blocked; that code only checks the permission when a
+  screenshot happens and logs if it is missing.
 - Edge-to-edge: content is padded by the system-bar insets, and the
   keyboard is handled by a `KeyboardAvoidingView` (Android only; iOS uses
   the ScrollView's own keyboard insets).

@@ -23,6 +23,7 @@
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
         "com.google.android.c2dm.permission.RECEIVE",
         "android.permission.READ_APP_BADGE",
         "com.anddoes.launcher.permission.UPDATE_COUNT",
