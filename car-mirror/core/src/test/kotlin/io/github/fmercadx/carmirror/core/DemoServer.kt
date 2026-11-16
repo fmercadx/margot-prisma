@@ -97,6 +97,11 @@ fun main(args: Array<String>) {
         }
     }
     val server = MirrorServer(hub, control = control, autoQuality = quality, video = video)
+    // A car that can't play the video asks for pictures: switch to JPEG, as the phone does.
+    server.onVideoRefused = {
+        if (video?.isClosed == false) println("the car asked for pictures: video mode off")
+        video?.close()
+    }
     server.pairing.listener = object : Pairing.Listener {
         override fun onRequest(request: Pairing.Request) {
             println("pairing request from ${request.remoteAddress}: code ${request.code}")
@@ -155,7 +160,7 @@ fun main(args: Array<String>) {
         }
         g.dispose()
 
-        if (encoder != null && video != null) {
+        if (encoder != null && video != null && !video.isClosed) {
             val picture = AWTUtil.fromBufferedImage(image, ColorSpace.YUV420J)
             val buffer = ByteBuffer.allocate(encoder.estimateBufferSize(picture))
             val forceKey = keyframeWanted

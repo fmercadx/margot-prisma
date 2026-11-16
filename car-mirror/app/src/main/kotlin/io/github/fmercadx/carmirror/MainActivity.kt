@@ -74,6 +74,8 @@ class MainActivity : Activity() {
     private lateinit var motionSwitch: Switch
     private lateinit var motionDetail: TextView
     private lateinit var dimSwitch: Switch
+    private lateinit var videoSwitch: Switch
+    private lateinit var videoDetail: TextView
     private lateinit var dimDetail: TextView
     private lateinit var touchPrompt: Button
     private lateinit var pairingCard: LinearLayout
@@ -249,7 +251,8 @@ class MainActivity : Activity() {
                             .putExtra(MirrorService.EXTRA_QUALITY, savedQuality().name)
                             .putExtra(MirrorService.EXTRA_TUNNEL, tunnelAllowed)
                             .putExtra(MirrorService.EXTRA_PAUSE_WHILE_MOVING, pauseWhileMoving())
-                            .putExtra(MirrorService.EXTRA_DIM, dimPhone()),
+                            .putExtra(MirrorService.EXTRA_DIM, dimPhone())
+                            .putExtra(MirrorService.EXTRA_VIDEO, wantsVideo()),
                     )
                     handler.postDelayed({ render() }, 300)
                 } else {
@@ -290,6 +293,8 @@ class MainActivity : Activity() {
     }
 
     private fun dimPhone() = settings().getBoolean(KEY_DIM, false) && Brightness.allowed(this)
+
+    private fun wantsVideo() = settings().getBoolean(KEY_VIDEO, false)
 
     private fun onDimSwitch(checked: Boolean) {
         if (checked && !Brightness.allowed(this)) {
@@ -503,6 +508,15 @@ class MainActivity : Activity() {
             getString(R.string.touch_off_detail)
         }
         touchButton.text = if (touchOn) getString(R.string.settings) else getString(R.string.action_turn_on)
+
+        val video = wantsVideo()
+        if (videoSwitch.isChecked != video) videoSwitch.isChecked = video
+        videoDetail.text = when {
+            running && video != MirrorState.videoRequested -> getString(R.string.motion_takes_effect)
+            running && MirrorState.videoOff == VideoOff.CAR -> getString(R.string.video_fell_back_car)
+            running && MirrorState.videoOff == VideoOff.PHONE -> getString(R.string.video_fell_back_phone)
+            else -> getString(R.string.video_detail)
+        }
 
         if (dimSwitch.isChecked != dimPhone()) dimSwitch.isChecked = dimPhone()
         dimDetail.text = getString(R.string.dim_detail)
@@ -753,6 +767,21 @@ class MainActivity : Activity() {
         pictureDetail = ui.text("", 14f, R.color.muted, topDp = 8)
         addView(pictureDetail)
 
+        videoSwitch = Switch(this@MainActivity).apply {
+            text = getString(R.string.setting_video)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextColor(ui.color(R.color.on_surface))
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isChecked = wantsVideo()
+            setOnClickListener {
+                settings().edit().putBoolean(KEY_VIDEO, isChecked).apply()
+                render()
+            }
+        }
+        addView(videoSwitch, ui.matchWidth(topDp = 14))
+        videoDetail = ui.text("", 14f, R.color.muted, topDp = 2)
+        addView(videoDetail)
+
         addView(ui.divider(), ui.matchWidth(topDp = 18, heightDp = 1))
 
         addView(ui.horizontal().apply {
@@ -859,5 +888,6 @@ class MainActivity : Activity() {
         private const val KEY_QUALITY = "quality"
         private const val KEY_PAUSE_WHILE_MOVING = "pauseWhileMoving"
         private const val KEY_DIM = "dimPhone"
+        private const val KEY_VIDEO = "videoMode"
     }
 }

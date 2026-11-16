@@ -141,4 +141,8 @@
     <string name="car_notif_text">Dein Handy hat sich gerade mit deinem Auto verbunden. Tippe, um das Spiegeln zu starten.</string>
     <string name="tile_off">Aus</string>
     <string name="tile_on">An</string>
+    <string name="setting_video">Videomodus (Beta)</string>
+    <string name="video_detail">Flüssiger für Serien und Spiele: Der Videochip des Handys komprimiert das Bild. Kleine Schrift kann weicher wirken. Kann dein Auto es nicht abspielen, zeigt Car Mirror stattdessen Bilder.</string>
+    <string name="video_fell_back_car">Der Browser deines Autos konnte das Video nicht abspielen, deshalb zeigt Car Mirror diesmal Bilder.</string>
+    <string name="video_fell_back_phone">Der Video-Encoder dieses Handys ließ sich nicht starten, deshalb zeigt Car Mirror diesmal Bilder.</string>
 </resources>

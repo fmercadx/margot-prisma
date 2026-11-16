@@ -164,6 +164,20 @@ class VideoTest {
         assertEquals(listOf(3), hub.await(0, 0, null, 100)!!.segments.map { it.bytes[0].toInt() })
     }
 
+    @Test
+    fun `nothing encoded during a pause is ever sent, not even a keyframe`() {
+        val hub = VideoHub()
+        hub.setInit("c", seg(99))
+        hub.publish(seg(1), keyframe = true)
+        hub.setPaused("privacy")
+        hub.publish(seg(2), keyframe = true) // the encoder's periodic keyframe, of what the user hid
+        hub.publish(seg(3), keyframe = false)
+        hub.setPaused(null)
+        assertNull(hub.await(0, 0, null, 50), "the keyframe from during the pause must not be handed out")
+        hub.publish(seg(4), keyframe = true)
+        assertEquals(listOf(4), hub.await(0, 0, null, 100)!!.segments.map { it.bytes[0].toInt() })
+    }
+
     // ---- The encrypted video stream ----
 
     private var server: MirrorServer? = null
@@ -171,6 +185,80 @@ class VideoTest {
     @AfterTest
     fun stop() {
         server?.stop()
+    }
+
+    /** Opens /frames[query] for [car] and returns the stream past the response head. */
+    private fun openStream(port: Int, car: TestCar, query: String = ""): Pair<Socket, InputStream> {
+        val socket = Socket(InetAddress.getLoopbackAddress(), port)
+        socket.soTimeout = 5_000
+        socket.getOutputStream().write("GET /frames?s=${car.sessionId}$query HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".toByteArray())
+        val input = BufferedInputStream(socket.getInputStream())
+        while (true) {
+            val line = StringBuilder()
+            while (true) { val b = input.read(); if (b < 0 || b == '\n'.code) break; line.append(b.toChar()) }
+            if (line.trim().isEmpty()) break
+        }
+        return socket to input
+    }
+
+    private fun status(port: Int, car: TestCar): String = String(car.open(Crypto.utf8("status"),
+        Socket(InetAddress.getLoopbackAddress(), port).use { sock ->
+            sock.getOutputStream().write("GET /status?s=${car.sessionId} HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n".toByteArray())
+            val all = sock.getInputStream().readBytes()
+            val body = String(all, Charsets.ISO_8859_1).indexOf("\r\n\r\n") + 4
+            all.copyOfRange(body, all.size)
+        })!!)
+
+    @Test
+    fun `a car that can't play video asks for pictures, and the phone is told to switch`() {
+        val hub = FrameHub()
+        val video = VideoHub()
+        val s = MirrorServer(hub, video = video, streamPingMs = 200)
+        server = s
+        var refused = 0
+        s.onVideoRefused = { refused++; video.close() } // what the phone does: stop video, send JPEG
+        val port = s.start(0, InetAddress.getLoopbackAddress())
+        val car = TestCar().also { it.pairAndOpen(s.pairing, "127.0.0.1") }
+        val frames = encode(1)
+        video.setInit(Fmp4.parameterSets(frames[0])!!.codec, ByteArray(8))
+
+        val (socket, input) = openStream(port, car, "&jpeg=1")
+        socket.use {
+            hub.publish(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 1, 2), 4, 2)
+            var record = readRecord(input)
+            while (record.first == 3) record = readRecord(input) // pings until the first frame
+            assertEquals(1, record.first, "pictures, not video")
+            assertEquals(1, refused)
+        }
+        // Video is off now: a car that doesn't ask gets pictures too, and status says so.
+        val (again, againInput) = openStream(port, car)
+        again.use {
+            hub.publish(byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 3, 4), 4, 2)
+            var record = readRecord(againInput)
+            while (record.first == 3) record = readRecord(againInput)
+            assertEquals(1, record.first)
+        }
+        assertEquals(1, refused, "asked once")
+        assertTrue("\"video\":false" in status(port, car))
+    }
+
+    @Test
+    fun `a video stream ends when the phone falls back to pictures`() {
+        val video = VideoHub()
+        val s = MirrorServer(FrameHub(), video = video, streamPingMs = 100)
+        server = s
+        val port = s.start(0, InetAddress.getLoopbackAddress())
+        val car = TestCar().also { it.pairAndOpen(s.pairing, "127.0.0.1") }
+        val (socket, input) = openStream(port, car)
+        socket.use {
+            assertEquals(3, readRecord(input).first, "a ping while there is no video yet")
+            video.close() // the encoder failed
+            val ended = try {
+                while (true) readRecord(input)
+                @Suppress("UNREACHABLE_CODE") false
+            } catch (e: IOException) { true }
+            assertTrue(ended, "the car should reconnect and get pictures")
+        }
     }
 
     private fun readRecord(input: InputStream): Pair<Int, ByteArray> {

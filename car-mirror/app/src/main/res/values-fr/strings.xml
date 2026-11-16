@@ -141,4 +141,8 @@
     <string name="car_notif_text">Le téléphone vient de se connecter à la voiture. Appuyez pour lancer la recopie.</string>
     <string name="tile_off">Désactivé</string>
     <string name="tile_on">Activé</string>
+    <string name="setting_video">Mode vidéo (bêta)</string>
+    <string name="video_detail">Plus fluide pour les séries et les jeux : la puce vidéo du téléphone compresse l\'image. Les petits textes peuvent paraître moins nets. Si votre voiture ne peut pas la lire, Car Mirror affiche des images.</string>
+    <string name="video_fell_back_car">Le navigateur de votre voiture n\'a pas pu lire la vidéo : Car Mirror affiche des images cette fois-ci.</string>
+    <string name="video_fell_back_phone">L\'encodeur vidéo de ce téléphone n\'a pas pu démarrer : Car Mirror affiche des images cette fois-ci.</string>
 </resources>

@@ -34,6 +34,7 @@ import io.github.fmercadx.carmirror.core.MirrorServer
 import io.github.fmercadx.carmirror.core.Pairing
 import io.github.fmercadx.carmirror.core.Pauses
 import io.github.fmercadx.carmirror.core.Quality
+import io.github.fmercadx.carmirror.core.VideoHub
 import java.io.IOException
 import java.net.InetAddress
 
@@ -58,6 +59,7 @@ class MirrorService : VpnService() {
     private var projection: MediaProjection? = null
     private var capture: ScreenCapture? = null
     private var hub: FrameHub? = null
+    private var video: VideoHub? = null
     private var server: MirrorServer? = null
     private var tunnel: ParcelFileDescriptor? = null
     private var wakeLock: PowerManager.WakeLock? = null
@@ -183,6 +185,7 @@ class MirrorService : VpnService() {
         }
         val quality = Quality.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_QUALITY) } ?: Quality.BALANCED
         val wantTunnel = intent.getBooleanExtra(EXTRA_TUNNEL, true)
+        val wantVideo = intent.getBooleanExtra(EXTRA_VIDEO, false)
 
         try {
             val manager = service<MediaProjectionManager>()
@@ -201,6 +204,8 @@ class MirrorService : VpnService() {
             val frames = FrameHub()
             hub = frames
             val autoQuality = AutoQuality(max = quality.jpegQuality)
+            val videoHub = if (wantVideo) VideoHub() else null
+            video = videoHub
             // Answer only on the VPN address and the hotspot's own addresses: devices that use
             // this phone as their gateway. Someone sharing a café Wi-Fi network with the phone
             // reaches it on its Wi-Fi address, and that connection is closed unanswered.
@@ -213,12 +218,18 @@ class MirrorService : VpnService() {
                 autoQuality = autoQuality,
                 acceptLocal = { local -> local.hostAddress in ourIps() },
                 pairing = pairing,
+                video = videoHub,
             )
+            httpServer.onVideoRefused = { capture?.refuseVideo() }
             // IPv4 wildcard: the hotspot may come up, or change address, after mirroring starts.
             val port = bind(httpServer, InetAddress.getByName("0.0.0.0"))
             server = httpServer
 
-            capture = ScreenCapture(this, mp, frames, quality, autoQuality).also { it.start() }
+            MirrorState.videoOff = null // before the capture starts: its encoder may fail at once
+            capture = ScreenCapture(this, mp, frames, quality, autoQuality, videoHub) { reason ->
+                MirrorState.videoOff = reason
+            }.also { it.start() }
+            videoHub?.onKeyframeWanted = { capture?.requestKeyframe() }
             watchLock()
             watchHeat()
             keepScreenOn()
@@ -229,7 +240,7 @@ class MirrorService : VpnService() {
                 wantTunnel -> getString(R.string.problem_vpn_failed)
                 else -> getString(R.string.problem_no_vpn)
             }
-            MirrorState.started(tunnelUp = vpn != null, port = port, server = httpServer, problem = problem)
+            MirrorState.started(tunnelUp = vpn != null, port = port, server = httpServer, problem = problem, video = wantVideo)
 
             if (watchMotion) {
                 val watcher = MotionWatcher(this) { moving ->
@@ -288,7 +299,10 @@ class MirrorService : VpnService() {
     /** Pushes the combined pause state to the car, the encoder, the screen and the notification. */
     private fun applyPause() {
         val reason = pauses.reason
+        // The hubs first: from this moment nothing new reaches the car, even frames the
+        // encoder is still finishing.
         hub?.setPaused(reason)
+        video?.setPaused(reason)
         capture?.setPaused(reason != null)
         MirrorState.paused = reason
         updateNotification()
@@ -432,6 +446,8 @@ class MirrorService : VpnService() {
         motion = null
         capture?.stop()
         capture = null
+        video?.close()
+        video = null
         hub?.close()
         hub = null
         server?.stop()
@@ -522,6 +538,7 @@ class MirrorService : VpnService() {
         const val EXTRA_TUNNEL = "tunnel"
         const val EXTRA_PAUSE_WHILE_MOVING = "pauseWhileMoving"
         const val EXTRA_DIM = "dim"
+        const val EXTRA_VIDEO = "video"
 
         private const val CHANNEL_ID = "mirroring"
         private const val NOTIFICATION_ID = 1

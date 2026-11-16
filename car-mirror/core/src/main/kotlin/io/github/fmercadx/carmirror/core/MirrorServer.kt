@@ -56,7 +56,11 @@ class MirrorServer(
     private val acceptLocal: (InetAddress) -> Boolean = { true },
     /** Paired cars and their sessions. The phone keeps one across restarts of mirroring. */
     val pairing: Pairing = Pairing(MemoryPairingStore()),
-    /** In video mode, the encoder's H.264 as fragmented MP4; [hub] then only carries the pause state. */
+    /**
+     * In video mode, the encoder's H.264 as fragmented MP4; [hub] then only carries the pause
+     * state. Once it is closed (the encoder failed, or a car can't play it), streams carry
+     * JPEG frames from [hub] again.
+     */
     private val video: VideoHub? = null,
     private val longPollMs: Long = 10_000,
     private val pairWaitMs: Long = 25_000,
@@ -65,6 +69,16 @@ class MirrorServer(
     private val maxConnections: Int = 16,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
+    /**
+     * Called when a paired car asks for JPEG frames while in video mode: its browser can't play
+     * the video (or can't stream at all). The phone should switch to JPEG; until it does,
+     * the car waits on the frame hub.
+     */
+    @Volatile var onVideoRefused: (() -> Unit)? = null
+
+    /** The video hub, while video mode is on. */
+    private val liveVideo: VideoHub? get() = video?.takeUnless { it.isClosed }
+
     @Volatile private var serverSocket: ServerSocket? = null
     @Volatile private var running = false
     private var pool: ExecutorService? = null
@@ -231,16 +245,23 @@ class MirrorServer(
                 respond(out, 200, JSON, "{\"state\":\"${state.wire}\"}".toByteArray(), keepAlive, headOnly)
             }
             "/frame" -> {
+                // One request per frame can only carry pictures: a browser that can't stream
+                // can't play video either.
                 val session = pairing.session(request.query["s"]) ?: return unauthorized(out)
-                if (video != null) {
-                    respond(out, 409, TEXT, "Video mode needs a browser that can stream".toByteArray(), keepAlive, headOnly)
-                } else {
-                    serveFrame(request, session, socket, out, keepAlive, headOnly)
-                }
+                if (liveVideo != null) onVideoRefused?.invoke()
+                serveFrame(request, session, socket, out, keepAlive, headOnly)
             }
             "/frames" -> {
                 val session = pairing.session(request.query["s"]) ?: return unauthorized(out)
-                if (video != null) serveVideoStream(request, session, video, socket, out) else serveFrameStream(request, session, socket, out)
+                val live = liveVideo
+                when {
+                    live == null -> serveFrameStream(request, session, socket, out)
+                    request.query["jpeg"] == "1" -> {
+                        onVideoRefused?.invoke()
+                        serveFrameStream(request, session, socket, out)
+                    }
+                    else -> serveVideoStream(request, session, live, socket, out)
+                }
                 return false
             }
             "/status" -> {
@@ -516,7 +537,7 @@ class MirrorServer(
             "\"framesSent\":${framesServed.get()},\"viewers\":${recentViewers().size}," +
             "\"paused\":${if (paused == null) "null" else "\"$paused\""}," +
             "\"touch\":${control?.touchAvailable == true}," +
-            "\"jpegQuality\":${autoQuality?.current ?: 0},\"video\":${video != null}}"
+            "\"jpegQuality\":${autoQuality?.current ?: 0},\"video\":${liveVideo != null}}"
     }
 
     private fun respond(

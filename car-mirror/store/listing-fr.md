@@ -26,6 +26,7 @@ CE QUE VOUS POUVEZ FAIRE
 
 FLUIDE ET SIMPLE
 • L'image va directement du téléphone à la voiture via le point d'accès, jusqu'à 30 images par seconde
+• Le mode vidéo (bêta) utilise l'encodeur vidéo du téléphone pour des séries et des jeux plus fluides, et repasse en images tout seul si la voiture ne peut pas le lire
 • L'image s'adapte au Wi-Fi : elle s'adoucit un peu plutôt que de saccader
 • L'appli retient l'adresse acceptée par votre voiture et n'affiche que celle-ci
 • S'arrête toute seule si vous la laissez tourner sans la voiture, pour économiser la batterie

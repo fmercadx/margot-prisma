@@ -52,7 +52,8 @@ async function launch() {
 async function main() {
   const { browser, name } = await launch();
   console.log(`using ${name}`);
-  const page = await browser.newPage({ viewport: { width: 1920, height: 1200 }, deviceScaleFactor: 1 });
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1200 }, deviceScaleFactor: 1 });
+  const page = await context.newPage();
   const offOrigin = [];
   const errors = [];
   page.on('request', (req) => { if (!req.url().startsWith(origin)) offOrigin.push(req.url()); });
@@ -106,6 +107,25 @@ async function main() {
   await page.reload();
   await until(page, messageHidden, 'the video after a reload', 20000);
   check(true, 'reconnects in video mode after a reload');
+
+  // A car whose browser can't play H.264 asks for pictures, and the phone switches to them
+  // by itself; the car already watching the video follows. (Last: the demo phone stays on
+  // pictures from here.) Same browser profile, so the second tab is already paired.
+  const noH264 = await context.newPage();
+  noH264.on('request', (req) => { if (!req.url().startsWith(origin)) offOrigin.push(req.url()); });
+  noH264.on('pageerror', (err) => errors.push(String(err)));
+  await noH264.addInitScript(() => { MediaSource.isTypeSupported = () => false; });
+  await noH264.goto(base);
+  await until(noH264, messageHidden, 'pictures in a browser without H.264', 20000);
+  const details = await detailsText(noH264);
+  check(!/video/.test(details) && !isBlack(await pixel(noH264, 960, 600)),
+    `a car that can't play video gets pictures, with no setting to change (${details.trim()})`);
+  let followed = false;
+  for (const deadline = Date.now() + 10000; !followed && Date.now() < deadline; await sleep(250)) {
+    followed = !/video/.test(await detailsText(page));
+  }
+  check(followed && !isBlack(await pixel(page, 960, 600)), 'the car that was playing video switches to pictures too');
+  await noH264.close();
 
   check(offOrigin.length === 0, `no requests leave the phone (${offOrigin.length} off-origin)`);
   check(errors.length === 0, `no script errors ${errors.length ? JSON.stringify(errors) : ''}`);

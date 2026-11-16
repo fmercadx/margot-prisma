@@ -83,8 +83,7 @@
 
   var WORDS = {
     "es": {
-      "This browser can’t play video mode.": "Este navegador no puede reproducir el modo video.",
-      "Turn off Video mode in Car Mirror on your phone.": "Desactiva el Modo video en Car Mirror en tu teléfono.",
+      "This browser can’t play video mode. Showing pictures instead.": "Este navegador no puede reproducir el modo video. Se muestran imágenes en su lugar.",
       "Connecting to your phone…": "Conectando con tu teléfono…",
       "Lost the connection to your phone.": "Se perdió la conexión con tu teléfono.",
       "Retrying… Check that mirroring is still on and the car is on the phone’s hotspot.": "Reintentando… Comprueba que la duplicación siga activa y que el auto esté en el hotspot del teléfono.",
@@ -119,8 +118,7 @@
       "Recent apps": "Apps recientes"
     },
     "fr": {
-      "This browser can’t play video mode.": "Ce navigateur ne peut pas lire le mode vidéo.",
-      "Turn off Video mode in Car Mirror on your phone.": "Désactivez le mode vidéo dans Car Mirror sur le téléphone.",
+      "This browser can’t play video mode. Showing pictures instead.": "Ce navigateur ne peut pas lire le mode vidéo. Affichage en images à la place.",
       "Connecting to your phone…": "Connexion au téléphone…",
       "Lost the connection to your phone.": "Connexion au téléphone perdue.",
       "Retrying… Check that mirroring is still on and the car is on the phone’s hotspot.": "Nouvel essai… Vérifiez que la recopie est toujours active et que la voiture est sur le point d’accès du téléphone.",
@@ -155,8 +153,7 @@
       "Recent apps": "Applis récentes"
     },
     "de": {
-      "This browser can’t play video mode.": "Dieser Browser kann den Videomodus nicht abspielen.",
-      "Turn off Video mode in Car Mirror on your phone.": "Schalte den Videomodus in Car Mirror auf deinem Handy aus.",
+      "This browser can’t play video mode. Showing pictures instead.": "Dieser Browser kann den Videomodus nicht abspielen. Stattdessen werden Bilder gezeigt.",
       "Connecting to your phone…": "Verbinde mit deinem Handy…",
       "Lost the connection to your phone.": "Verbindung zum Handy verloren.",
       "Retrying… Check that mirroring is still on and the car is on the phone’s hotspot.": "Neuer Versuch… Prüfe, ob das Spiegeln noch läuft und das Auto im Hotspot des Handys ist.",
@@ -200,6 +197,10 @@
 
   var bitmap = null;        // last decoded frame, kept for redraws on resize
   var videoMode = false;    // the phone sends H.264 (Video mode) instead of JPEG frames
+  var videoLoop = false;    // a video frame callback is pending
+  // A browser that can't play the phone's video asks for pictures, and the phone switches to
+  // them by itself: nobody has to find a setting while sitting in the car.
+  var noVideo = !(window.MediaSource && MediaSource.isTypeSupported('video/mp4; codecs="avc1.42e01f"'));
 
   // The current picture, whichever kind it is: { image, width, height }, or null.
   function picture() {
@@ -593,7 +594,11 @@
 
   function videoUnsupported() {
     stopPlayer();
-    show('This browser can’t play video mode.', 'Turn off Video mode in Car Mirror on your phone.');
+    videoMode = false;
+    if (noVideo) return;
+    noVideo = true;
+    flash('This browser can’t play video mode. Showing pictures instead.');
+    if (streamAbort) streamAbort.abort(); // reconnect, asking for pictures
   }
 
   function startPlayer(codec, init) {
@@ -615,8 +620,9 @@
     });
     var playing = video.play();
     if (playing && playing.catch) playing.catch(function () {});
-    if (!videoMode) {
-      videoMode = true;
+    videoMode = true;
+    if (!videoLoop) {
+      videoLoop = true;
       nextVideoFrame();
     }
   }
@@ -661,6 +667,7 @@
 
   var lastVideoTime = -1;
   function onVideoFrame() {
+    if (!videoMode) { videoLoop = false; return; } // back to pictures
     if (!paused && video.videoWidth && video.currentTime !== lastVideoTime) {
       lastVideoTime = video.currentTime;
       findBars(picture());
@@ -705,6 +712,7 @@
     }
     var payload = openFromPhone(s, new Uint8Array([type]), sealed);
     if (type === 1) {
+      if (videoMode) { stopPlayer(); videoMode = false; } // the phone fell back to pictures
       var v = new DataView(payload.buffer, payload.byteOffset, 12);
       seq = v.getUint32(0) * 4294967296 + v.getUint32(4);
       pending = new Blob([payload.subarray(12)], { type: 'image/jpeg' });
@@ -726,7 +734,7 @@
     var controller = new AbortController(), current = sess, order = { last: 0 };
     streamAbort = controller;
     lastData = Date.now();
-    fetch('frames?s=' + current.id + '&paused=' + encodeURIComponent(paused), { cache: 'no-store', signal: controller.signal })
+    fetch('frames?s=' + current.id + '&paused=' + encodeURIComponent(paused) + (noVideo ? '&jpeg=1' : ''), { cache: 'no-store', signal: controller.signal })
       .then(function (response) {
         if (response.status === 401) { if (sess === current) sess = null; throw new Error('session ended'); }
         if (!response.ok) throw new Error('HTTP ' + response.status);
@@ -782,7 +790,6 @@
       signal: controller ? controller.signal : undefined
     }).then(function (response) {
       if (response.status === 401) { if (sess === current) sess = null; throw new Error('session ended'); }
-      if (response.status === 409) { videoUnsupported(); return new Promise(function () {}); } // Video mode: stop here
       if (!response.ok) throw new Error('HTTP ' + response.status);
       return response.arrayBuffer();
     }).then(function (buffer) {

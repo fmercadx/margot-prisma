@@ -141,4 +141,8 @@
     <string name="car_notif_text">Tu teléfono se acaba de conectar a tu auto. Toca para iniciar la duplicación.</string>
     <string name="tile_off">Desactivado</string>
     <string name="tile_on">Activado</string>
+    <string name="setting_video">Modo video (beta)</string>
+    <string name="video_detail">Más fluido para series y juegos: el chip de video del teléfono comprime la imagen. El texto pequeño puede verse menos nítido. Si tu auto no puede reproducirlo, Car Mirror muestra imágenes.</string>
+    <string name="video_fell_back_car">El navegador de tu auto no pudo reproducir el video, así que esta vez Car Mirror muestra imágenes.</string>
+    <string name="video_fell_back_phone">El codificador de video de este teléfono no pudo iniciar, así que esta vez Car Mirror muestra imágenes.</string>
 </resources>

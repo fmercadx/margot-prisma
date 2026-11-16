@@ -27,6 +27,7 @@ WHAT YOU CAN DO
 
 SMOOTH AND SIMPLE
 • Frames are pushed straight from your phone to the car over the hotspot, up to 30 per second
+• Video mode (beta) uses your phone's hardware video encoder for smoother shows and games, and switches to pictures by itself if your car can't play it
 • The picture adapts to your Wi-Fi: it softens a little rather than stuttering
 • The app remembers which address your car accepts and shows only that one
 • Stops by itself if you leave it running without the car, to save battery

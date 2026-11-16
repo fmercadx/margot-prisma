@@ -140,4 +140,8 @@
     <string name="car_notif_text">Your phone just connected to your car. Tap to start mirroring.</string>
     <string name="tile_off">Off</string>
     <string name="tile_on">On</string>
+    <string name="setting_video">Video mode (beta)</string>
+    <string name="video_detail">Smoother for shows and games: the phone\'s video chip compresses the picture. Small text can look softer. If your car can\'t play it, Car Mirror shows pictures instead.</string>
+    <string name="video_fell_back_car">Your car\'s browser couldn\'t play video, so Car Mirror is showing pictures this time.</string>
+    <string name="video_fell_back_phone">This phone\'s video encoder couldn\'t start, so Car Mirror is showing pictures this time.</string>
 </resources>

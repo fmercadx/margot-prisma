@@ -5,8 +5,8 @@ package io.github.fmercadx.carmirror.core
  * segment since the last keyframe. A car that connects starts from that keyframe, so it never
  * waits for the next one or decodes a frame whose reference it missed. One that falls behind
  * catches up at the next keyframe (the older group is gone by then), and asks for it sooner.
- * A pause drops the group: after it the car waits for a fresh keyframe, so nothing from
- * around the pause is replayed.
+ * A pause drops the group, and nothing published while paused is kept: after it the car waits
+ * for a keyframe made after the pause, so nothing from during the pause is ever sent.
  */
 class VideoHub(private val clock: () -> Long = System::currentTimeMillis) {
     class Init(val generation: Int, val codec: String, val segment: ByteArray)
@@ -38,7 +38,9 @@ class VideoHub(private val clock: () -> Long = System::currentTimeMillis) {
     }
 
     fun publish(segment: ByteArray, keyframe: Boolean) = synchronized(lock) {
-        if (closed || init == null) return@synchronized
+        // While paused, even a keyframe is dropped: the encoder may still be finishing frames of
+        // whatever the user paused to hide.
+        if (closed || init == null || paused != null) return@synchronized
         if (keyframe) gop.clear()
         if (gop.isEmpty() && !keyframe) return@synchronized // nothing to decode it against
         if (gop.size >= MAX_GOP) gop.clear()

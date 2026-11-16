@@ -26,6 +26,7 @@ DAS KANNST DU TUN
 
 FLÜSSIG UND EINFACH
 • Bilder gehen direkt vom Handy über den Hotspot ins Auto, bis zu 30 pro Sekunde
+• Der Videomodus (Beta) nutzt den Video-Encoder deines Handys für flüssigere Serien und Spiele und wechselt von selbst zu Bildern, wenn dein Auto ihn nicht abspielen kann
 • Das Bild passt sich deinem WLAN an: Es wird etwas weicher, statt zu ruckeln
 • Die App merkt sich, welche Adresse dein Auto annimmt, und zeigt nur diese
 • Stoppt von selbst, wenn sie ohne Auto weiterläuft, um Akku zu sparen

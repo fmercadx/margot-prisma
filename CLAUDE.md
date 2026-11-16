@@ -26,7 +26,7 @@ all addresses but closes connections that don't arrive on that address or the
 hotspot's own (`acceptLocal`), and checks the Host header. Nothing that shows
 the screen or touches the phone is served without an encrypted session, and a
 session needs a car the user paired on the phone by comparing a 6-digit code
-(`core/Pairing.kt`): frames, status and taps are ChaCha20-Poly1305 with
+(`core/Pairing.kt`): frames (JPEG or H.264), status and taps are ChaCha20-Poly1305 with
 replay-checked counters, and the server never sends CORS headers. The page's
 crypto (`crypto.js`, noble) is vendored and served by the phone. Widening any of
 these would let whoever shares a network with the phone, or any page open in the
@@ -139,6 +139,9 @@ cd shepherds-whisper && npm ci && npm run build && npm run smoke
 cd car-mirror && ./gradlew -PcoreOnly :core:test
 cd car-mirror && ./gradlew -PcoreOnly :core:demoServer --args="8090 --control $PWD/build/smoke" &   # wait for READY
 cd car-mirror && NODE_PATH=$(npm root -g) node tools/viewer-smoke.cjs http://127.0.0.1:8090/ --control $PWD/build/smoke
+# Video mode the same way, on a fresh demo phone (needs a Chromium that plays H.264 via MSE).
+cd car-mirror && ./gradlew -PcoreOnly :core:demoServer --args="8091 --control $PWD/build/video --video" &
+cd car-mirror && NODE_PATH=$(npm root -g) node tools/video-smoke.cjs http://127.0.0.1:8091/ --control $PWD/build/video
 
 # Car mirror phone-screen previews: Robolectric renders the real screen in each state.
 # CI only (needs Google Maven); the PNGs are attached to each release as preview-*.png.

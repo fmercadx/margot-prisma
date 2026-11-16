@@ -31,6 +31,13 @@ object MirrorState {
     /** Whether "pause while moving" is actually watching GPS this session. */
     @Volatile var watchingMotion: Boolean = false
 
+    /** Whether this session started in video mode. */
+    @Volatile var videoRequested: Boolean = false
+        private set
+
+    /** Why video mode ended early this session and the car gets pictures; null if it didn't. */
+    @Volatile var videoOff: VideoOff? = null
+
     /** Why mirroring stopped or is degraded; null when all is well. */
     @Volatile var problem: String? = null
 
@@ -42,8 +49,9 @@ object MirrorState {
         if (!running) emptyList()
         else CarUrls.toTry(port, if (tunnelUp) CarUrls.VIRTUAL_IP else null, Hotspot.ipv4(context), WorkingAddress.known(context))
 
-    fun started(tunnelUp: Boolean, port: Int, server: MirrorServer, problem: String?) {
+    fun started(tunnelUp: Boolean, port: Int, server: MirrorServer, problem: String?, video: Boolean = false) {
         this.tunnelUp = tunnelUp
+        videoRequested = video
         this.port = port
         this.server = server
         this.problem = problem
@@ -61,6 +69,8 @@ object MirrorState {
         heatEasing = false
         pairingRequests = emptyList()
         watchingMotion = false
+        videoRequested = false
+        videoOff = null
         this.problem = problem
     }
 }

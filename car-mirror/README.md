@@ -56,6 +56,12 @@ app can skip that.
 - **Heat guard.** A phone on a sunny dashboard heats up fast. When Android reports it warm,
   the picture drops to fewer, smaller frames; if it gets too hot, mirroring pauses until it
   cools, before Android throttles the phone or turns the screen off.
+- **Video mode** (beta, off by default). For shows and games: the phone's hardware video
+  encoder compresses the screen as H.264 instead of a JPEG per frame, which is smoother and
+  lighter on the Wi-Fi; small text can look a little softer. The car's page plays it with
+  the browser's own video player. If the phone has no encoder that will take the screen,
+  or the car's browser can't play it, Car Mirror switches to pictures by itself and says so
+  under the setting.
 - **Auto quality.** When the Wi-Fi can't keep up, the picture gets a little softer instead
   of stuttering, then sharpens again. The picture setting you choose is the upper limit.
 - **Videos fill the screen.** A video played full screen on a phone has black bars around
@@ -87,6 +93,13 @@ app can skip that.
   frame and capped the picture at 10 to 15 fps; pushed, it keeps up with the phone's 30.)
   When the link can't keep up, frames are skipped rather than queued, so the picture never
   falls behind.
+- **Video mode** sends the screen as H.264 from the phone's hardware encoder instead, fed
+  straight from the screen capture so the picture never passes through the app. Each frame
+  is packed as a fragment of an MP4 stream (`core/Fmp4.kt`) and played by the car through
+  Media Source Extensions, the one way to play live video on a plain-http page. A car that
+  joins starts at the latest keyframe; one that falls behind skips to the next. Nothing
+  encoded while paused is ever sent, not even a keyframe, and the encoder gets no picture at
+  all while paused or while no car is watching. The video is encrypted like the frames.
 - **Two ways in.** The car can open the phone at the hotspot's own address (like
   `192.168.43.1`), or at `169.254.73.1`, an extra address the app adds. Tesla's browser has
   been reported to refuse private addresses like `192.168.x.x`, which is all a hotspot hands
@@ -114,7 +127,7 @@ app can skip that.
   key that never crosses the network; the phone keeps it, and so does the car's browser, so
   it reconnects without asking. **Paired screens → Forget** in Settings un-pairs them all.
 - **Encryption.** Every visit opens a session: a fresh X25519 key exchange mixed with the
-  pair key, which the car must prove it holds. Frames, the pause state, status and taps are
+  pair key, which the car must prove it holds. Frames (JPEG or video), the pause state, status and taps are
   then ChaCha20-Poly1305 encrypted, so someone else on the hotspot sees only ciphertext.
   Every message from the car carries a counter the phone has never accepted before, so a
   recorded tap can't be replayed, and another web page open in the car can do none of it.
@@ -138,18 +151,19 @@ app can skip that.
   capture, and Android enforces that.
 - **No sound** goes through the browser. Pair the phone with the car over Bluetooth.
 - **Touch is performed after you lift your finger.** A drag on a map happens as one quick
-  swipe when you let go, not while you move. Pinch-to-zoom isn't supported.
+  swipe when you let go, not while you move.
 - **The phone screen must stay on.** The app keeps it on, dimmed. Pressing the power
   button stops the picture.
 - **Battery.** Compressing frames is steady work. Keep the phone plugged in.
-- **Picture.** Each frame is a JPEG. Choose **Sharp** for maps and text, **Smooth** for
-  motion.
+- **Picture.** Each frame is a JPEG unless Video mode is on. Choose **Sharp** for maps and
+  text, **Smooth** for motion, or Video mode for shows.
 
 ## Driving
 
 The car stops video in its own browser while you drive. This app draws still images, so
 the car may keep showing it. Use it like a phone on a dash mount: navigation is fine, video
-is not. Local laws about screens the driver can see still apply. **Pause while moving**
+is not. (In Video mode the car may stop the picture while moving, as it stops any video in
+its browser.) Local laws about screens the driver can see still apply. **Pause while moving**
 (above) enforces this, at the cost of maps.
 
 ## Signing
@@ -227,6 +241,7 @@ repo root.
 | `core/` | Frame hub, HTTP server, viewer page, gestures, auto quality, the moving/stopped rule. Plain Kotlin, no Android, tested on the JVM. |
 | `app/` | The Android app: screen capture, the VPN address, touch, the driving pause, the tile, the one-screen UI. |
 | `tools/viewer-smoke.cjs` | Drives the viewer page in Chromium against a fake phone, including touch and pause. |
+| `tools/video-smoke.cjs` | The same for Video mode: the fake phone encodes H.264 (jcodec, tests only) and the page plays it. Needs a browser with H.264; falls back to Google Chrome. |
 
 ```bash
 # Core tests (any machine with a JDK)
@@ -236,6 +251,10 @@ repo root.
 # The control folder lets the test pause the fake phone and see the taps it received.
 ./gradlew -PcoreOnly :core:demoServer --args="8090 --control $PWD/build/smoke" &   # wait for READY
 node tools/viewer-smoke.cjs http://127.0.0.1:8090/ --control $PWD/build/smoke
+
+# Video mode, the same way (a fresh fake phone: the last check switches it to pictures)
+./gradlew -PcoreOnly :core:demoServer --args="8091 --control $PWD/build/video --video" &   # wait for READY
+node tools/video-smoke.cjs http://127.0.0.1:8091/ --control $PWD/build/video
 
 # The APK (needs the Android SDK; CI does this on every push)
 ./gradlew :app:assembleRelease

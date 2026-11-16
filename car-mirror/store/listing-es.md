@@ -26,6 +26,7 @@ LO QUE PUEDES HACER
 
 FLUIDA Y SENCILLA
 • La imagen va directo de tu teléfono al auto por el hotspot, hasta 30 cuadros por segundo
+• El modo video (beta) usa el codificador de video del teléfono para series y juegos más fluidos, y cambia a imágenes solo si tu auto no puede reproducirlo
 • La imagen se adapta a tu Wi-Fi: se suaviza un poco en lugar de trabarse
 • La app recuerda qué dirección acepta tu auto y muestra solo esa
 • Se detiene sola si la dejas encendida sin el auto, para ahorrar batería
