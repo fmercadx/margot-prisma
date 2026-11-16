@@ -11,6 +11,7 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
+import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
@@ -246,7 +247,7 @@ class MirrorServer(
             respond(out, status, TEXT, why.toByteArray(), keepAlive)
             return keepAlive
         }
-        if (request.headers["x-car-mirror-token"] != token) return refuse(403, "Stale or missing session token")
+        if (!sameSecret(request.headers["x-car-mirror-token"], token)) return refuse(403, "Stale or missing session token")
         val phone = control ?: return refuse(404, "Touch control is not available")
         if (hub.pausedReason != null) return refuse(409, "Mirroring is paused")
         if (!phone.touchAvailable) return refuse(409, "Touch control is off on the phone")
@@ -587,3 +588,7 @@ internal class Request(
         }
     }
 }
+
+/** Compares secrets in constant time, so response timing can't reveal how much of a guess was right. */
+internal fun sameSecret(given: String?, expected: String): Boolean =
+    given != null && MessageDigest.isEqual(given.toByteArray(Charsets.UTF_8), expected.toByteArray(Charsets.UTF_8))
