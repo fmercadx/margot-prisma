@@ -23,10 +23,14 @@ since GitHub runs path-filtered workflows on new branches and force-pushes anywa
 and routes a single link-local `/32` (link-local because Android 13+ drops
 packets from other interfaces to any other VPN address). Its server listens on
 all addresses but closes connections that don't arrive on that address or the
-hotspot's own (`acceptLocal`), and checks the Host header. `POST /input` (touch control) also needs the per-session token
-from `/status` in a custom header, and the server never sends CORS headers.
-Widening any of these would let whoever shares a network with the phone, or
-any page open in the car's browser, see the screen or tap on the phone.
+hotspot's own (`acceptLocal`), and checks the Host header. Nothing that shows
+the screen or touches the phone is served without an encrypted session, and a
+session needs a car the user paired on the phone by comparing a 6-digit code
+(`core/Pairing.kt`): frames, status and taps are ChaCha20-Poly1305 with
+replay-checked counters, and the server never sends CORS headers. The page's
+crypto (`crypto.js`, noble) is vendored and served by the phone. Widening any of
+these would let whoever shares a network with the phone, or any page open in the
+car's browser, see the screen or tap on the phone.
 
 **Two Railway services, two configs.** The root `railway.json` and `Procfile`
 belong to the credit analyzer's Flask app. `shepherds-whisper/railway.json` and

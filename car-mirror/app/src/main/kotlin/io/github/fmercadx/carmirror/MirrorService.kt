@@ -31,6 +31,7 @@ import io.github.fmercadx.carmirror.core.GlobalAction
 import io.github.fmercadx.carmirror.core.HeatGuard
 import io.github.fmercadx.carmirror.core.MirrorControl
 import io.github.fmercadx.carmirror.core.MirrorServer
+import io.github.fmercadx.carmirror.core.Pairing
 import io.github.fmercadx.carmirror.core.Pauses
 import io.github.fmercadx.carmirror.core.Quality
 import java.io.IOException
@@ -87,6 +88,20 @@ class MirrorService : VpnService() {
         }
     }
 
+    /**
+     * A screen on the hotspot asking to be paired: ask the user, with the code the car shows.
+     * Nothing is shown to that screen unless they tap Allow. Called on server threads.
+     */
+    private val pairingListener = object : Pairing.Listener {
+        override fun onRequest(request: Pairing.Request) {
+            mainHandler.post { refreshPairing() }
+        }
+
+        override fun onSettled(id: String) {
+            mainHandler.post { refreshPairing() }
+        }
+    }
+
     /** Eases off, then pauses, as the phone heats up; see [HeatGuard]. Called on the main thread. */
     private val thermalListener = PowerManager.OnThermalStatusChangedListener { status -> applyHeat(status) }
 
@@ -129,6 +144,8 @@ class MirrorService : VpnService() {
             ACTION_STOP -> stopMirroring(problem = null)
             ACTION_PAUSE -> setPausedByUser(true)
             ACTION_RESUME -> setPausedByUser(false)
+            ACTION_PAIR_ALLOW -> intent.getStringExtra(EXTRA_PAIR_ID)?.let { server?.pairing?.approve(it) }
+            ACTION_PAIR_DENY -> intent.getStringExtra(EXTRA_PAIR_ID)?.let { server?.pairing?.deny(it) }
             ACTION_DIM -> if (projection != null) {
                 if (intent.getBooleanExtra(EXTRA_DIM, false)) Brightness.dim(this) else Brightness.restore(this)
             }
@@ -188,12 +205,14 @@ class MirrorService : VpnService() {
             // this phone as their gateway. Someone sharing a café Wi-Fi network with the phone
             // reaches it on its Wi-Fi address, and that connection is closed unanswered.
             val ourIps = { listOfNotNull(if (vpn != null) CarUrls.VIRTUAL_IP else null) + currentHotspotIps() }
+            val pairing = Pairing(PhonePairingStore(this)).also { it.listener = pairingListener }
             val httpServer = MirrorServer(
                 frames,
                 hostAllowed = { CarUrls.isOurHost(it, ourIps()) },
                 control = touch,
                 autoQuality = autoQuality,
                 acceptLocal = { local -> local.hostAddress in ourIps() },
+                pairing = pairing,
             )
             // IPv4 wildcard: the hotspot may come up, or change address, after mirroring starts.
             val port = bind(httpServer, InetAddress.getByName("0.0.0.0"))
@@ -276,6 +295,45 @@ class MirrorService : VpnService() {
         MirrorState.paused = reason
         updateNotification()
         MirrorTileService.refresh(this)
+    }
+
+    /** Shows the newest pairing request as a heads-up notification, or clears it. */
+    private fun refreshPairing() {
+        val waiting = server?.pairing?.waiting().orEmpty()
+        MirrorState.pairingRequests = waiting
+        val manager = service<NotificationManager>()
+        val request = waiting.lastOrNull()
+        if (request == null) {
+            manager.cancel(PAIRING_NOTIFICATION_ID)
+            return
+        }
+        val code = request.code.chunked(3).joinToString(" ")
+        val open = PendingIntent.getActivity(
+            this, 10,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        fun answer(label: String, action: String, requestCode: Int) = Notification.Action.Builder(
+            null as Icon?, label,
+            PendingIntent.getService(
+                this, requestCode,
+                Intent(this, MirrorService::class.java).setAction(action).putExtra(EXTRA_PAIR_ID, request.id),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            ),
+        ).build()
+        val notification = Notification.Builder(this, PAIRING_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("Allow this screen? Code $code")
+            .setContentText("A screen on your hotspot wants to show your phone. Allow it only if it shows $code.")
+            .setStyle(Notification.BigTextStyle().bigText(
+                "A screen on your hotspot wants to show your phone. Allow it only if it shows the code $code."))
+            .setContentIntent(open)
+            .setCategory(Notification.CATEGORY_STATUS)
+            .setAutoCancel(true)
+            .addAction(answer("Allow", ACTION_PAIR_ALLOW, 11))
+            .addAction(answer("Deny", ACTION_PAIR_DENY, 12))
+            .build()
+        manager.notify(PAIRING_NOTIFICATION_ID, notification)
     }
 
     private fun updateNotification() {
@@ -393,6 +451,8 @@ class MirrorService : VpnService() {
         wakeLock = null
         Brightness.restore(this)
         pauses.clear()
+        MirrorState.pairingRequests = emptyList()
+        service<NotificationManager>().cancel(PAIRING_NOTIFICATION_ID)
     }
 
     private fun stopMirroring(problem: String?) {
@@ -407,6 +467,9 @@ class MirrorService : VpnService() {
         val channel = NotificationChannel(CHANNEL_ID, "Mirroring", NotificationManager.IMPORTANCE_LOW)
         channel.description = "Shown while your screen is being sent to the car"
         service<NotificationManager>().createNotificationChannel(channel)
+        val pairing = NotificationChannel(PAIRING_CHANNEL_ID, "Pairing requests", NotificationManager.IMPORTANCE_HIGH)
+        pairing.description = "A screen asking to show your phone, with the code to check"
+        service<NotificationManager>().createNotificationChannel(pairing)
     }
 
     private fun action(label: String, action: String, requestCode: Int): Notification.Action {
@@ -453,6 +516,9 @@ class MirrorService : VpnService() {
         const val ACTION_PAUSE = "io.github.fmercadx.carmirror.PAUSE"
         const val ACTION_RESUME = "io.github.fmercadx.carmirror.RESUME"
         const val ACTION_DIM = "io.github.fmercadx.carmirror.DIM"
+        const val ACTION_PAIR_ALLOW = "io.github.fmercadx.carmirror.PAIR_ALLOW"
+        const val ACTION_PAIR_DENY = "io.github.fmercadx.carmirror.PAIR_DENY"
+        const val EXTRA_PAIR_ID = "pairId"
         const val EXTRA_RESULT_CODE = "resultCode"
         const val EXTRA_RESULT_DATA = "resultData"
         const val EXTRA_QUALITY = "quality"
@@ -462,6 +528,8 @@ class MirrorService : VpnService() {
 
         private const val CHANNEL_ID = "mirroring"
         private const val NOTIFICATION_ID = 1
+        private const val PAIRING_CHANNEL_ID = "pairing"
+        private const val PAIRING_NOTIFICATION_ID = 2
         private const val WAKE_LOCK_MAX_MS = 6 * 60 * 60 * 1000L
         private const val HOTSPOT_LOOKUP_MS = 3_000L
         private const val CAR_CHECK_MS = 5_000L

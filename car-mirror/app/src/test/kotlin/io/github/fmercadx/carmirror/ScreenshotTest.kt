@@ -12,6 +12,7 @@ import android.widget.TextView
 import io.github.fmercadx.carmirror.core.CarUrls
 import io.github.fmercadx.carmirror.core.FrameHub
 import io.github.fmercadx.carmirror.core.MirrorServer
+import io.github.fmercadx.carmirror.core.Pairing
 import org.junit.After
 import org.junit.Before
 import org.junit.Assert.assertEquals
@@ -114,6 +115,18 @@ class ScreenshotTest {
         shoot("9-too-hot-light") { page ->
             assertVisible(page, "Paused to cool down")
             assertHidden(page, "Resume") // the phone resumes by itself once it has cooled
+        }
+    }
+
+    @Test
+    fun pairingRequestLight() {
+        mirroring()
+        MirrorState.pairingRequests = listOf(Pairing.Request("request", "431868", "192.168.43.2"))
+        shoot("10-pairing-request-light") { page ->
+            assertVisible(page, "Allow this screen?")
+            assertVisible(page, "431 868")
+            assertVisible(page, "Allow")
+            assertVisible(page, "Deny")
         }
     }
 

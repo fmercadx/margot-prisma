@@ -34,8 +34,9 @@ only you can do: accounts, payments, testers and a few short recordings.
 5. **App content.** Work down the list with `play-console-answers.md`. Three declarations need a
    short screen recording; record each on your phone with its built-in screen recorder, using
    a laptop or second phone on your hotspot as "the car":
-   - *Foreground service: media projection.* Tap Start mirroring, allow screen sharing, then
-     show the picture appearing in the laptop's browser.
+   - *Foreground service: media projection.* Tap Start mirroring, allow screen sharing, open
+     the address on the laptop, tap Allow when the phone shows the same code as the laptop,
+     then show the picture appearing in the laptop's browser.
    - *Foreground service: location.* Start mirroring, show the "Pause while driving"
      explanation and allow location.
    - *Accessibility (touch control).* Tap Turn on touch control, show the app's explanation,

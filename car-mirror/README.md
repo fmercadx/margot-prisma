@@ -102,8 +102,19 @@ app can skip that.
   from, say, a café Wi-Fi network the phone is on is closed unanswered. It also refuses
   requests that name any other host, so a web page can't point its own domain at your phone
   and read the screen.
-- **Who can tap.** A tap must carry a token that changes every session and that only the
-  car's own Car Mirror page can read. Another web page open in the car can't send taps.
+- **Pairing.** Being on the hotspot isn't enough to see anything. The first time a screen
+  opens the address, it and the phone both show a 6-digit code, and the phone asks whether
+  to allow it. The car commits to its key before seeing the phone's, so a device in the
+  middle can't search for keys that make the codes match. Allowed, both sides derive a pair
+  key that never crosses the network; the phone keeps it, and so does the car's browser, so
+  it reconnects without asking. **Paired screens → Forget** in Settings un-pairs them all.
+- **Encryption.** Every visit opens a session: a fresh X25519 key exchange mixed with the
+  pair key, which the car must prove it holds. Frames, the pause state, status and taps are
+  then ChaCha20-Poly1305 encrypted, so someone else on the hotspot sees only ciphertext.
+  Every message from the car carries a counter the phone has never accepted before, so a
+  recorded tap can't be replayed, and another web page open in the car can do none of it.
+  The car's page can't use the browser's own crypto on a plain-http address, so the phone
+  serves it the audited noble libraries, bundled by `tools/crypto` into `crypto.js`.
 
 ## If the car's page doesn't load
 

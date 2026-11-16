@@ -27,6 +27,11 @@ import kotlin.math.sin
  * <dir>/pause pauses the picture (an empty file resumes it). Writing "bars" to <dir>/scene
  * blacks out the top and bottom fifth of the picture, like a video played with black bars,
  * and writing "off" to <dir>/touch turns touch control off.
+ *
+ * Pairing: the demo plays the user tapping Allow, a moment after each request, and prints the
+ * code. With --control it appends "code=<code>" to <dir>/pairing.log, and <dir>/pairing
+ * decides the answer: "deny" turns requests down, "hold" leaves them waiting until the file
+ * changes, anything else (or no file) allows them.
  */
 fun main(args: Array<String>) {
     System.setProperty("java.awt.headless", "true")
@@ -73,6 +78,25 @@ fun main(args: Array<String>) {
         }
     }
     val server = MirrorServer(hub, control = control, autoQuality = quality)
+    server.pairing.listener = object : Pairing.Listener {
+        override fun onRequest(request: Pairing.Request) {
+            println("pairing request from ${request.remoteAddress}: code ${request.code}")
+            controlDir?.let { File(it, "pairing.log").appendText("code=${request.code}\n") }
+            thread(isDaemon = true, name = "demo-user") {
+                while (true) {
+                    Thread.sleep(300)
+                    when (controlDir?.let { File(it, "pairing") }?.takeIf { it.exists() }?.readText()?.trim()) {
+                        "hold" -> continue
+                        "deny" -> server.pairing.deny(request.id)
+                        else -> server.pairing.approve(request.id)
+                    }
+                    break
+                }
+            }
+        }
+
+        override fun onSettled(id: String) {}
+    }
     val bound = server.start(port, InetAddress.getLoopbackAddress())
     println("READY http://127.0.0.1:$bound/")
     System.out.flush()
@@ -118,6 +142,8 @@ fun main(args: Array<String>) {
         }
         hub.publish(out.toByteArray(), width, height)
         n++
+        // Frames made so far, for the viewer test's frame-rate check (status is encrypted now).
+        controlDir?.let { File(it, "frames").writeText(n.toString()) }
         val spentMs = (System.nanoTime() - started) / 1_000_000
         Thread.sleep((frameMs - spentMs).coerceAtLeast(1))
     }

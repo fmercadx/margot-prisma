@@ -19,7 +19,11 @@ hotspot, normally your car. The images are held in memory only long enough to se
 and are never saved to storage or sent to anyone else.
 
 Only devices connected to your phone's hotspot can open that address, and the app refuses
-requests that don't use one of the addresses it shows you. In test mode, which happens
+requests that don't use one of the addresses it shows you. Even then, a screen sees nothing
+until you allow it on your phone after checking that both show the same code. The picture
+and your taps are then encrypted between your phone and that screen. Each side keeps a key
+for the pairing: your phone in the app's private storage, the car in its browser. Neither is
+sent anywhere, and **Paired screens → Forget** in the app's settings deletes them. In test mode, which happens
 only if the VPN is declined or can't start, devices on the same Wi-Fi network as your
 phone can open it too; the app says so on screen when that applies.
 

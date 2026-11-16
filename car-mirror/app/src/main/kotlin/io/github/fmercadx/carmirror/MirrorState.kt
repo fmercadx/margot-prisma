@@ -22,6 +22,9 @@ object MirrorState {
     /** Null while live; otherwise why the picture is withheld, one of [io.github.fmercadx.carmirror.core.Pauses.REASONS]. */
     @Volatile var paused: String? = null
 
+    /** Screens asking to be paired, waiting for the user to tap Allow or Deny. */
+    @Volatile var pairingRequests: List<io.github.fmercadx.carmirror.core.Pairing.Request> = emptyList()
+
     /** The phone is warm and the picture is eased off (fewer, smaller frames), but still live. */
     @Volatile var heatEasing: Boolean = false
 
@@ -46,6 +49,7 @@ object MirrorState {
         this.problem = problem
         paused = null
         heatEasing = false
+        pairingRequests = emptyList()
         running = true
     }
 
@@ -55,6 +59,7 @@ object MirrorState {
         server = null
         paused = null
         heatEasing = false
+        pairingRequests = emptyList()
         watchingMotion = false
         this.problem = problem
     }

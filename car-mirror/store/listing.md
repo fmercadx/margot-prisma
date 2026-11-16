@@ -35,7 +35,8 @@ SMOOTH AND SIMPLE
 PRIVATE BY DESIGN
 • Nothing is collected: no account, no ads, no analytics, no server of our own
 • Your screen goes directly from your phone to your car and is never stored
-• Only devices connected to your phone's hotspot can see it
+• Pair your car once by matching a code on both screens; nothing else on your hotspot can see or tap
+• The picture and your taps are end-to-end encrypted between your phone and your car
 • The car's screen goes blank while your phone is locked, so your unlock pattern or PIN never shows
 • The app uses Android's VPN feature only to give your phone an address the car's browser will open. The VPN carries no traffic and sends nothing anywhere
 

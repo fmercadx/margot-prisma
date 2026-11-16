@@ -76,6 +76,11 @@ class MainActivity : Activity() {
     private lateinit var dimSwitch: Switch
     private lateinit var dimDetail: TextView
     private lateinit var touchPrompt: Button
+    private lateinit var pairingCard: LinearLayout
+    private lateinit var pairingCode: TextView
+    private var pairingShownFor: String? = null
+    private lateinit var pairedDetail: TextView
+    private lateinit var forgetButton: Button
 
     private val handler = Handler(Looper.getMainLooper())
     private val refresh = object : Runnable {
@@ -462,7 +467,23 @@ class MainActivity : Activity() {
         hotspotDetail.text = if (hotspotOn) "Your hotspot is on." else "Settings → Hotspot. Note its name and password."
         hotspotButton.visibility = if (hotspotOn) View.GONE else View.VISIBLE
 
+        // A screen asking to pair: show its code until it is answered.
+        val request = MirrorState.pairingRequests.lastOrNull()
+        pairingCard.visibility = if (request != null && running) View.VISIBLE else View.GONE
+        if (request?.id != pairingShownFor) {
+            pairingShownFor = request?.id
+            pairingCode.text = request?.code?.chunked(3)?.joinToString(" ").orEmpty()
+        }
+
         // Settings
+        val paired = pairedCount()
+        pairedDetail.text = when (paired) {
+            0 -> "None yet. The first time a screen opens the address, you'll be asked to allow it here."
+            1 -> "1 screen can show your phone. Its picture and taps are encrypted."
+            else -> "$paired screens can show your phone. Their picture and taps are encrypted."
+        }
+        forgetButton.isEnabled = paired > 0
+        forgetButton.alpha = if (paired > 0) 1f else 0.5f
         val quality = savedQuality()
         picture.select(quality.ordinal)
         picture.setEnabled(!running)
@@ -500,6 +521,8 @@ class MainActivity : Activity() {
         page.addView(ui.text("Car Mirror", 30f, bold = true))
         page.addView(ui.text("Your phone, on your Tesla's screen.", 16f, R.color.muted, topDp = 2))
 
+        pairingCard = pairingCard()
+        page.addView(pairingCard, ui.matchWidth(topDp = 20))
         page.addView(statusCard(), ui.matchWidth(topDp = 20))
         checklistCard = checklistCard()
         page.addView(checklistCard, ui.matchWidth(topDp = 14))
@@ -533,6 +556,45 @@ class MainActivity : Activity() {
         isAllCaps = true
         letterSpacing = 0.06f
         setPadding(ui.dp(4), paddingTop, 0, 0)
+    }
+
+    /** A screen asking to be paired: the code to compare, and Allow or Deny. */
+    private fun pairingCard(): LinearLayout = ui.card().apply {
+        visibility = View.GONE
+        background = ui.rounded(ui.color(R.color.accent_container), 22)
+        addView(ui.text("Allow this screen?", 22f, bold = true))
+        addView(ui.text("A screen on your hotspot wants to show your phone. Allow it only if it shows this code:",
+            16f, R.color.on_surface, topDp = 6))
+        pairingCode = ui.text("", 40f, bold = true, topDp = 12).apply {
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            letterSpacing = 0.08f
+        }
+        addView(pairingCode)
+        addView(ui.horizontal().apply {
+            addView(ui.button("Deny", Ui.Style.SECONDARY) { answerPairing(MirrorService.ACTION_PAIR_DENY) }, ui.weighted())
+            addView(ui.button("Allow", Ui.Style.PRIMARY) { answerPairing(MirrorService.ACTION_PAIR_ALLOW) }, ui.weighted(startDp = 12))
+        }, ui.matchWidth(topDp = 16))
+    }
+
+    private fun answerPairing(action: String) {
+        val id = pairingShownFor ?: return
+        startService(Intent(this, MirrorService::class.java).setAction(action).putExtra(MirrorService.EXTRA_PAIR_ID, id))
+        pairingCard.visibility = View.GONE
+        handler.postDelayed({ render() }, 200)
+    }
+
+    private fun pairedCount(): Int = MirrorState.server?.pairing?.pairedCount ?: PhonePairingStore(this).load().size
+
+    private fun forgetPairedScreens() {
+        AlertDialog.Builder(this)
+            .setTitle("Forget paired screens?")
+            .setMessage("Every screen that can show your phone will have to pair again, with a code you allow here.")
+            .setPositiveButton("Forget") { _, _ ->
+                MirrorState.server?.pairing?.forgetAll() ?: PhonePairingStore(this).save(emptyMap())
+                render()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun statusCard(): View = ui.card().apply {
@@ -680,6 +742,18 @@ class MainActivity : Activity() {
         addView(dimSwitch, ui.matchWidth(topDp = 14))
         dimDetail = ui.text("", 14f, R.color.muted, topDp = 2)
         addView(dimDetail)
+
+        addView(ui.divider(), ui.matchWidth(topDp = 18, heightDp = 1))
+
+        addView(ui.horizontal().apply {
+            addView(ui.vertical().apply {
+                addView(ui.text("Paired screens", 16f, bold = true))
+                pairedDetail = ui.text("", 14f, R.color.muted, topDp = 2)
+                addView(pairedDetail)
+            }, ui.weighted())
+            forgetButton = ui.button("Forget", Ui.Style.SECONDARY, heightDp = 44) { forgetPairedScreens() }
+            addView(forgetButton, LinearLayout.LayoutParams(WRAP_CONTENT, ui.dp(44)).apply { marginStart = ui.dp(12) })
+        }, ui.matchWidth(topDp = 18))
     }
 
     private fun tipsCard(): View = ui.card().apply {

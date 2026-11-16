@@ -6,8 +6,9 @@
 //   node tools/viewer-smoke.cjs http://127.0.0.1:8090/ --control /tmp/cm [--shots dir]
 //
 // --control must name the same folder the demo server was given: the test pauses the
-// "phone" by writing to <dir>/pause and reads the taps it received from <dir>/gestures.log.
-// Without it, touch and pause checks are skipped.
+// "phone" by writing to <dir>/pause, answers pairing requests through <dir>/pairing, and
+// reads the taps it received from <dir>/gestures.log and the frames it made from
+// <dir>/frames. Without it, touch, pause, pairing and frame-rate checks are skipped.
 //
 // Uses Playwright's Chromium. Set CHROMIUM_PATH to use a different browser binary.
 
@@ -137,7 +138,7 @@ function detailsText(page) {
 // phone's count came out at 32 fps (an 80 ms request at each end of a 2 s window) and the
 // page's 25.3 looked like falling behind, though it was drawing about 84% of a real 30.
 function rates(page, seconds = 4) {
-  const seqNow = () => page.evaluate(() => fetch('status', { cache: 'no-store' }).then((r) => r.json()).then((s) => s.seq));
+  const seqNow = async () => Number(fs.readFileSync(path.join(control, 'frames'), 'utf8')) || 0;
   return withDetails(page, async () => {
     await sleep(1500);
     const seq0 = await seqNow();
@@ -164,7 +165,29 @@ async function main() {
   page.on('pageerror', (err) => errors.push(String(err)));
   page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()); });
 
+  // Pairing: the phone shows nothing until the user allows this screen, and both show the
+  // same code. The demo phone holds the request until told to answer.
+  const pairingRequests = () => (control && fs.existsSync(path.join(control, 'pairing.log'))
+    ? fs.readFileSync(path.join(control, 'pairing.log'), 'utf8').split('\n').filter(Boolean) : []);
+  let sessionId = '';
+  let lastInput = null;
+  page.on('request', (req) => {
+    const m = req.url().match(/[?&]s=([^&]+)/);
+    if (m) sessionId = m[1];
+    if (req.method() === 'POST' && req.url().endsWith('/input')) {
+      lastInput = { body: req.postDataBuffer(), session: req.headers()['x-car-mirror-session'] };
+    }
+  });
+  if (control) fs.writeFileSync(path.join(control, 'pairing'), 'hold');
   await page.goto(base);
+  if (control) {
+    await until(page, messageIncludes, 'the pairing code', 10000, 'Pair this screen');
+    const shown = (await page.locator('#msg .code').innerText()).replace(/\s/g, '');
+    const asked = (pairingRequests().pop() || '').replace('code=', '');
+    check(/^\d{6}$/.test(shown) && shown === asked, `the car and the phone show the same pairing code (${shown} / ${asked})`);
+    check(isBlack(await pixel(page, 960, 600)), 'nothing of the screen shows before the phone allows it');
+    fs.writeFileSync(path.join(control, 'pairing'), '');
+  }
   await until(page, messageHidden, 'the first frame');
   check(true, 'first frame drawn and the status message hidden');
 
@@ -180,9 +203,11 @@ async function main() {
 
   // Keeping up: the page should draw nearly every frame the phone makes, whatever rate the
   // phone (here, a CI machine drawing a test pattern) manages.
-  const fast = await rates(page);
-  check(fast.made > 0 && fast.drawn >= fast.made * 0.8,
-    `keeps up with the phone: draws ${fast.drawn.toFixed(1)} fps of the ${fast.made.toFixed(1)} it makes`);
+  if (control) {
+    const fast = await rates(page);
+    check(fast.made > 0 && fast.drawn >= fast.made * 0.8,
+      `keeps up with the phone: draws ${fast.drawn.toFixed(1)} fps of the ${fast.made.toFixed(1)} it makes`);
+  }
 
   // The corner button brings up details.
   await page.click('#menu');
@@ -196,7 +221,7 @@ async function main() {
     // The picture is 576x1280 scaled to fit 1920x1200: 540 px wide, centred, full height.
     const px = (fx) => 690 + fx * 540;
     const py = (fy) => fy * 1200;
-    await until(page, () => fetch('status').then((r) => r.json()).then((s) => s.touch), 'touch to be on');
+    await until(page, () => document.getElementById('nav').style.display === 'flex', 'touch to be on');
     await sleep(300); // let the page's own status refresh land
 
     let count = gestures().length;
@@ -341,9 +366,11 @@ async function main() {
   await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 80, downloadThroughput: 3000000, uploadThroughput: 1000000 });
   await slow.goto(base);
   await until(slow, messageHidden, 'the first frame on a slow link');
-  const slowRates = await rates(slow);
-  check(slowRates.made > 0 && slowRates.drawn >= slowRates.made * 0.8,
-    `keeps up on a slow link too: draws ${slowRates.drawn.toFixed(1)} fps of the ${slowRates.made.toFixed(1)} it makes`);
+  if (control) {
+    const slowRates = await rates(slow);
+    check(slowRates.made > 0 && slowRates.drawn >= slowRates.made * 0.8,
+      `keeps up on a slow link too: draws ${slowRates.drawn.toFixed(1)} fps of the ${slowRates.made.toFixed(1)} it makes`);
+  }
   await slow.close();
 
   // Fallback for browsers that can't read a stream: one request per frame.
@@ -354,13 +381,52 @@ async function main() {
   check(/poll/.test(await detailsText(poll)), 'the one-request-per-frame fallback shows the picture');
   await poll.close();
 
-  // Fallback for browsers without fetch/createImageBitmap.
-  const mjpeg = await browser.newPage({ viewport: { width: 1920, height: 1200 } });
-  mjpeg.on('request', (req) => { if (!req.url().startsWith(origin)) offOrigin.push(req.url()); });
-  await mjpeg.goto(base + '?mode=mjpeg');
-  await until(mjpeg, () => document.getElementById('mjpeg').naturalWidth > 0, 'the MJPEG stream');
-  check(true, 'MJPEG fallback shows the stream');
-  await mjpeg.close();
+  // Someone else on the hotspot: without pairing they get nothing, and the stream they can
+  // reach with a session id seen on the network is ciphertext.
+  const unpaired = await Promise.all(['frames', 'frame?after=0', 'status', 'stream.mjpeg'].map((p) => fetch(base + p).then((r) => r.status)));
+  check(unpaired.join() === '401,401,401,404', `nothing of the screen is served to an unpaired device (${unpaired.join(', ')})`);
+  if (sessionId) {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 1500);
+    const chunks = [];
+    try {
+      const response = await fetch(`${base}frames?s=${sessionId}`, { signal: controller.signal });
+      const reader = response.body.getReader();
+      for (;;) {
+        const part = await reader.read();
+        if (part.done) break;
+        chunks.push(Buffer.from(part.value));
+      }
+    } catch (e) { /* aborted after 1.5 s */ }
+    const sniffed = Buffer.concat(chunks);
+    check(sniffed.length > 10000 && !sniffed.includes('JFIF'),
+      `the picture crosses the network encrypted (${sniffed.length} bytes, no JPEG inside)`);
+  }
+  if (control && lastInput) {
+    const before = gestures().length;
+    const replayed = await fetch(base + 'input', {
+      method: 'POST', body: lastInput.body, headers: { 'X-Car-Mirror-Session': lastInput.session },
+    });
+    await sleep(300);
+    check(replayed.status === 403 && gestures().length === before, `a recorded tap replayed is refused (${replayed.status})`);
+  }
+  if (control) {
+    const asked = pairingRequests().length;
+    await page.reload();
+    await until(page, messageHidden, 'the first frame after a reload');
+    check(pairingRequests().length === asked, 'a paired screen reconnects after a reload without asking again');
+  }
+
+  // Last, because a refusal makes the phone ignore this address for a while.
+  if (control) {
+    fs.writeFileSync(path.join(control, 'pairing'), 'deny');
+    const denied = await browser.newPage({ viewport: { width: 1920, height: 1200 } });
+    await denied.goto(base);
+    await until(denied, messageIncludes, 'the refusal', 10000, 'said no');
+    check(isBlack(await pixel(denied, 960, 600)), 'a screen the phone refused shows nothing');
+    await denied.close();
+    fs.writeFileSync(path.join(control, 'pairing'), '');
+  }
 
   check(offOrigin.length === 0, `no requests leave the phone (${offOrigin.length} off-origin: ${offOrigin.slice(0, 3).join(', ')})`);
   const unexpected = errors.filter((e) => !/net::ERR_|Failed to load resource|Failed to fetch/.test(e));

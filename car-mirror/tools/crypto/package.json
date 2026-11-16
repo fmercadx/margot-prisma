@@ -1,0 +1,14 @@
+{
+  "name": "car-mirror-viewer-crypto",
+  "private": true,
+  "description": "Builds core/src/main/resources/.../crypto.js, the viewer page's vendored crypto. See README.md.",
+  "scripts": {
+    "build": "esbuild entry.mjs --bundle --minify --format=iife --target=chrome90 --legal-comments=none --outfile=../../core/src/main/resources/io/github/fmercadx/carmirror/core/crypto.js --banner:js=\"$(cat banner.txt)\""
+  },
+  "devDependencies": {
+    "@noble/ciphers": "2.4.0",
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "esbuild": "0.28.2"
+  }
+}

@@ -14,6 +14,11 @@ kotlin {
 }
 
 dependencies {
+    // X25519, ChaCha20-Poly1305 and HKDF for pairing and the encrypted session (see Crypto).
+    // Android has no X25519 before API 31, and this app runs on 29, so the platform's own
+    // providers can't be relied on; BouncyCastle's lightweight API is the same everywhere.
+    implementation("org.bouncycastle:bcprov-jdk18on:1.86")
+
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.3")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.3")
