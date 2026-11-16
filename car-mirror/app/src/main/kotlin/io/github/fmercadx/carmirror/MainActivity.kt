@@ -172,10 +172,10 @@ class MainActivity : Activity() {
             return
         }
         AlertDialog.Builder(this)
-            .setTitle("Pause while driving")
-            .setMessage(LOCATION_EXPLANATION)
-            .setPositiveButton("Continue") { _, _ -> requestPermissions(LOCATION_PERMISSIONS, REQUEST_LOCATION_AT_START) }
-            .setNegativeButton("Turn it off") { _, _ ->
+            .setTitle(getString(R.string.pause_while_driving))
+            .setMessage(getString(R.string.location_explanation))
+            .setPositiveButton(getString(R.string.action_continue)) { _, _ -> requestPermissions(LOCATION_PERMISSIONS, REQUEST_LOCATION_AT_START) }
+            .setNegativeButton(getString(R.string.action_turn_it_off)) { _, _ ->
                 setPauseWhileMoving(false)
                 askForVpn()
             }
@@ -191,10 +191,9 @@ class MainActivity : Activity() {
             REQUEST_LOCATION -> setPauseWhileMoving(hasLocationPermission())
             REQUEST_BLUETOOTH -> if (CarBluetooth.permitted(this)) chooseCar() else {
                 AlertDialog.Builder(this)
-                    .setTitle("Nearby devices is off")
-                    .setMessage("To notice when your phone connects to your car, Android needs the Nearby devices " +
-                        "permission. You can allow it later in Settings → Apps → Car Mirror → Permissions.")
-                    .setPositiveButton("OK", null)
+                    .setTitle(getString(R.string.nearby_off_title))
+                    .setMessage(getString(R.string.nearby_off_message))
+                    .setPositiveButton(getString(R.string.action_ok), null)
                     .show()
             }
             REQUEST_LOCATION_AT_START -> {
@@ -213,17 +212,17 @@ class MainActivity : Activity() {
         // Android's own VPN prompt says nothing about why. Explain first, so the user can
         // make an informed choice; Google Play also expects VPN use to be disclosed in-app.
         AlertDialog.Builder(this)
-            .setTitle("Why Car Mirror uses a VPN")
-            .setMessage(VPN_EXPLANATION)
-            .setPositiveButton("Continue") { _, _ ->
+            .setTitle(getString(R.string.vpn_title))
+            .setMessage(getString(R.string.vpn_explanation))
+            .setPositiveButton(getString(R.string.action_continue)) { _, _ ->
                 try {
                     startActivityForResult(consent, REQUEST_VPN)
                 } catch (e: ActivityNotFoundException) {
                     askForScreen(tunnel = false)
                 }
             }
-            .setNegativeButton("Cancel") { _, _ ->
-                MirrorState.problem = "Mirroring needs the VPN step so your car can reach your phone."
+            .setNegativeButton(getString(R.string.action_cancel)) { _, _ ->
+                MirrorState.problem = getString(R.string.problem_vpn_needed)
                 render()
             }
             .setCancelable(false)
@@ -254,7 +253,7 @@ class MainActivity : Activity() {
                     )
                     handler.postDelayed({ render() }, 300)
                 } else {
-                    MirrorState.problem = "Screen sharing was cancelled. Tap Start mirroring to try again."
+                    MirrorState.problem = getString(R.string.problem_capture_cancelled)
                     render()
                 }
         }
@@ -295,20 +294,16 @@ class MainActivity : Activity() {
     private fun onDimSwitch(checked: Boolean) {
         if (checked && !Brightness.allowed(this)) {
             AlertDialog.Builder(this)
-                .setTitle("Dim this phone")
-                .setMessage(
-                    "To turn your phone's brightness down while mirroring, Android needs you to let " +
-                        "Car Mirror modify system settings. It only changes brightness, and puts yours " +
-                        "back when you stop mirroring.\n\nOn the next screen, switch on Allow.",
-                )
-                .setPositiveButton("Continue") { _, _ ->
+                .setTitle(getString(R.string.dim_title))
+                .setMessage(getString(R.string.dim_explanation))
+                .setPositiveButton(getString(R.string.action_continue)) { _, _ ->
                     settings().edit().putBoolean(KEY_DIM, true).apply()
                     openFirst(
                         Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, android.net.Uri.parse("package:$packageName")),
                         Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS),
                     )
                 }
-                .setNegativeButton("Cancel") { _, _ -> render() }
+                .setNegativeButton(getString(R.string.action_cancel)) { _, _ -> render() }
                 .setOnCancelListener { render() }
                 .show()
             return
@@ -337,21 +332,15 @@ class MainActivity : Activity() {
             openAccessibilitySettings() // already on; this button is for turning it off
             return
         }
-        val restrictedNote = if (Build.VERSION.SDK_INT >= 33) {
-            "\n\nIf it's greyed out or Android says \"App was denied access\": tap App info below, " +
-                "then ⋮ (top right) → Allow restricted settings, then come back and switch it on. " +
-                "Android asks this once, for apps not installed from the Play Store."
-        } else {
-            ""
-        }
+        val restrictedNote = if (Build.VERSION.SDK_INT >= 33) getString(R.string.touch_restricted_note) else ""
         val dialog = AlertDialog.Builder(this)
-            .setTitle("Turn on touch control")
-            .setMessage(TOUCH_EXPLANATION + restrictedNote)
-            .setPositiveButton("Open settings") { _, _ -> openAccessibilitySettings() }
-            .setNegativeButton("Not now", null)
+            .setTitle(getString(R.string.turn_on_touch_control))
+            .setMessage(getString(R.string.touch_explanation) + restrictedNote)
+            .setPositiveButton(getString(R.string.action_open_settings)) { _, _ -> openAccessibilitySettings() }
+            .setNegativeButton(getString(R.string.action_not_now), null)
         if (Build.VERSION.SDK_INT >= 33) {
             // For "App was denied access": the Allow restricted settings switch is on this page.
-            dialog.setNeutralButton("App info") { _, _ ->
+            dialog.setNeutralButton(getString(R.string.action_app_info)) { _, _ ->
                 openFirst(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName")))
             }
         }
@@ -397,18 +386,18 @@ class MainActivity : Activity() {
 
         // Status: one line that says what is going on, and one that says what to do next.
         val (tone, title, detail) = when {
-            !running -> Triple(Tone.IDLE, "Ready to mirror", "Tap Start, then type the address it shows into your Tesla's browser.")
-            paused == Pauses.PRIVACY -> Triple(Tone.ATTENTION, "Paused", "Your car's screen is blank. Tap Resume when you're ready.")
-            paused == Pauses.LOCKED -> Triple(Tone.ATTENTION, "Paused while locked", "Unlock your phone to bring the picture back.")
-            paused == Pauses.HOT -> Triple(Tone.ATTENTION, "Paused to cool down",
-                "Your phone got too hot. The picture comes back once it cools; shade or a vent's airflow helps.")
-            paused == Pauses.DRIVING -> Triple(Tone.ATTENTION, "Paused while driving", "The picture comes back a few seconds after the car stops.")
-            viewer != null -> Triple(Tone.GOOD, "Connected to your car",
-                "Your screen is showing on the car. It opened ${viewer.host.ifEmpty { viewer.remoteAddress }}." +
-                    if (MirrorState.heatEasing) " Your phone is warm, so the picture is eased off to cool it." else "")
-            urls.isEmpty() -> Triple(Tone.ATTENTION, "Turn on your hotspot",
-                "Your car connects through your phone's hotspot. Turn it on, then connect the car to it.")
-            else -> Triple(Tone.WAITING, "Waiting for your car", "In your Tesla's browser, go to this address:")
+            !running -> Triple(Tone.IDLE, getString(R.string.status_ready_title), getString(R.string.status_ready_detail))
+            paused == Pauses.PRIVACY -> Triple(Tone.ATTENTION, getString(R.string.paused), getString(R.string.status_paused_detail))
+            paused == Pauses.LOCKED -> Triple(Tone.ATTENTION, getString(R.string.status_locked_title), getString(R.string.status_locked_detail))
+            paused == Pauses.HOT -> Triple(Tone.ATTENTION, getString(R.string.status_hot_title),
+                getString(R.string.status_hot_detail))
+            paused == Pauses.DRIVING -> Triple(Tone.ATTENTION, getString(R.string.status_driving_title), getString(R.string.status_driving_detail))
+            viewer != null -> Triple(Tone.GOOD, getString(R.string.status_connected_title),
+                getString(if (MirrorState.heatEasing) R.string.status_connected_warm_detail else R.string.status_connected_detail,
+                    viewer.host.ifEmpty { viewer.remoteAddress }))
+            urls.isEmpty() -> Triple(Tone.ATTENTION, getString(R.string.status_no_hotspot_title),
+                getString(R.string.status_no_hotspot_detail))
+            else -> Triple(Tone.WAITING, getString(R.string.status_waiting_title), getString(R.string.status_waiting_detail))
         }
         (statusDot.background as android.graphics.drawable.GradientDrawable).setColor(ui.color(tone.dot))
         statusTitle.text = title
@@ -435,7 +424,7 @@ class MainActivity : Activity() {
             alternativesShownFor = alternatives
             alternativesBox.removeAllViews()
             if (alternatives.isNotEmpty()) {
-                alternativesBox.addView(ui.text("If it doesn't load, try these in order:", 14f, R.color.muted))
+                alternativesBox.addView(ui.text(getString(R.string.alternatives_title), 14f, R.color.muted))
                 alternatives.forEachIndexed { i, url ->
                     // Number and address side by side; the address shrinks to fit rather than
                     // wrapping onto a second line on narrow phones.
@@ -456,15 +445,15 @@ class MainActivity : Activity() {
         val resume = paused == Pauses.PRIVACY
         if (pauseShownAsResume != resume) {
             pauseShownAsResume = resume
-            pauseButton.text = if (resume) "Resume" else "Pause"
+            pauseButton.text = if (resume) getString(R.string.action_resume) else getString(R.string.action_pause)
             ui.restyle(pauseButton, if (resume) Ui.Style.PRIMARY else Ui.Style.SECONDARY)
         }
         if (troubleShownFor != urls) {
             troubleShownFor = urls
             troubleBox.removeAllViews()
-            val tips = TROUBLE_TIPS.toMutableList()
+            val tips = troubleTips().toMutableList()
             if (knownGood && urls.size > 1) {
-                tips += "Other addresses that reach the same page:\n" + urls.drop(1).joinToString("\n") { CarUrls.typed(it) }
+                tips += getString(R.string.other_addresses, urls.drop(1).joinToString("\n") { CarUrls.typed(it) })
             }
             troubleBox.addView(ui.bullets(tips, sizeSp = 14f, colorId = R.color.muted, gapDp = 8))
         }
@@ -474,7 +463,7 @@ class MainActivity : Activity() {
         hotspotBadge.text = if (hotspotOn) "✓" else "1"
         hotspotBadge.setTextColor(ui.color(if (hotspotOn) R.color.on_accent else R.color.accent))
         hotspotBadge.background = ui.rounded(ui.color(if (hotspotOn) R.color.success else R.color.accent_container), 14)
-        hotspotDetail.text = if (hotspotOn) "Your hotspot is on." else "Settings → Hotspot. Note its name and password."
+        hotspotDetail.text = if (hotspotOn) getString(R.string.hotspot_on) else getString(R.string.hotspot_off_hint)
         hotspotButton.visibility = if (hotspotOn) View.GONE else View.VISIBLE
 
         // A screen asking to pair: show its code until it is answered.
@@ -488,45 +477,43 @@ class MainActivity : Activity() {
         // Settings
         val car = CarBluetooth.chosen(this)
         bluetoothDetail.text = if (car != null) {
-            "Offers to start when your phone connects to ${car.name}."
+            getString(R.string.bluetooth_on, car.name)
         } else {
-            "Off. Pick your car and you'll get a Start prompt when you get in."
+            getString(R.string.bluetooth_off)
         }
-        bluetoothButton.text = if (car != null) "Change" else "Choose"
+        bluetoothButton.text = if (car != null) getString(R.string.action_change) else getString(R.string.action_choose)
         val paired = pairedCount()
         pairedDetail.text = when (paired) {
-            0 -> "None yet. The first time a screen opens the address, you'll be asked to allow it here."
-            1 -> "1 screen can show your phone. Its picture and taps are encrypted."
-            else -> "$paired screens can show your phone. Their picture and taps are encrypted."
+            0 -> getString(R.string.paired_none)
+            1 -> getString(R.string.paired_one)
+            else -> getString(R.string.paired_many, paired)
         }
         forgetButton.isEnabled = paired > 0
         forgetButton.alpha = if (paired > 0) 1f else 0.5f
         val quality = savedQuality()
         picture.select(quality.ordinal)
         picture.setEnabled(!running)
-        pictureDetail.text = QUALITY_HELP.getValue(quality) + if (running) " Stop mirroring to change this." else ""
+        pictureDetail.text = if (running) getString(R.string.picture_detail_running, qualityHelp(quality)) else qualityHelp(quality)
 
         val touchOn = TouchService.instance != null
         touchPrompt.visibility = if (running && !touchOn) View.VISIBLE else View.GONE
         touchDetail.text = if (touchOn) {
-            "On. Tap and swipe on the car's screen to use your phone."
+            getString(R.string.touch_on_detail)
         } else {
-            "Off. Turn it on to tap and swipe on the car's screen."
+            getString(R.string.touch_off_detail)
         }
-        touchButton.text = if (touchOn) "Settings" else "Turn on"
+        touchButton.text = if (touchOn) getString(R.string.settings) else getString(R.string.action_turn_on)
 
         if (dimSwitch.isChecked != dimPhone()) dimSwitch.isChecked = dimPhone()
-        dimDetail.text = "Turns your phone's brightness right down while mirroring, so it isn't " +
-            "glowing next to the car's screen. The car's picture isn't affected."
+        dimDetail.text = getString(R.string.dim_detail)
 
         val wantsMotion = wantsPauseWhileMoving()
         if (motionSwitch.isChecked != wantsMotion) motionSwitch.isChecked = wantsMotion
         motionDetail.text = when {
-            running && wantsMotion != MirrorState.watchingMotion -> "Takes effect the next time you start."
+            running && wantsMotion != MirrorState.watchingMotion -> getString(R.string.motion_takes_effect)
             wantsMotion && !hasLocationPermission() ->
-                "Blanks the car's screen while you drive, maps included. You'll be asked to allow " +
-                    "location when you start."
-            else -> "Blanks the car's screen while you drive, maps included. Uses GPS on your phone only."
+                getString(R.string.motion_needs_location)
+            else -> getString(R.string.motion_detail)
         }
     }
 
@@ -535,8 +522,8 @@ class MainActivity : Activity() {
     private fun buildLayout(): View {
         val page = ui.vertical().apply { setPadding(ui.dp(18), ui.dp(12), ui.dp(18), ui.dp(32)) }
 
-        page.addView(ui.text("Car Mirror", 30f, bold = true))
-        page.addView(ui.text("Your phone, on your Tesla's screen.", 16f, R.color.muted, topDp = 2))
+        page.addView(ui.text(getString(R.string.app_name), 30f, bold = true))
+        page.addView(ui.text(getString(R.string.tagline), 16f, R.color.muted, topDp = 2))
 
         pairingCard = pairingCard()
         page.addView(pairingCard, ui.matchWidth(topDp = 20))
@@ -544,10 +531,10 @@ class MainActivity : Activity() {
         checklistCard = checklistCard()
         page.addView(checklistCard, ui.matchWidth(topDp = 14))
 
-        page.addView(sectionTitle("Settings"))
+        page.addView(sectionTitle(getString(R.string.settings)))
         page.addView(settingsCard(), ui.matchWidth(topDp = 8))
 
-        page.addView(sectionTitle("Good to know"))
+        page.addView(sectionTitle(getString(R.string.good_to_know)))
         page.addView(tipsCard(), ui.matchWidth(topDp = 8))
 
         return ScrollView(this).apply {
@@ -579,8 +566,8 @@ class MainActivity : Activity() {
     private fun pairingCard(): LinearLayout = ui.card().apply {
         visibility = View.GONE
         background = ui.rounded(ui.color(R.color.accent_container), 22)
-        addView(ui.text("Allow this screen?", 22f, bold = true))
-        addView(ui.text("A screen on your hotspot wants to show your phone. Allow it only if it shows this code:",
+        addView(ui.text(getString(R.string.pairing_title), 22f, bold = true))
+        addView(ui.text(getString(R.string.pairing_detail),
             16f, R.color.on_surface, topDp = 6))
         pairingCode = ui.text("", 40f, bold = true, topDp = 12).apply {
             typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
@@ -588,8 +575,8 @@ class MainActivity : Activity() {
         }
         addView(pairingCode)
         addView(ui.horizontal().apply {
-            addView(ui.button("Deny", Ui.Style.SECONDARY) { answerPairing(MirrorService.ACTION_PAIR_DENY) }, ui.weighted())
-            addView(ui.button("Allow", Ui.Style.PRIMARY) { answerPairing(MirrorService.ACTION_PAIR_ALLOW) }, ui.weighted(startDp = 12))
+            addView(ui.button(getString(R.string.action_deny), Ui.Style.SECONDARY) { answerPairing(MirrorService.ACTION_PAIR_DENY) }, ui.weighted())
+            addView(ui.button(getString(R.string.action_allow), Ui.Style.PRIMARY) { answerPairing(MirrorService.ACTION_PAIR_ALLOW) }, ui.weighted(startDp = 12))
         }, ui.matchWidth(topDp = 16))
     }
 
@@ -609,40 +596,55 @@ class MainActivity : Activity() {
         val devices = CarBluetooth.pairedDevices(this)
         if (devices.isEmpty()) {
             AlertDialog.Builder(this)
-                .setTitle("No Bluetooth devices yet")
-                .setMessage("Pair your phone with your car's Bluetooth first (on the car's screen: Bluetooth, " +
-                    "then add a new device), then pick it here.")
-                .setPositiveButton("OK", null)
+                .setTitle(getString(R.string.no_bluetooth_title))
+                .setMessage(getString(R.string.no_bluetooth_message))
+                .setPositiveButton(getString(R.string.action_ok), null)
                 .show()
             return
         }
         val current = CarBluetooth.chosen(this)?.address
         AlertDialog.Builder(this)
-            .setTitle("Which one is your car?")
+            .setTitle(getString(R.string.bluetooth_pick_title))
             .setSingleChoiceItems(devices.map { it.name }.toTypedArray(), devices.indexOfFirst { it.address == current }) { dialog, which ->
                 CarBluetooth.choose(this, devices[which])
                 dialog.dismiss()
                 render()
             }
-            .setNeutralButton("Turn off") { _, _ ->
+            .setNeutralButton(getString(R.string.action_turn_off)) { _, _ ->
                 CarBluetooth.choose(this, null)
                 render()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.action_cancel), null)
             .show()
     }
+
+    private fun troubleTips(): List<String> = listOf(
+        R.string.trouble_wifi, R.string.trouble_5ghz, R.string.trouble_exact, R.string.trouble_http, R.string.trouble_vpn,
+    ).map(::getString)
+
+    private fun qualityLabel(quality: Quality): String = getString(when (quality) {
+        Quality.SMOOTH -> R.string.quality_smooth
+        Quality.BALANCED -> R.string.quality_balanced
+        Quality.SHARP -> R.string.quality_sharp
+    })
+
+    private fun qualityHelp(quality: Quality): String = getString(when (quality) {
+        Quality.SMOOTH -> R.string.quality_smooth_help
+        Quality.BALANCED -> R.string.quality_balanced_help
+        Quality.SHARP -> R.string.quality_sharp_help
+    })
 
     private fun pairedCount(): Int = MirrorState.server?.pairing?.pairedCount ?: PhonePairingStore(this).load().size
 
     private fun forgetPairedScreens() {
         AlertDialog.Builder(this)
-            .setTitle("Forget paired screens?")
-            .setMessage("Every screen that can show your phone will have to pair again, with a code you allow here.")
-            .setPositiveButton("Forget") { _, _ ->
+            .setTitle(getString(R.string.forget_title))
+            .setMessage(getString(R.string.forget_message))
+            .setPositiveButton(getString(R.string.action_forget)) { _, _ ->
                 MirrorState.server?.pairing?.forgetAll() ?: PhonePairingStore(this).save(emptyMap())
                 render()
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(R.string.action_cancel), null)
             .show()
     }
 
@@ -663,7 +665,7 @@ class MainActivity : Activity() {
         }
         addView(problemView, ui.matchWidth(topDp = 14))
 
-        startButton = ui.button("Start mirroring", Ui.Style.PRIMARY, heightDp = 60) { beginMirroring() }
+        startButton = ui.button(getString(R.string.start_mirroring), Ui.Style.PRIMARY, heightDp = 60) { beginMirroring() }
         addView(startButton, ui.matchWidth(topDp = 18, heightDp = 60))
 
         runningBlock = ui.vertical().apply {
@@ -683,19 +685,19 @@ class MainActivity : Activity() {
             addView(alternativesBox, ui.matchWidth(topDp = 12))
 
             addView(ui.horizontal().apply {
-                pauseButton = ui.button("Pause", Ui.Style.SECONDARY) { onPauseToggle() }
+                pauseButton = ui.button(getString(R.string.action_pause), Ui.Style.SECONDARY) { onPauseToggle() }
                 addView(pauseButton, ui.weighted())
-                addView(ui.button("Stop", Ui.Style.DANGER) { onStopMirroring() }, ui.weighted(startDp = 10))
+                addView(ui.button(getString(R.string.action_stop), Ui.Style.DANGER) { onStopMirroring() }, ui.weighted(startDp = 10))
             }, ui.matchWidth(topDp = 16))
 
-            touchPrompt = ui.button("Turn on touch control", Ui.Style.QUIET, heightDp = 44) { setUpTouchControl() }
+            touchPrompt = ui.button(getString(R.string.turn_on_touch_control), Ui.Style.QUIET, heightDp = 44) { setUpTouchControl() }
             addView(touchPrompt, ui.matchWidth(topDp = 6))
 
             troubleBox = ui.vertical().apply {
                 visibility = View.GONE
                 setPadding(0, ui.dp(4), 0, 0)
             }
-            addView(ui.button("Page won't load?", Ui.Style.QUIET, heightDp = 44) {
+            addView(ui.button(getString(R.string.page_wont_load), Ui.Style.QUIET, heightDp = 44) {
                 troubleBox.visibility = if (troubleBox.visibility == View.VISIBLE) View.GONE else View.VISIBLE
             }, ui.matchWidth(topDp = 6))
             addView(troubleBox, ui.matchWidth())
@@ -704,21 +706,20 @@ class MainActivity : Activity() {
     }
 
     private fun checklistCard(): LinearLayout = ui.card().apply {
-        addView(ui.text("Before you start", 18f, bold = true))
+        addView(ui.text(getString(R.string.before_you_start), 18f, bold = true))
 
-        val hotspot = step("1", "Turn on your phone's hotspot", "")
+        val hotspot = step("1", getString(R.string.step_hotspot), "")
         hotspotBadge = hotspot.badge
         hotspotDetail = hotspot.detail
-        hotspotButton = ui.button("Open hotspot settings", Ui.Style.SECONDARY, heightDp = 44) { openHotspotSettings() }
+        hotspotButton = ui.button(getString(R.string.open_hotspot_settings), Ui.Style.SECONDARY, heightDp = 44) { openHotspotSettings() }
         hotspot.body.addView(hotspotButton, LinearLayout.LayoutParams(WRAP_CONTENT, ui.dp(44)).apply { topMargin = ui.dp(10) })
         addView(hotspot.row, ui.matchWidth(topDp = 14))
 
-        addView(step("2", "Connect your Tesla to it",
-            "On the car's screen, tap the Wi-Fi icon at the top and pick your phone's hotspot, " +
-                "not your home Wi-Fi. The car remembers it next time.").row, ui.matchWidth(topDp = 16))
+        addView(step("2", getString(R.string.step_connect_title),
+            getString(R.string.step_connect_detail)).row, ui.matchWidth(topDp = 16))
 
-        addView(step("3", "Tap Start mirroring",
-            "Allow what Android asks, then type the address the app shows into the car's browser.").row,
+        addView(step("3", getString(R.string.step_start_title),
+            getString(R.string.step_start_detail)).row,
             ui.matchWidth(topDp = 16))
     }
 
@@ -743,8 +744,8 @@ class MainActivity : Activity() {
     }
 
     private fun settingsCard(): View = ui.card().apply {
-        addView(ui.text("Picture", 16f, bold = true))
-        picture = ui.Segmented(Quality.entries.map { it.label }) { index ->
+        addView(ui.text(getString(R.string.setting_picture), 16f, bold = true))
+        picture = ui.Segmented(Quality.entries.map { qualityLabel(it) }) { index ->
             settings().edit().putString(KEY_QUALITY, Quality.entries[index].name).apply()
             render()
         }
@@ -756,18 +757,18 @@ class MainActivity : Activity() {
 
         addView(ui.horizontal().apply {
             addView(ui.vertical().apply {
-                addView(ui.text("Touch control", 16f, bold = true))
+                addView(ui.text(getString(R.string.setting_touch), 16f, bold = true))
                 touchDetail = ui.text("", 14f, R.color.muted, topDp = 2)
                 addView(touchDetail)
             }, ui.weighted())
-            touchButton = ui.button("Turn on", Ui.Style.SECONDARY, heightDp = 44) { setUpTouchControl() }
+            touchButton = ui.button(getString(R.string.action_turn_on), Ui.Style.SECONDARY, heightDp = 44) { setUpTouchControl() }
             addView(touchButton, LinearLayout.LayoutParams(WRAP_CONTENT, ui.dp(44)).apply { marginStart = ui.dp(12) })
         }, ui.matchWidth(topDp = 18))
 
         addView(ui.divider(), ui.matchWidth(topDp = 18, heightDp = 1))
 
         motionSwitch = Switch(this@MainActivity).apply {
-            text = "Pause while driving"
+            text = getString(R.string.pause_while_driving)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setTextColor(ui.color(R.color.on_surface))
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -781,7 +782,7 @@ class MainActivity : Activity() {
         addView(ui.divider(), ui.matchWidth(topDp = 18, heightDp = 1))
 
         dimSwitch = Switch(this@MainActivity).apply {
-            text = "Dim this phone while mirroring"
+            text = getString(R.string.setting_dim)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
             setTextColor(ui.color(R.color.on_surface))
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -796,11 +797,11 @@ class MainActivity : Activity() {
 
         addView(ui.horizontal().apply {
             addView(ui.vertical().apply {
-                addView(ui.text("Start from your car's Bluetooth", 16f, bold = true))
+                addView(ui.text(getString(R.string.setting_bluetooth), 16f, bold = true))
                 bluetoothDetail = ui.text("", 14f, R.color.muted, topDp = 2)
                 addView(bluetoothDetail)
             }, ui.weighted())
-            bluetoothButton = ui.button("Choose", Ui.Style.SECONDARY, heightDp = 44) { chooseCar() }
+            bluetoothButton = ui.button(getString(R.string.action_choose), Ui.Style.SECONDARY, heightDp = 44) { chooseCar() }
             addView(bluetoothButton, LinearLayout.LayoutParams(WRAP_CONTENT, ui.dp(44)).apply { marginStart = ui.dp(12) })
         }, ui.matchWidth(topDp = 18))
 
@@ -808,26 +809,20 @@ class MainActivity : Activity() {
 
         addView(ui.horizontal().apply {
             addView(ui.vertical().apply {
-                addView(ui.text("Paired screens", 16f, bold = true))
+                addView(ui.text(getString(R.string.setting_paired), 16f, bold = true))
                 pairedDetail = ui.text("", 14f, R.color.muted, topDp = 2)
                 addView(pairedDetail)
             }, ui.weighted())
-            forgetButton = ui.button("Forget", Ui.Style.SECONDARY, heightDp = 44) { forgetPairedScreens() }
+            forgetButton = ui.button(getString(R.string.action_forget), Ui.Style.SECONDARY, heightDp = 44) { forgetPairedScreens() }
             addView(forgetButton, LinearLayout.LayoutParams(WRAP_CONTENT, ui.dp(44)).apply { marginStart = ui.dp(12) })
         }, ui.matchWidth(topDp = 18))
     }
 
     private fun tipsCard(): View = ui.card().apply {
         val tips = listOf(
-            "Full screen in the car: tap the Tesla browser's full-screen button, the two arrows " +
-                "at the left of its address bar. Videos fill the screen on their own.",
-            "Smoothest picture: set your phone's hotspot to 5 GHz (in hotspot settings, Band). " +
-                "It carries about twice as much as 2.4 GHz.",
-            "Sound plays through your car over Bluetooth, as usual.",
-            "Quicker start: add the Car Mirror tile to Quick Settings, or long-press the app icon.",
-            "Keep your phone plugged in. Mirroring uses battery.",
-            "Don't watch video while driving. Treat it like a phone on a dash mount.",
-        )
+            R.string.tip_full_screen, R.string.tip_5ghz, R.string.tip_sound,
+            R.string.tip_quick_start, R.string.tip_battery, R.string.tip_safety,
+        ).map(::getString)
         addView(ui.bullets(tips))
     }
 
@@ -864,46 +859,5 @@ class MainActivity : Activity() {
         private const val KEY_QUALITY = "quality"
         private const val KEY_PAUSE_WHILE_MOVING = "pauseWhileMoving"
         private const val KEY_DIM = "dimPhone"
-
-        private val TROUBLE_TIPS = listOf(
-            "Check the car is on your phone's hotspot, not your home Wi-Fi: tap the Wi-Fi icon at " +
-                "the top of the car's screen.",
-            "Choppy picture? Set your hotspot to 5 GHz (hotspot settings, Band), then reconnect the car.",
-            "Type the address exactly, including \":8080\".",
-            "Still nothing? Type http:// in front of it.",
-            "Turn off any other VPN app on your phone, then Stop and Start again.",
-        )
-
-        private val QUALITY_HELP = mapOf(
-            Quality.SMOOTH to "Smoothest motion, slightly softer. Good for video while parked.",
-            Quality.BALANCED to "Good for most things. Recommended.",
-            Quality.SHARP to "Crispest maps and small text, a little less smooth.",
-        )
-
-        private const val TOUCH_EXPLANATION =
-            "Touch control lets taps and swipes on your car's screen control this phone while " +
-                "Car Mirror is mirroring.\n\n" +
-                "To do that, Car Mirror needs Android's Accessibility permission. It uses it only " +
-                "to perform those taps. It can't read what's on your screen or what you type, and " +
-                "nothing is collected or sent anywhere.\n\n" +
-                "In Settings, open Car Mirror touch control (it may be under Installed apps or " +
-                "Downloaded apps) and turn it on. You can turn it off there any time."
-
-        private const val VPN_EXPLANATION =
-            "Your Tesla's browser won't open the kind of address a phone hotspot uses. " +
-                "Car Mirror gives your phone one extra address that the car will open, and " +
-                "Android only allows that through its VPN feature.\n\n" +
-                "This VPN carries no traffic. Your apps use the internet exactly as before, " +
-                "nothing is sent through it, and nothing leaves your phone except the picture " +
-                "going to your car over the hotspot.\n\n" +
-                "Next, Android will ask you to allow the connection."
-
-        private const val LOCATION_EXPLANATION =
-            "Car Mirror blanks your car's screen while the car is moving, and brings the picture " +
-                "back a few seconds after you stop. Maps are paused too.\n\n" +
-                "To know when you're moving, it reads your phone's GPS speed while mirroring. " +
-                "Location stays on your phone: it is never stored or sent anywhere.\n\n" +
-                "Next, Android will ask for location. Choose Precise and While using the app. " +
-                "You can switch this off any time under Settings."
     }
 }

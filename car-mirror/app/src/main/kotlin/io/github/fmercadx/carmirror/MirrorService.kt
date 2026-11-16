@@ -156,7 +156,7 @@ class MirrorService : VpnService() {
     }
 
     override fun onRevoke() {
-        stopMirroring("Another VPN took over, or the VPN was turned off in settings. Tap Start to mirror again.")
+        stopMirroring(getString(R.string.problem_vpn_revoked))
     }
 
     override fun onDestroy() {
@@ -173,12 +173,12 @@ class MirrorService : VpnService() {
         // created, and it may only claim the location type if location permission is held.
         var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
         if (watchMotion) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-        startForeground(NOTIFICATION_ID, notification("Starting…"), types)
+        startForeground(NOTIFICATION_ID, notification(getString(R.string.notif_starting)), types)
 
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
         val data = intent.resultData()
         if (resultCode != Activity.RESULT_OK || data == null) {
-            stopMirroring("Screen sharing permission was not given.")
+            stopMirroring(getString(R.string.problem_no_permission))
             return
         }
         val quality = Quality.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_QUALITY) } ?: Quality.BALANCED
@@ -187,12 +187,12 @@ class MirrorService : VpnService() {
         try {
             val manager = service<MediaProjectionManager>()
             val mp = manager.getMediaProjection(resultCode, data)
-                ?: throw IllegalStateException("Android did not allow screen sharing.")
+                ?: throw IllegalStateException(getString(R.string.problem_android_refused))
             projection = mp
             mp.registerCallback(object : MediaProjection.Callback() {
                 override fun onStop() {
                     // Ignore the callback for a projection we already stopped ourselves.
-                    if (projection === mp) stopMirroring("Screen sharing was stopped.")
+                    if (projection === mp) stopMirroring(getString(R.string.problem_capture_stopped))
                 }
             }, mainHandler)
 
@@ -226,10 +226,8 @@ class MirrorService : VpnService() {
 
             val problem = when {
                 vpn != null -> null
-                wantTunnel -> "The VPN didn't start (is another VPN app on?), so only your hotspot's own " +
-                    "address is offered. If the car won't open it, turn off the other VPN, then Stop and Start."
-                else -> "Without the VPN, only your hotspot's own address is offered. If the car won't open " +
-                    "it, tap Stop, then Start, and allow the VPN."
+                wantTunnel -> getString(R.string.problem_vpn_failed)
+                else -> getString(R.string.problem_no_vpn)
             }
             MirrorState.started(tunnelUp = vpn != null, port = port, server = httpServer, problem = problem)
 
@@ -249,7 +247,7 @@ class MirrorService : VpnService() {
             applyPause()
             MirrorTileService.refresh(this)
         } catch (e: Exception) {
-            stopMirroring("Could not start: ${e.message ?: e.javaClass.simpleName}")
+            stopMirroring(getString(R.string.problem_could_not_start, e.message ?: e.javaClass.simpleName))
         }
     }
 
@@ -323,31 +321,30 @@ class MirrorService : VpnService() {
         ).build()
         val notification = Notification.Builder(this, PAIRING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Allow this screen? Code $code")
-            .setContentText("A screen on your hotspot wants to show your phone. Allow it only if it shows $code.")
-            .setStyle(Notification.BigTextStyle().bigText(
-                "A screen on your hotspot wants to show your phone. Allow it only if it shows the code $code."))
+            .setContentTitle(getString(R.string.pairing_notif_title, code))
+            .setContentText(getString(R.string.pairing_notif_text, code))
+            .setStyle(Notification.BigTextStyle().bigText(getString(R.string.pairing_notif_text, code)))
             .setContentIntent(open)
             .setCategory(Notification.CATEGORY_STATUS)
             .setAutoCancel(true)
-            .addAction(answer("Allow", ACTION_PAIR_ALLOW, 11))
-            .addAction(answer("Deny", ACTION_PAIR_DENY, 12))
+            .addAction(answer(getString(R.string.action_allow), ACTION_PAIR_ALLOW, 11))
+            .addAction(answer(getString(R.string.action_deny), ACTION_PAIR_DENY, 12))
             .build()
         manager.notify(PAIRING_NOTIFICATION_ID, notification)
     }
 
     private fun updateNotification() {
         val text = when (MirrorState.paused) {
-            Pauses.PRIVACY -> "Paused. The car's screen is blank."
-            Pauses.LOCKED -> "Paused while your phone is locked."
-            Pauses.HOT -> "Paused while your phone cools down."
-            Pauses.DRIVING -> "Paused while the car is moving."
+            Pauses.PRIVACY -> getString(R.string.notif_paused_privacy)
+            Pauses.LOCKED -> getString(R.string.notif_paused_locked)
+            Pauses.HOT -> getString(R.string.notif_paused_hot)
+            Pauses.DRIVING -> getString(R.string.notif_paused_driving)
             else -> null
         } ?: when {
-            carConnected && MirrorState.heatEasing -> "Your car is connected. Your phone is warm, so the picture is eased off."
-            carConnected -> "Your car is connected."
-            else -> MirrorState.urls(this).firstOrNull()?.let { "Waiting for your car: ${CarUrls.typed(it)}" }
-                ?: "Turn on your hotspot, then connect the car to it."
+            carConnected && MirrorState.heatEasing -> getString(R.string.notif_connected_warm)
+            carConnected -> getString(R.string.notif_connected)
+            else -> MirrorState.urls(this).firstOrNull()?.let { getString(R.string.notif_waiting, CarUrls.typed(it)) }
+                ?: getString(R.string.notif_no_hotspot)
         }
         service<NotificationManager>().notify(NOTIFICATION_ID, notification(text))
     }
@@ -367,7 +364,7 @@ class MirrorService : VpnService() {
             updateNotification()
         }
         if (now - lastCarAt >= AUTO_STOP_MS) {
-            stopMirroring("Stopped after ${AUTO_STOP_MS / 60_000} minutes without your car, to save battery.")
+            stopMirroring(getString(R.string.problem_auto_stopped, (AUTO_STOP_MS / 60_000).toInt()))
         }
     }
 
@@ -464,11 +461,11 @@ class MirrorService : VpnService() {
     }
 
     private fun createChannel() {
-        val channel = NotificationChannel(CHANNEL_ID, "Mirroring", NotificationManager.IMPORTANCE_LOW)
-        channel.description = "Shown while your screen is being sent to the car"
+        val channel = NotificationChannel(CHANNEL_ID, getString(R.string.channel_mirroring), NotificationManager.IMPORTANCE_LOW)
+        channel.description = getString(R.string.channel_mirroring_desc)
         service<NotificationManager>().createNotificationChannel(channel)
-        val pairing = NotificationChannel(PAIRING_CHANNEL_ID, "Pairing requests", NotificationManager.IMPORTANCE_HIGH)
-        pairing.description = "A screen asking to show your phone, with the code to check"
+        val pairing = NotificationChannel(PAIRING_CHANNEL_ID, getString(R.string.channel_pairing), NotificationManager.IMPORTANCE_HIGH)
+        pairing.description = getString(R.string.channel_pairing_desc)
         service<NotificationManager>().createNotificationChannel(pairing)
     }
 
@@ -489,17 +486,17 @@ class MirrorService : VpnService() {
         )
         val builder = Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(if (MirrorState.paused != null) "Mirroring paused" else "Mirroring to your car")
+            .setContentTitle(if (MirrorState.paused != null) getString(R.string.notif_title_paused) else getString(R.string.notif_title))
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
         if (projection != null) {
             builder.addAction(
-                if (pauses.byUser) action("Resume", ACTION_RESUME, 2) else action("Pause", ACTION_PAUSE, 3),
+                if (pauses.byUser) action(getString(R.string.action_resume), ACTION_RESUME, 2) else action(getString(R.string.action_pause), ACTION_PAUSE, 3),
             )
         }
-        return builder.addAction(action("Stop", ACTION_STOP, 1)).build()
+        return builder.addAction(action(getString(R.string.action_stop), ACTION_STOP, 1)).build()
     }
 
     private fun Intent.resultData(): Intent? =

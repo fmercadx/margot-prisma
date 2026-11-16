@@ -133,6 +133,25 @@ class ScreenshotTest {
     }
 
     @Test
+    @Config(qualifiers = "+es")
+    fun readySpanish() = shoot("11-ready-spanish") { page ->
+        assertVisible(page, "Iniciar duplicación")
+        assertVisible(page, "Antes de empezar")
+        assertVisible(page, "Pausar al conducir")
+    }
+
+    @Test
+    @Config(qualifiers = "+de")
+    fun waitingGerman() {
+        mirroring()
+        shoot("12-waiting-german") { page ->
+            assertVisible(page, "Warte auf dein Auto")
+            assertVisible(page, "Stoppen")
+            assertVisible(page, "Gekoppelte Bildschirme")
+        }
+    }
+
+    @Test
     fun cancelledLight() {
         MirrorState.stopped("Screen sharing was cancelled. Tap Start mirroring to try again.")
         shoot("7-cancelled-light") { page ->

@@ -76,6 +76,119 @@
   var menu = document.getElementById('menu');
   var nav = document.getElementById('nav');
 
+  // ---- Language: what this page says, in the car's own language when there is a translation ----
+
+  var WORDS = {
+    "es": {
+      "Connecting to your phone…": "Conectando con tu teléfono…",
+      "Lost the connection to your phone.": "Se perdió la conexión con tu teléfono.",
+      "Retrying… Check that mirroring is still on and the car is on the phone’s hotspot.": "Reintentando… Comprueba que la duplicación siga activa y que el auto esté en el hotspot del teléfono.",
+      "Pairing with your phone…": "Vinculando con tu teléfono…",
+      "Pair this screen with your phone": "Vincula esta pantalla con tu teléfono",
+      "Check that your phone shows the same code, then tap Allow there.": "Comprueba que tu teléfono muestre el mismo código y toca Permitir allí.",
+      "Paired.": "Vinculada.",
+      "Connecting…": "Conectando…",
+      "Paused while the car is moving.": "En pausa mientras el auto se mueve.",
+      "The picture comes back when you stop.": "La imagen vuelve cuando te detienes.",
+      "The phone is locked.": "El teléfono está bloqueado.",
+      "Unlock it to bring the picture back.": "Desbloquéalo para que vuelva la imagen.",
+      "The phone is too hot.": "El teléfono está demasiado caliente.",
+      "The picture comes back when it has cooled down.": "La imagen vuelve cuando se haya enfriado.",
+      "Paused on the phone.": "En pausa en el teléfono.",
+      "Tap Resume on the phone to continue.": "Toca Reanudar en el teléfono para continuar.",
+      "Resuming…": "Reanudando…",
+      "Connected.": "Conectado.",
+      "Waiting for the phone screen…": "Esperando la pantalla del teléfono…",
+      "Your phone said no.": "Tu teléfono dijo que no.",
+      "Reload this page to ask again.": "Vuelve a cargar esta página para pedirlo de nuevo.",
+      "Your phone didn’t answer in time.": "Tu teléfono no respondió a tiempo.",
+      "The phone isn’t taking pairing requests right now.": "El teléfono no acepta solicitudes de vinculación en este momento.",
+      "Trying again shortly…": "Se volverá a intentar en breve…",
+      "Touch control is off. Turn it on in Car Mirror on your phone.": "El control táctil está desactivado. Actívalo en Car Mirror en tu teléfono.",
+      "This browser can’t show your phone securely.": "Este navegador no puede mostrar tu teléfono de forma segura.",
+      "Open this address in the car’s own browser.": "Abre esta dirección en el navegador del propio auto.",
+      "Show details and go full screen": "Mostrar detalles y pantalla completa",
+      "Phone buttons": "Botones del teléfono",
+      "Back": "Atrás",
+      "Home": "Inicio",
+      "Recent apps": "Apps recientes"
+    },
+    "fr": {
+      "Connecting to your phone…": "Connexion au téléphone…",
+      "Lost the connection to your phone.": "Connexion au téléphone perdue.",
+      "Retrying… Check that mirroring is still on and the car is on the phone’s hotspot.": "Nouvel essai… Vérifiez que la recopie est toujours active et que la voiture est sur le point d’accès du téléphone.",
+      "Pairing with your phone…": "Association avec le téléphone…",
+      "Pair this screen with your phone": "Associez cet écran à votre téléphone",
+      "Check that your phone shows the same code, then tap Allow there.": "Vérifiez que le téléphone affiche le même code, puis appuyez sur Autoriser.",
+      "Paired.": "Associé.",
+      "Connecting…": "Connexion…",
+      "Paused while the car is moving.": "En pause pendant que la voiture roule.",
+      "The picture comes back when you stop.": "L’image revient à l’arrêt.",
+      "The phone is locked.": "Le téléphone est verrouillé.",
+      "Unlock it to bring the picture back.": "Déverrouillez-le pour rétablir l’image.",
+      "The phone is too hot.": "Le téléphone est trop chaud.",
+      "The picture comes back when it has cooled down.": "L’image revient quand il aura refroidi.",
+      "Paused on the phone.": "En pause sur le téléphone.",
+      "Tap Resume on the phone to continue.": "Appuyez sur Reprendre sur le téléphone pour continuer.",
+      "Resuming…": "Reprise…",
+      "Connected.": "Connecté.",
+      "Waiting for the phone screen…": "En attente de l’écran du téléphone…",
+      "Your phone said no.": "Le téléphone a refusé.",
+      "Reload this page to ask again.": "Rechargez cette page pour redemander.",
+      "Your phone didn’t answer in time.": "Le téléphone n’a pas répondu à temps.",
+      "The phone isn’t taking pairing requests right now.": "Le téléphone n’accepte pas de demandes d’association pour le moment.",
+      "Trying again shortly…": "Nouvel essai sous peu…",
+      "Touch control is off. Turn it on in Car Mirror on your phone.": "Le contrôle tactile est désactivé. Activez-le dans Car Mirror sur le téléphone.",
+      "This browser can’t show your phone securely.": "Ce navigateur ne peut pas afficher votre téléphone de façon sécurisée.",
+      "Open this address in the car’s own browser.": "Ouvrez cette adresse dans le navigateur de la voiture.",
+      "Show details and go full screen": "Afficher les détails et passer en plein écran",
+      "Phone buttons": "Boutons du téléphone",
+      "Back": "Retour",
+      "Home": "Accueil",
+      "Recent apps": "Applis récentes"
+    },
+    "de": {
+      "Connecting to your phone…": "Verbinde mit deinem Handy…",
+      "Lost the connection to your phone.": "Verbindung zum Handy verloren.",
+      "Retrying… Check that mirroring is still on and the car is on the phone’s hotspot.": "Neuer Versuch… Prüfe, ob das Spiegeln noch läuft und das Auto im Hotspot des Handys ist.",
+      "Pairing with your phone…": "Kopplung mit deinem Handy…",
+      "Pair this screen with your phone": "Kopple diesen Bildschirm mit deinem Handy",
+      "Check that your phone shows the same code, then tap Allow there.": "Prüfe, ob dein Handy denselben Code zeigt, und tippe dort auf Zulassen.",
+      "Paired.": "Gekoppelt.",
+      "Connecting…": "Verbinde…",
+      "Paused while the car is moving.": "Pausiert, solange das Auto fährt.",
+      "The picture comes back when you stop.": "Das Bild kommt zurück, wenn du anhältst.",
+      "The phone is locked.": "Das Handy ist gesperrt.",
+      "Unlock it to bring the picture back.": "Entsperre es, damit das Bild zurückkommt.",
+      "The phone is too hot.": "Das Handy ist zu heiß.",
+      "The picture comes back when it has cooled down.": "Das Bild kommt zurück, sobald es abgekühlt ist.",
+      "Paused on the phone.": "Auf dem Handy pausiert.",
+      "Tap Resume on the phone to continue.": "Tippe auf dem Handy auf Fortsetzen, um weiterzumachen.",
+      "Resuming…": "Wird fortgesetzt…",
+      "Connected.": "Verbunden.",
+      "Waiting for the phone screen…": "Warte auf den Handybildschirm…",
+      "Your phone said no.": "Dein Handy hat abgelehnt.",
+      "Reload this page to ask again.": "Lade diese Seite neu, um erneut zu fragen.",
+      "Your phone didn’t answer in time.": "Dein Handy hat nicht rechtzeitig geantwortet.",
+      "The phone isn’t taking pairing requests right now.": "Das Handy nimmt gerade keine Kopplungsanfragen an.",
+      "Trying again shortly…": "Neuer Versuch in Kürze…",
+      "Touch control is off. Turn it on in Car Mirror on your phone.": "Die Touch-Steuerung ist aus. Schalte sie in Car Mirror auf deinem Handy ein.",
+      "This browser can’t show your phone securely.": "Dieser Browser kann dein Handy nicht sicher anzeigen.",
+      "Open this address in the car’s own browser.": "Öffne diese Adresse im Browser des Autos.",
+      "Show details and go full screen": "Details zeigen und Vollbild",
+      "Phone buttons": "Handy-Tasten",
+      "Back": "Zurück",
+      "Home": "Startbildschirm",
+      "Recent apps": "Letzte Apps"
+    }
+  };
+  var words = WORDS[String(navigator.language || 'en').slice(0, 2).toLowerCase()] || {};
+  function t(text) { return (text && words[text]) || text; }
+  Array.prototype.forEach.call(document.querySelectorAll('[aria-label]'), function (el) {
+    el.setAttribute('aria-label', t(el.getAttribute('aria-label')));
+  });
+  msg.textContent = t(msg.textContent);
+
   var bitmap = null;        // last decoded frame, kept for redraws on resize
   var drawn = null;         // where the last frame went: { rect (screen, CSS px), src (frame px), fw, fh }
   var paused = '';          // '' while live, otherwise why the phone is withholding the picture
@@ -87,7 +200,7 @@
   var mode = forced === 'poll' ? 'poll' : 'stream';
 
   function show(text, detail, code) {
-    msg.textContent = text || '';
+    msg.textContent = t(text) || '';
     if (code) {
       var digits = document.createElement('span');
       digits.className = 'code';
@@ -96,7 +209,7 @@
     }
     if (detail) {
       var small = document.createElement('small');
-      small.textContent = detail;
+      small.textContent = t(detail);
       msg.appendChild(small);
     }
     msg.style.display = text ? 'block' : 'none';
@@ -104,7 +217,7 @@
 
   var toastTimer = 0;
   function flash(text) {
-    toast.textContent = text;
+    toast.textContent = t(text);
     toast.style.display = 'block';
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { toast.style.display = 'none'; }, 3500);

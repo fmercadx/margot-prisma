@@ -30,7 +30,9 @@ only you can do: accounts, payments, testers and a few short recordings.
 2. **Payments profile** (Play Console → Settings → Payments profile), so you can sell.
 3. **Create app.** Name: paste `app-name.txt`. Language: English (United States). App, *Paid*.
 4. **Main store listing.** Paste the three text files, upload the icon, the feature graphic and
-   the five screenshots. Category: Auto & Vehicles. Add your contact email.
+   the five screenshots. Category: Auto & Vehicles. Add your contact email. Then **Manage
+   translations → Add your own translation** for Spanish, French and German, pasting the files
+   in `text/es`, `text/fr` and `text/de`. The app itself is already translated into all three.
 5. **App content.** Work down the list with `play-console-answers.md`. Three declarations need a
    short screen recording; record each on your phone with its built-in screen recorder, using
    a laptop or second phone on your hotspot as "the car":

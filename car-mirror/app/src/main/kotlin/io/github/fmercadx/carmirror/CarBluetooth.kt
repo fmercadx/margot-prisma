@@ -58,8 +58,8 @@ object CarBluetooth {
     /** The "you're in your car" notification; tapping it goes straight into starting. */
     fun offerStart(context: Context, car: Device) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        val channel = NotificationChannel(CHANNEL_ID, "Getting in the car", NotificationManager.IMPORTANCE_HIGH)
-        channel.description = "Offers to start mirroring when your phone connects to your car's Bluetooth"
+        val channel = NotificationChannel(CHANNEL_ID, context.getString(R.string.channel_car), NotificationManager.IMPORTANCE_HIGH)
+        channel.description = context.getString(R.string.channel_car_desc)
         manager.createNotificationChannel(channel)
         val start = PendingIntent.getActivity(
             context, 20,
@@ -70,8 +70,8 @@ object CarBluetooth {
         )
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("Mirror to ${car.name}?")
-            .setContentText("Your phone just connected to your car. Tap to start mirroring.")
+            .setContentTitle(context.getString(R.string.car_notif_title, car.name))
+            .setContentText(context.getString(R.string.car_notif_text))
             .setContentIntent(start)
             .setAutoCancel(true)
             .setTimeoutAfter(OFFER_MS)

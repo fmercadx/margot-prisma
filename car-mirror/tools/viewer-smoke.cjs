@@ -417,6 +417,19 @@ async function main() {
     check(pairingRequests().length === asked, 'a paired screen reconnects after a reload without asking again');
   }
 
+  // The page speaks the car's language: a Spanish browser gets the pairing screen in Spanish.
+  if (control) {
+    fs.writeFileSync(path.join(control, 'pairing'), 'hold');
+    const spanish = await browser.newPage({ viewport: { width: 1920, height: 1200 }, locale: 'es-ES' });
+    await spanish.goto(base);
+    await until(spanish, messageIncludes, 'the Spanish pairing screen', 10000, 'Vincula esta pantalla');
+    const back = await spanish.locator('#nav button[data-a="back"]').getAttribute('aria-label');
+    check(back === 'Atrás', `the car's page follows the car's language (Spanish pairing screen, Back is "${back}")`);
+    fs.writeFileSync(path.join(control, 'pairing'), '');
+    await until(spanish, messageHidden, 'the first frame in Spanish');
+    await spanish.close();
+  }
+
   // Last, because a refusal makes the phone ignore this address for a while.
   if (control) {
     fs.writeFileSync(path.join(control, 'pairing'), 'deny');

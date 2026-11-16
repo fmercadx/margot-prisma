@@ -49,6 +49,8 @@ app can skip that.
 - **Start from the car's Bluetooth.** Pick your car's Bluetooth once in Settings; when the
   phone connects to it, a notification offers Start. Android still asks to share the screen
   each time. Needs the Nearby devices permission, asked for when you pick the car.
+- **Languages.** English, Spanish, French and German, on the phone and on the car's page;
+  each follows its own device's language.
 - **Blank while locked.** While the phone's screen is off or on the lock screen, the car's
   screen is blank, so an unlock pattern or PIN taps never show on it.
 - **Heat guard.** A phone on a sunny dashboard heats up fast. When Android reports it warm,
