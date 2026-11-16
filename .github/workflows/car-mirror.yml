@@ -67,8 +67,9 @@ jobs:
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
-      # Frame hub, HTTP server, address rules. Plain JVM, no Android SDK.
-      - run: ./gradlew -PcoreOnly :core:test --console=plain
+      # Frame hub, HTTP server, pairing, encryption, video packing. Plain JVM, no Android SDK.
+      # Where the runner has ffmpeg, it also decodes the MP4 that video mode packs.
+      - run: FFMPEG="$(command -v ffmpeg || true)" ./gradlew -PcoreOnly :core:test --console=plain
 
       # The page the car's browser loads, driven in Chromium against a fake
       # phone: draws frames, letterboxes, recovers from a dropped connection,
@@ -83,6 +84,18 @@ jobs:
           DEMO=$!
           for i in $(seq 1 180); do grep -q READY demo.log && break; sleep 1; done
           node tools/viewer-smoke.cjs http://127.0.0.1:8090/ --control "$CONTROL" || { cat demo.log; exit 1; }
+          kill $DEMO || true
+
+      # Video mode: the fake phone streams H.264 and the page plays it through Media Source
+      # Extensions. Playwright's Chromium may lack H.264; the test then uses the runner's
+      # Google Chrome. See tools/video-smoke.cjs.
+      - name: Video mode in a browser
+        run: |
+          CONTROL="$PWD/build/video-control"
+          ./gradlew -PcoreOnly :core:demoServer --args="8091 --control $CONTROL --video" --console=plain > video-demo.log 2>&1 &
+          DEMO=$!
+          for i in $(seq 1 180); do grep -q READY video-demo.log && break; sleep 1; done
+          node tools/video-smoke.cjs http://127.0.0.1:8091/ --control "$CONTROL" || { cat video-demo.log; exit 1; }
           kill $DEMO || true
 
       # The APK, signed with the owner's private key once it is in the repo's secrets (see

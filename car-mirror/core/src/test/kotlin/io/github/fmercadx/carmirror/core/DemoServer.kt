@@ -9,6 +9,12 @@ import java.awt.image.BufferedImage
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.InetAddress
+import java.nio.ByteBuffer
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import org.jcodec.codecs.h264.H264Encoder
+import org.jcodec.common.model.ColorSpace
+import org.jcodec.scale.AWTUtil
 import javax.imageio.IIOImage
 import javax.imageio.ImageIO
 import javax.imageio.ImageWriteParam
@@ -20,7 +26,10 @@ import kotlin.math.sin
  * Stands in for the phone: draws a moving test pattern, JPEG-encodes it and serves it
  * through the real [MirrorServer], so the viewer page can be checked in a desktop browser.
  *
- * Args: [port] [portrait|landscape] [--control <dir>]
+ * Args: [port] [portrait|landscape] [--control <dir>] [--video]
+ *
+ * With --video, the demo streams H.264 (encoded with jcodec) through video mode instead of
+ * JPEG frames, packed and handed over exactly as the phone does it (Fmp4, VideoHub).
  *
  * With --control, the demo also behaves like a phone with touch control on: every gesture
  * and button press the page sends is appended to <dir>/gestures.log, and writing "privacy" or "driving" to
@@ -39,7 +48,15 @@ fun main(args: Array<String>) {
     val port = positional.getOrNull(0)?.toInt() ?: CarUrls.DEFAULT_PORT
     val landscape = positional.getOrNull(1) == "landscape"
     val controlDir = args.indexOf("--control").takeIf { it >= 0 }?.let { File(args[it + 1]) }
-    val (width, height) = if (landscape) 1280 to 576 else 576 to 1280
+    val videoMode = "--video" in args
+    // jcodec is a plain-Java encoder: a smaller picture keeps it near 30 fps.
+    val (width, height) = when {
+        videoMode && landscape -> 800 to 368
+        videoMode -> 368 to 800
+        landscape -> 1280 to 576
+        else -> 576 to 1280
+    }
+    val video = if (videoMode) VideoHub() else null
 
     val hub = FrameHub()
     val quality = AutoQuality(max = 80)
@@ -52,7 +69,9 @@ fun main(args: Array<String>) {
         val sceneFile = File(dir, "scene").apply { writeText("") }
         thread(isDaemon = true, name = "demo-control") {
             while (true) {
-                hub.setPaused(pauseFile.readText().trim().ifEmpty { null })
+                val reason = pauseFile.readText().trim().ifEmpty { null }
+                hub.setPaused(reason)
+                video?.setPaused(reason)
                 bars = sceneFile.readText().trim() == "bars"
                 touchOn = File(dir, "touch").let { !it.exists() || it.readText().trim() != "off" }
                 Thread.sleep(100)
@@ -77,7 +96,7 @@ fun main(args: Array<String>) {
             }
         }
     }
-    val server = MirrorServer(hub, control = control, autoQuality = quality)
+    val server = MirrorServer(hub, control = control, autoQuality = quality, video = video)
     server.pairing.listener = object : Pairing.Listener {
         override fun onRequest(request: Pairing.Request) {
             println("pairing request from ${request.remoteAddress}: code ${request.code}")
@@ -101,6 +120,11 @@ fun main(args: Array<String>) {
     println("READY http://127.0.0.1:$bound/")
     System.out.flush()
 
+    val encoder = if (videoMode) H264Encoder.createH264Encoder().apply { keyInterval = 60 } else null
+    var keyframeWanted = true
+    video?.onKeyframeWanted = { keyframeWanted = true }
+    var initFor: String? = null
+    var videoSequence = 0
     val writer = ImageIO.getImageWritersByFormatName("jpg").next()
     val image = BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
     val out = ByteArrayOutputStream()
@@ -131,6 +155,30 @@ fun main(args: Array<String>) {
         }
         g.dispose()
 
+        if (encoder != null && video != null) {
+            val picture = AWTUtil.fromBufferedImage(image, ColorSpace.YUV420J)
+            val buffer = ByteBuffer.allocate(encoder.estimateBufferSize(picture))
+            val forceKey = keyframeWanted
+            keyframeWanted = false
+            val encoded = if (forceKey) encoder.encodeIDRFrame(picture, buffer) else encoder.encodeFrame(picture, buffer).data
+            val annexB = ByteArray(encoded.remaining()).also { encoded.get(it) }
+            val keyframe = Fmp4.isKeyframe(annexB)
+            Fmp4.parameterSets(annexB)?.let { sets ->
+                val id = sets.sps.contentToString() + sets.pps.contentToString()
+                if (id != initFor) {
+                    initFor = id
+                    video.setInit(sets.codec, Fmp4.initSegment(sets, width, height))
+                }
+            }
+            val segment = Fmp4.mediaSegment(++videoSequence, n * 3000L, 3000, Fmp4.sample(annexB), keyframe)
+            video.publish(segment, keyframe)
+            n++
+            controlDir?.let { writeFrameCount(it, n) }
+            val spentMs = (System.nanoTime() - started) / 1_000_000
+            Thread.sleep((frameMs - spentMs).coerceAtLeast(1))
+            continue
+        }
+
         out.reset()
         ImageIO.createImageOutputStream(out).use { stream ->
             writer.output = stream
@@ -143,8 +191,18 @@ fun main(args: Array<String>) {
         hub.publish(out.toByteArray(), width, height)
         n++
         // Frames made so far, for the viewer test's frame-rate check (status is encrypted now).
-        controlDir?.let { File(it, "frames").writeText(n.toString()) }
+        controlDir?.let { writeFrameCount(it, n) }
         val spentMs = (System.nanoTime() - started) / 1_000_000
         Thread.sleep((frameMs - spentMs).coerceAtLeast(1))
     }
+}
+
+/**
+ * Replaces the frame count in one step. Rewriting the file in place left it empty for a
+ * moment, and a smoke test that read it then took the run's whole count for four seconds' worth.
+ */
+private fun writeFrameCount(dir: File, n: Int) {
+    val temp = File(dir, "frames.tmp")
+    temp.writeText(n.toString())
+    Files.move(temp.toPath(), File(dir, "frames").toPath(), StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
 }

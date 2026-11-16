@@ -56,6 +56,8 @@ class MirrorServer(
     private val acceptLocal: (InetAddress) -> Boolean = { true },
     /** Paired cars and their sessions. The phone keeps one across restarts of mirroring. */
     val pairing: Pairing = Pairing(MemoryPairingStore()),
+    /** In video mode, the encoder's H.264 as fragmented MP4; [hub] then only carries the pause state. */
+    private val video: VideoHub? = null,
     private val longPollMs: Long = 10_000,
     private val pairWaitMs: Long = 25_000,
     private val streamPingMs: Long = 2_000,
@@ -230,11 +232,15 @@ class MirrorServer(
             }
             "/frame" -> {
                 val session = pairing.session(request.query["s"]) ?: return unauthorized(out)
-                serveFrame(request, session, socket, out, keepAlive, headOnly)
+                if (video != null) {
+                    respond(out, 409, TEXT, "Video mode needs a browser that can stream".toByteArray(), keepAlive, headOnly)
+                } else {
+                    serveFrame(request, session, socket, out, keepAlive, headOnly)
+                }
             }
             "/frames" -> {
                 val session = pairing.session(request.query["s"]) ?: return unauthorized(out)
-                serveFrameStream(request, session, socket, out)
+                if (video != null) serveVideoStream(request, session, video, socket, out) else serveFrameStream(request, session, socket, out)
                 return false
             }
             "/status" -> {
@@ -426,6 +432,60 @@ class MirrorServer(
         }
     }
 
+    /**
+     * The video-mode stream: the same records and encryption as [serveFrameStream], with
+     *
+     *   4  init     codec name length (1 byte), the codec name (e.g. avc1.640028), init segment
+     *   5  segment  keyframe flag (1 byte), then one frame as a media segment (moof + mdat)
+     *
+     * in place of JPEG frames. Video frames can't be skipped one by one, since each depends on
+     * the last; a car that falls behind catches up at the next keyframe (see [VideoHub]).
+     */
+    private fun serveVideoStream(request: Request, session: Session, video: VideoHub, socket: Socket, out: OutputStream) {
+        noteViewer(socket, request)
+        try {
+            socket.sendBufferSize = STREAM_SEND_BUFFER
+        } catch (_: IOException) {
+        }
+        val head = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: application/octet-stream\r\n" +
+            "Cache-Control: no-store\r\n" +
+            "X-Content-Type-Options: nosniff\r\n" +
+            "Connection: close\r\n\r\n"
+        out.write(head.toByteArray(Charsets.ISO_8859_1))
+        out.flush()
+        if (request.method == "HEAD") return
+
+        var generation = 0
+        var after = 0L
+        var viewerPaused: String? = request.query["paused"]?.let { decode(it) }?.ifEmpty { null }
+        while (running && !video.isClosed && pairing.session(session.id) != null) {
+            val update = video.await(generation, after, viewerPaused, streamPingMs)
+            when {
+                update == null -> writeRecord(out, session, RECORD_PING)
+                update.paused != viewerPaused -> {
+                    viewerPaused = update.paused
+                    if (viewerPaused != null) generation = 0 // after the pause: a fresh init and keyframe
+                    writeRecord(out, session, RECORD_STATE, viewerPaused.orEmpty().toByteArray(Charsets.UTF_8))
+                }
+                else -> {
+                    update.init?.let {
+                        val codec = it.codec.toByteArray(Charsets.ISO_8859_1)
+                        writeRecord(out, session, RECORD_INIT, byteArrayOf(codec.size.toByte()), codec, it.segment)
+                        generation = it.generation
+                    }
+                    for (segment in update.segments) {
+                        writeRecord(out, session, RECORD_SEGMENT, byteArrayOf(if (segment.keyframe) 1 else 0), segment.bytes)
+                        after = segment.index
+                        framesServed.incrementAndGet()
+                    }
+                }
+            }
+            out.flush()
+            noteViewer(socket, request)
+        }
+    }
+
     private fun writeRecord(out: OutputStream, session: Session, type: Int, vararg plaintext: ByteArray) {
         val sealed = session.seal(byteArrayOf(type.toByte()), *plaintext)
         val length = sealed.size
@@ -456,7 +516,7 @@ class MirrorServer(
             "\"framesSent\":${framesServed.get()},\"viewers\":${recentViewers().size}," +
             "\"paused\":${if (paused == null) "null" else "\"$paused\""}," +
             "\"touch\":${control?.touchAvailable == true}," +
-            "\"jpegQuality\":${autoQuality?.current ?: 0}}"
+            "\"jpegQuality\":${autoQuality?.current ?: 0},\"video\":${video != null}}"
     }
 
     private fun respond(
@@ -501,6 +561,8 @@ class MirrorServer(
         const val RECORD_FRAME = 1
         const val RECORD_STATE = 2
         const val RECORD_PING = 3
+        const val RECORD_INIT = 4
+        const val RECORD_SEGMENT = 5
         val STATUS_AAD = Crypto.utf8("status")
         val INPUT_AAD = Crypto.utf8("input")
 
@@ -511,7 +573,7 @@ class MirrorServer(
         /** The page loads nothing from anywhere but the phone. */
         val PAGE_HEADERS = listOf(
             "Content-Security-Policy" to "default-src 'none'; script-src 'self' 'unsafe-inline'; " +
-                "style-src 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'",
+                "style-src 'unsafe-inline'; img-src 'self' blob:; media-src blob:; connect-src 'self'",
             "Referrer-Policy" to "no-referrer",
         )
 
