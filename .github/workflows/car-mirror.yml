@@ -85,9 +85,29 @@ jobs:
           node tools/viewer-smoke.cjs http://127.0.0.1:8090/ --control "$CONTROL" || { cat demo.log; exit 1; }
           kill $DEMO || true
 
-      - run: ./gradlew :app:assembleRelease -PbuildNumber=${{ github.run_number }} --console=plain
-
-      - run: cp app/build/outputs/apk/release/app-release.apk car-mirror-${{ github.run_number }}.apk
+      # The APK, signed with the owner's private key once it is in the repo's secrets (see
+      # README "Signing"), so nobody else can make an APK a phone accepts as an update. The
+      # same key signs the Google Play bundle, and the APK is what the Galaxy Store takes.
+      # Without the secrets (a fork, say) it falls back to the public test key, and the
+      # release says so. The key is written to the runner's temp folder and deleted after.
+      - name: Signed builds
+        env:
+          UPLOAD_KEYSTORE_BASE64: ${{ secrets.CAR_MIRROR_UPLOAD_KEYSTORE }}
+          CAR_MIRROR_UPLOAD_PASSWORD: ${{ secrets.CAR_MIRROR_UPLOAD_PASSWORD }}
+        run: |
+          N=${{ github.run_number }}
+          if [ "$HAS_UPLOAD_KEY" = true ]; then
+            export CAR_MIRROR_UPLOAD_KEYSTORE="$RUNNER_TEMP/upload.keystore"
+            echo "$UPLOAD_KEYSTORE_BASE64" | base64 -d > "$CAR_MIRROR_UPLOAD_KEYSTORE"
+            ./gradlew :app:assembleRelease :app:bundleRelease -PplayUpload -PbuildNumber=$N --console=plain
+            rm -f "$CAR_MIRROR_UPLOAD_KEYSTORE"
+            cp app/build/outputs/bundle/release/app-release.aab car-mirror-$N.aab
+            echo "SIGNING_NOTE=Signed with the owner's private key." >> "$GITHUB_ENV"
+          else
+            ./gradlew :app:assembleRelease -PbuildNumber=$N --console=plain
+            echo "SIGNING_NOTE=Signed with the public test key: the private key isn't in this repo's secrets yet." >> "$GITHUB_ENV"
+          fi
+          cp app/build/outputs/apk/release/app-release.apk car-mirror-$N.apk
 
       # Opens the real phone screen in Robolectric in each state (ready, waiting, paused,
       # light and dark), checks the right controls show, and saves a picture of each.
@@ -115,36 +135,18 @@ jobs:
           cp store-kit/screenshots/listing-*.png .
           ls -l car-mirror-store-kit-*.zip listing-*.png
 
-      # The bundle Google Play takes and an APK for the Galaxy Store, both signed with the
-      # private upload key rather than the shared one. Workflow artifacts only, never attached
-      # to the public release.
-      - name: Store builds
-        if: env.HAS_UPLOAD_KEY == 'true'
-        env:
-          UPLOAD_KEYSTORE_BASE64: ${{ secrets.CAR_MIRROR_UPLOAD_KEYSTORE }}
-          CAR_MIRROR_UPLOAD_PASSWORD: ${{ secrets.CAR_MIRROR_UPLOAD_PASSWORD }}
-        run: |
-          export CAR_MIRROR_UPLOAD_KEYSTORE="$RUNNER_TEMP/upload.keystore"
-          echo "$UPLOAD_KEYSTORE_BASE64" | base64 -d > "$CAR_MIRROR_UPLOAD_KEYSTORE"
-          ./gradlew :app:bundleRelease -PplayUpload -PbuildNumber=${{ github.run_number }} --console=plain
-          cp app/build/outputs/bundle/release/app-release.aab car-mirror-${{ github.run_number }}.aab
-          ./gradlew :app:assembleRelease -PplayUpload -PbuildNumber=${{ github.run_number }} --console=plain
-          cp app/build/outputs/apk/release/app-release.apk car-mirror-${{ github.run_number }}-galaxy.apk
-          rm -f "$CAR_MIRROR_UPLOAD_KEYSTORE"
-
       # Paths below are repo-root relative: `defaults.run` does not apply to `uses:` steps.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: car-mirror-apk
           path: car-mirror/car-mirror-${{ github.run_number }}.apk
 
+      # The Google Play bundle: a workflow artifact, kept off the public release.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: env.HAS_UPLOAD_KEY == 'true'
         with:
-          name: car-mirror-store-builds
-          path: |
-            car-mirror/car-mirror-*.aab
-            car-mirror/car-mirror-*-galaxy.apk
+          name: car-mirror-play-bundle
+          path: car-mirror/car-mirror-*.aab
 
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
@@ -161,6 +163,7 @@ jobs:
           body: |
             Open this page on your Android phone and tap **car-mirror-${{ github.run_number }}.apk** below to install it.
             Installing over an earlier build keeps your settings. Setup steps: car-mirror/README.md.
+            ${{ env.SIGNING_NOTE }}
             The preview-*.png files show what each screen of this build looks like. To sell it,
             download **car-mirror-store-kit-${{ github.run_number }}.zip**: captioned listing
             screenshots (listing-*.png, also attached here), icon, banner, listing text and a

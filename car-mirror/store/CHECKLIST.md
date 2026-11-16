@@ -18,10 +18,10 @@ only you can do: accounts, payments, testers and a few short recordings.
    create the app: a free app can never be changed to paid.
 2. **Pick a contact email** you're happy to have shown publicly on the listing.
 3. **The private signing key.** Both stores need the app signed with a key only you hold, not
-   the shared one the test builds use. Create it once (README, "Selling on Google Play") and
-   add it to the repository's secrets; from then on every build also produces the Play bundle
-   (`.aab`) and a privately signed APK for the Galaxy Store, as a download on the build's
-   run page (`car-mirror-store-builds`).
+   the test key early builds used. Add it to the repository's secrets once (README,
+   "Signing"); from then on each release's APK is signed with it (that APK is the one for
+   the Galaxy Store), and each build's run page carries `car-mirror-play-bundle`, the
+   `.aab` for Google Play.
 
 ## Google Play
 
@@ -54,7 +54,8 @@ only you can do: accounts, payments, testers and a few short recordings.
 
 1. **Seller account** at seller.samsungapps.com: free. For a paid app, Samsung asks you to
    become a commercial seller, with bank and tax details.
-2. **Add New App → Android.** Upload the privately signed APK (`car-mirror-N-galaxy.apk`).
+2. **Add New App → Android.** Upload `car-mirror-N.apk` from a release whose notes say
+   "Signed with the owner's private key".
 3. **Listing.** The same text, icon and screenshots. Samsung shows its exact size rules on the
    upload page; if it refuses the landscape `listing-1-car.png`, leave that one out.
 4. **Age rating, price and countries**, then submit for review.

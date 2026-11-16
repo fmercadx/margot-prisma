@@ -149,10 +149,17 @@ is not. Local laws about screens the driver can see still apply. **Pause while m
 
 ## Signing
 
-`app/signing.keystore` is committed (its password is in `app/build.gradle.kts`) so that
-each build installs over the last. This repo is public, so anyone can use that key to sign
-an APK your phone would accept as an update to this app. **Install Car Mirror only from
-this repo's releases page**, never from a file someone sends you.
+Builds are signed with the owner's **private key** once it is in the repo's secrets (below):
+the APK on each release, and the Google Play bundle. Nobody else can then make an APK that
+a phone accepts as an update to Car Mirror. Each release says which key signed it.
+
+Until then, and in forks, builds fall back to `app/signing.keystore`, a test key committed
+with its password in `app/build.gradle.kts`. Anyone can sign with that one, so treat such
+builds as tests and install them only from this repo's releases page.
+
+Switching keys: Android refuses to install an app signed with a different key over the
+installed one, so the first privately signed build needs the old app uninstalled first.
+Settings and paired screens start fresh.
 
 ## Selling on Google Play
 
@@ -166,11 +173,12 @@ Already in place:
 - Targets Android 16 (API 36), which Play requires of new apps since August 31, 2026.
 - The app explains the VPN in its own words before Android's VPN prompt.
 - A privacy policy: [PRIVACY.md](PRIVACY.md). Play asks for its URL.
-- CI builds the bundle Play takes (`.aab`), signed with a private upload key, once that key
-  exists as repo secrets (below). The shared key above is never used for Play.
+- CI builds the bundle Play takes (`.aab`) with the private key, once it is in the repo's
+  secrets (below). The test key is never used for Play.
 
-To create the upload key, run this once on a computer with Java, and keep the file and
-password somewhere safe. Losing them means asking Google to reset the key.
+To create the private key, run this once on a computer with Java, and keep the file and
+password somewhere safe. Losing them means asking Google to reset the key, and that phones
+with the sideloaded app can't take updates until it is reinstalled.
 
 ```bash
 keytool -genkeypair -keystore upload.keystore -storetype PKCS12 -alias upload \
@@ -180,9 +188,9 @@ base64 -w0 upload.keystore > upload.keystore.b64   # macOS: base64 -i upload.key
 
 Then in the repo's **Settings → Secrets and variables → Actions**, add
 `CAR_MIRROR_UPLOAD_KEYSTORE` (the contents of `upload.keystore.b64`) and
-`CAR_MIRROR_UPLOAD_PASSWORD`. The next build attaches `car-mirror-store-builds` to the
-workflow run: the Play bundle (`.aab`) and an APK for the Galaxy Store, both signed with this
-key. Download it from the run's page.
+`CAR_MIRROR_UPLOAD_PASSWORD`. From the next build on, the release's APK is signed with this
+key (it is also the one to upload to the Galaxy Store), and the workflow run carries
+`car-mirror-play-bundle`, the `.aab` for Google Play. Download it from the run's page.
 
 Every release also carries `car-mirror-store-kit-N.zip`: captioned listing screenshots made
 from that build's real screens by `tools/store-kit.cjs`, the icon and banner, the listing text
