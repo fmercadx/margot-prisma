@@ -112,6 +112,13 @@ Used only by the optional "Dim this phone while mirroring" to set screen brightn
 when mirroring stops. No declaration form exists for it at the time of writing; mention it in
 the description if asked.
 
+## Nearby devices (BLUETOOTH_CONNECT)
+
+Used only by the optional "Start from your car's Bluetooth": it lists the phone's paired
+Bluetooth devices so the user can pick their car, and notices when the phone connects to it,
+to offer Start in a notification. No scanning, no location from Bluetooth; the chosen
+device stays on the phone. No declaration form exists for it; Data safety: not collected.
+
 ## News app, health, financial features, government
 
 No to all.

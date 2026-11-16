@@ -23,7 +23,7 @@ WHAT YOU CAN DO
 • Watch videos while parked: black bars are trimmed automatically, so videos fill the screen
 • Pause with one tap to blank the car's screen before opening something private
 • Dim your phone while mirroring, so it isn't glowing next to the car's screen
-• Start from a Quick Settings tile or the app icon's shortcut
+• Start from a Quick Settings tile, the app icon's shortcut, or a prompt when your phone joins your car's Bluetooth
 
 SMOOTH AND SIMPLE
 • Frames are pushed straight from your phone to the car over the hotspot, up to 30 per second

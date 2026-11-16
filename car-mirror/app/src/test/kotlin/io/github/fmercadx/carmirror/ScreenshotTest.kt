@@ -76,6 +76,8 @@ class ScreenshotTest {
             assertVisible(page, "Stop")
             assertVisible(page, "Turn on touch control") // offered while mirroring, since it's off
             assertVisible(page, "Dim this phone while mirroring")
+            assertVisible(page, "Start from your car's Bluetooth")
+            assertVisible(page, "Paired screens")
             assertHidden(page, "Start mirroring")
             assertHidden(page, "Before you start")
         }

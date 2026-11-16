@@ -68,6 +68,7 @@ sent anywhere. When mirroring stops, so does the GPS.
 | Keep screen on | A screen that turns off has nothing to mirror. |
 | Accessibility (optional) | Touch control, as described above. |
 | Location (optional) | Pause while the car is moving, as described above. |
+| Nearby devices (optional) | Start from your car's Bluetooth: to list your phone's paired Bluetooth devices so you can pick your car, and to notice when the phone connects to it. Only the device you pick is remembered, on your phone. |
 | Modify system settings (optional) | Dim this phone while mirroring: it changes screen brightness only, and puts yours back when mirroring stops. |
 
 ## Children

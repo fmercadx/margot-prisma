@@ -79,6 +79,8 @@ class MainActivity : Activity() {
     private lateinit var pairingCard: LinearLayout
     private lateinit var pairingCode: TextView
     private var pairingShownFor: String? = null
+    private lateinit var bluetoothDetail: TextView
+    private lateinit var bluetoothButton: Button
     private lateinit var pairedDetail: TextView
     private lateinit var forgetButton: Button
 
@@ -187,6 +189,14 @@ class MainActivity : Activity() {
             // Mirroring works without the notification; it is only the easy way to pause and stop.
             REQUEST_NOTIFICATIONS -> askForLocationThenContinue()
             REQUEST_LOCATION -> setPauseWhileMoving(hasLocationPermission())
+            REQUEST_BLUETOOTH -> if (CarBluetooth.permitted(this)) chooseCar() else {
+                AlertDialog.Builder(this)
+                    .setTitle("Nearby devices is off")
+                    .setMessage("To notice when your phone connects to your car, Android needs the Nearby devices " +
+                        "permission. You can allow it later in Settings → Apps → Car Mirror → Permissions.")
+                    .setPositiveButton("OK", null)
+                    .show()
+            }
             REQUEST_LOCATION_AT_START -> {
                 setPauseWhileMoving(hasLocationPermission())
                 askForVpn()
@@ -476,6 +486,13 @@ class MainActivity : Activity() {
         }
 
         // Settings
+        val car = CarBluetooth.chosen(this)
+        bluetoothDetail.text = if (car != null) {
+            "Offers to start when your phone connects to ${car.name}."
+        } else {
+            "Off. Pick your car and you'll get a Start prompt when you get in."
+        }
+        bluetoothButton.text = if (car != null) "Change" else "Choose"
         val paired = pairedCount()
         pairedDetail.text = when (paired) {
             0 -> "None yet. The first time a screen opens the address, you'll be asked to allow it here."
@@ -581,6 +598,38 @@ class MainActivity : Activity() {
         startService(Intent(this, MirrorService::class.java).setAction(action).putExtra(MirrorService.EXTRA_PAIR_ID, id))
         pairingCard.visibility = View.GONE
         handler.postDelayed({ render() }, 200)
+    }
+
+    /** Picks the car's Bluetooth device from the phone's paired ones, after the permission. */
+    private fun chooseCar() {
+        if (!CarBluetooth.permitted(this)) {
+            requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), REQUEST_BLUETOOTH)
+            return
+        }
+        val devices = CarBluetooth.pairedDevices(this)
+        if (devices.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("No Bluetooth devices yet")
+                .setMessage("Pair your phone with your car's Bluetooth first (on the car's screen: Bluetooth, " +
+                    "then add a new device), then pick it here.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        val current = CarBluetooth.chosen(this)?.address
+        AlertDialog.Builder(this)
+            .setTitle("Which one is your car?")
+            .setSingleChoiceItems(devices.map { it.name }.toTypedArray(), devices.indexOfFirst { it.address == current }) { dialog, which ->
+                CarBluetooth.choose(this, devices[which])
+                dialog.dismiss()
+                render()
+            }
+            .setNeutralButton("Turn off") { _, _ ->
+                CarBluetooth.choose(this, null)
+                render()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun pairedCount(): Int = MirrorState.server?.pairing?.pairedCount ?: PhonePairingStore(this).load().size
@@ -747,6 +796,18 @@ class MainActivity : Activity() {
 
         addView(ui.horizontal().apply {
             addView(ui.vertical().apply {
+                addView(ui.text("Start from your car's Bluetooth", 16f, bold = true))
+                bluetoothDetail = ui.text("", 14f, R.color.muted, topDp = 2)
+                addView(bluetoothDetail)
+            }, ui.weighted())
+            bluetoothButton = ui.button("Choose", Ui.Style.SECONDARY, heightDp = 44) { chooseCar() }
+            addView(bluetoothButton, LinearLayout.LayoutParams(WRAP_CONTENT, ui.dp(44)).apply { marginStart = ui.dp(12) })
+        }, ui.matchWidth(topDp = 18))
+
+        addView(ui.divider(), ui.matchWidth(topDp = 18, heightDp = 1))
+
+        addView(ui.horizontal().apply {
+            addView(ui.vertical().apply {
                 addView(ui.text("Paired screens", 16f, bold = true))
                 pairedDetail = ui.text("", 14f, R.color.muted, topDp = 2)
                 addView(pairedDetail)
@@ -796,6 +857,7 @@ class MainActivity : Activity() {
         private const val REQUEST_SCREEN = 3
         private const val REQUEST_LOCATION = 4
         private const val REQUEST_LOCATION_AT_START = 5
+        private const val REQUEST_BLUETOOTH = 6
         private val LOCATION_PERMISSIONS =
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
         private const val SETTINGS = "settings"

@@ -46,6 +46,9 @@ app can skip that.
   car moves, and brings it back about 5 seconds after you stop. It pauses maps too. The
   first time you start, the app explains it before Android asks for location; declining,
   or switching it off under Settings, turns it off and mirroring works as before.
+- **Start from the car's Bluetooth.** Pick your car's Bluetooth once in Settings; when the
+  phone connects to it, a notification offers Start. Android still asks to share the screen
+  each time. Needs the Nearby devices permission, asked for when you pick the car.
 - **Blank while locked.** While the phone's screen is off or on the lock screen, the car's
   screen is blank, so an unlock pattern or PIN taps never show on it.
 - **Heat guard.** A phone on a sunny dashboard heats up fast. When Android reports it warm,
