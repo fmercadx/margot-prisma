@@ -107,6 +107,20 @@ class ScreenCapture(
         }
     }
 
+    @Volatile private var maxFps: Int? = null
+    @Volatile private var maxJpegQuality: Int? = null
+
+    /**
+     * Caps the frame rate and JPEG quality below the user's setting, e.g. while the phone is
+     * hot. Null lifts a cap. Safe to call from any thread.
+     */
+    fun setLimits(fps: Int?, jpegQuality: Int?) {
+        maxFps = fps
+        maxJpegQuality = jpegQuality
+    }
+
+    private val frameIntervalMs: Long get() = 1000L / minOf(quality.fps, maxFps ?: quality.fps)
+
     /** Stops or resumes encoding. Safe to call from any thread. */
     fun setPaused(value: Boolean) {
         handler.post {
@@ -179,7 +193,7 @@ class ScreenCapture(
     private fun scheduleEncode() {
         if (paused || !dirty || encodeScheduled || !hub.hasViewers()) return
         encodeScheduled = true
-        val wait = (lastEncodeAt + quality.frameIntervalMs - SystemClock.uptimeMillis()).coerceAtLeast(0)
+        val wait = (lastEncodeAt + frameIntervalMs - SystemClock.uptimeMillis()).coerceAtLeast(0)
         handler.postDelayed(encodeTask, wait)
     }
 
@@ -231,7 +245,7 @@ class ScreenCapture(
             target
         }
         jpeg.reset()
-        frame.compress(Bitmap.CompressFormat.JPEG, autoQuality.current, jpeg)
+        frame.compress(Bitmap.CompressFormat.JPEG, minOf(autoQuality.current, maxJpegQuality ?: 100), jpeg)
         hub.publish(jpeg.toByteArray(), width, height)
     }
 

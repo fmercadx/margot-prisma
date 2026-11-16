@@ -30,11 +30,13 @@ SMOOTH AND SIMPLE
 • The picture adapts to your Wi-Fi: it softens a little rather than stuttering
 • The app remembers which address your car accepts and shows only that one
 • Stops by itself if you leave it running without the car, to save battery
+• Eases off when your phone gets hot on a sunny dashboard, instead of overheating
 
 PRIVATE BY DESIGN
 • Nothing is collected: no account, no ads, no analytics, no server of our own
 • Your screen goes directly from your phone to your car and is never stored
 • Only devices connected to your phone's hotspot can see it
+• The car's screen goes blank while your phone is locked, so your unlock pattern or PIN never shows
 • The app uses Android's VPN feature only to give your phone an address the car's browser will open. The VPN carries no traffic and sends nothing anywhere
 
 SAFETY

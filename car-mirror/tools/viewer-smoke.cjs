@@ -241,6 +241,14 @@ async function main() {
     await until(page, messageIncludes, 'the driving pause', 10000, 'while the car is moving');
     check(true, 'shows "Paused while the car is moving" for the driving pause');
 
+    setPhonePause('locked');
+    await until(page, messageIncludes, 'the lock-screen pause', 10000, 'The phone is locked');
+    check(isBlack(await pixel(page, 960, 600)), 'shows "The phone is locked" and no picture while the phone is locked');
+
+    setPhonePause('hot');
+    await until(page, messageIncludes, 'the heat pause', 10000, 'too hot');
+    check(true, 'shows "The phone is too hot" while it cools down');
+
     setPhonePause('');
     await until(page, messageHidden, 'resume');
     check(!isBlack(await pixel(page, 960, 600)), 'resumes by itself with the picture back');

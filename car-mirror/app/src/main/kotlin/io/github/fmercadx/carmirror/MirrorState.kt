@@ -19,8 +19,11 @@ object MirrorState {
     @Volatile var server: MirrorServer? = null
         private set
 
-    /** Null while live; otherwise why the picture is withheld: "privacy" or "driving". */
+    /** Null while live; otherwise why the picture is withheld, one of [io.github.fmercadx.carmirror.core.Pauses.REASONS]. */
     @Volatile var paused: String? = null
+
+    /** The phone is warm and the picture is eased off (fewer, smaller frames), but still live. */
+    @Volatile var heatEasing: Boolean = false
 
     /** Whether "pause while moving" is actually watching GPS this session. */
     @Volatile var watchingMotion: Boolean = false
@@ -42,6 +45,7 @@ object MirrorState {
         this.server = server
         this.problem = problem
         paused = null
+        heatEasing = false
         running = true
     }
 
@@ -50,6 +54,7 @@ object MirrorState {
         tunnelUp = false
         server = null
         paused = null
+        heatEasing = false
         watchingMotion = false
         this.problem = problem
     }

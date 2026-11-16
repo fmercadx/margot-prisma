@@ -29,6 +29,7 @@ import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import io.github.fmercadx.carmirror.core.CarUrls
+import io.github.fmercadx.carmirror.core.Pauses
 import io.github.fmercadx.carmirror.core.Quality
 
 /**
@@ -307,7 +308,7 @@ class MainActivity : Activity() {
     }
 
     private fun onPauseToggle() {
-        val action = if (MirrorState.paused == "privacy") MirrorService.ACTION_RESUME else MirrorService.ACTION_PAUSE
+        val action = if (MirrorState.paused == Pauses.PRIVACY) MirrorService.ACTION_RESUME else MirrorService.ACTION_PAUSE
         startService(Intent(this, MirrorService::class.java).setAction(action))
         handler.postDelayed({ render() }, 150)
     }
@@ -382,10 +383,14 @@ class MainActivity : Activity() {
         // Status: one line that says what is going on, and one that says what to do next.
         val (tone, title, detail) = when {
             !running -> Triple(Tone.IDLE, "Ready to mirror", "Tap Start, then type the address it shows into your Tesla's browser.")
-            paused == "privacy" -> Triple(Tone.ATTENTION, "Paused", "Your car's screen is blank. Tap Resume when you're ready.")
-            paused == "driving" -> Triple(Tone.ATTENTION, "Paused while driving", "The picture comes back a few seconds after the car stops.")
+            paused == Pauses.PRIVACY -> Triple(Tone.ATTENTION, "Paused", "Your car's screen is blank. Tap Resume when you're ready.")
+            paused == Pauses.LOCKED -> Triple(Tone.ATTENTION, "Paused while locked", "Unlock your phone to bring the picture back.")
+            paused == Pauses.HOT -> Triple(Tone.ATTENTION, "Paused to cool down",
+                "Your phone got too hot. The picture comes back once it cools; shade or a vent's airflow helps.")
+            paused == Pauses.DRIVING -> Triple(Tone.ATTENTION, "Paused while driving", "The picture comes back a few seconds after the car stops.")
             viewer != null -> Triple(Tone.GOOD, "Connected to your car",
-                "Your screen is showing on the car. It opened ${viewer.host.ifEmpty { viewer.remoteAddress }}.")
+                "Your screen is showing on the car. It opened ${viewer.host.ifEmpty { viewer.remoteAddress }}." +
+                    if (MirrorState.heatEasing) " Your phone is warm, so the picture is eased off to cool it." else "")
             urls.isEmpty() -> Triple(Tone.ATTENTION, "Turn on your hotspot",
                 "Your car connects through your phone's hotspot. Turn it on, then connect the car to it.")
             else -> Triple(Tone.WAITING, "Waiting for your car", "In your Tesla's browser, go to this address:")
@@ -433,7 +438,7 @@ class MainActivity : Activity() {
             }
             alternativesBox.visibility = if (alternatives.isEmpty()) View.GONE else View.VISIBLE
         }
-        val resume = paused == "privacy"
+        val resume = paused == Pauses.PRIVACY
         if (pauseShownAsResume != resume) {
             pauseShownAsResume = resume
             pauseButton.text = if (resume) "Resume" else "Pause"

@@ -2,11 +2,15 @@ package io.github.fmercadx.carmirror
 
 import android.Manifest
 import android.app.Activity
+import android.app.KeyguardManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.graphics.drawable.Icon
@@ -23,8 +27,10 @@ import io.github.fmercadx.carmirror.core.AutoQuality
 import io.github.fmercadx.carmirror.core.CarUrls
 import io.github.fmercadx.carmirror.core.FrameHub
 import io.github.fmercadx.carmirror.core.Gesture
+import io.github.fmercadx.carmirror.core.HeatGuard
 import io.github.fmercadx.carmirror.core.MirrorControl
 import io.github.fmercadx.carmirror.core.MirrorServer
+import io.github.fmercadx.carmirror.core.Pauses
 import io.github.fmercadx.carmirror.core.Quality
 import java.io.IOException
 import java.net.InetAddress
@@ -40,8 +46,9 @@ import java.net.InetAddress
  * nothing but that one address, and is bypassable, so every app's traffic, this one's
  * included, flows as if it were not there.
  *
- * The picture can be paused two ways: by the user (privacy) or, when they opted in, by GPS
- * while the car is moving (driving). While paused the car gets no frames and no taps.
+ * The picture is withheld (see [Pauses]) when the user taps Pause, while the phone is locked,
+ * when it is too hot, and, if the user wants, while GPS says the car is moving. While paused
+ * the car gets no frames and no taps. A warm phone also gets fewer, smaller frames.
  */
 class MirrorService : VpnService() {
 
@@ -57,8 +64,30 @@ class MirrorService : VpnService() {
     /** The hotspot's addresses, looked up at most every few seconds by the server threads. */
     @Volatile private var hotspotIps: Pair<Long, List<String>> = 0L to emptyList()
 
-    private var pausedByUser = false
-    private var pausedByDriving = false
+    private val pauses = Pauses()
+    private var lockWatching = false
+    private var heatWatching = false
+
+    /**
+     * Blanks the car while the phone's screen is off or on the lock screen. Mirroring shows
+     * the lock screen too, and an unlock pattern or PIN taps would be drawn on the car's
+     * screen for the passengers to see.
+     */
+    private val lockReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            pauses.locked = when (intent.action) {
+                Intent.ACTION_SCREEN_OFF -> true
+                Intent.ACTION_USER_PRESENT -> false
+                // With no lock screen set, the screen comes on unlocked.
+                Intent.ACTION_SCREEN_ON -> service<KeyguardManager>().isKeyguardLocked
+                else -> return
+            }
+            applyPause()
+        }
+    }
+
+    /** Eases off, then pauses, as the phone heats up; see [HeatGuard]. Called on the main thread. */
+    private val thermalListener = PowerManager.OnThermalStatusChangedListener { status -> applyHeat(status) }
 
     /** Whether a car was watching at the last check, and when one last was. */
     private var carConnected = false
@@ -164,6 +193,8 @@ class MirrorService : VpnService() {
             server = httpServer
 
             capture = ScreenCapture(this, mp, frames, quality, autoQuality).also { it.start() }
+            watchLock()
+            watchHeat()
             keepScreenOn()
             if (intent.getBooleanExtra(EXTRA_DIM, false)) Brightness.dim(this)
 
@@ -178,7 +209,7 @@ class MirrorService : VpnService() {
 
             if (watchMotion) {
                 val watcher = MotionWatcher(this) { moving ->
-                    pausedByDriving = moving
+                    pauses.driving = moving
                     applyPause()
                 }
                 if (watcher.start()) {
@@ -198,17 +229,41 @@ class MirrorService : VpnService() {
 
     private fun setPausedByUser(value: Boolean) {
         if (projection == null) return
-        pausedByUser = value
+        pauses.byUser = value
+        applyPause()
+    }
+
+    private fun watchLock() {
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(lockReceiver, filter, RECEIVER_NOT_EXPORTED)
+        else registerReceiver(lockReceiver, filter)
+        lockWatching = true
+        pauses.locked = service<KeyguardManager>().isKeyguardLocked
+    }
+
+    private fun watchHeat() {
+        val power = service<PowerManager>()
+        power.addThermalStatusListener(mainExecutor, thermalListener)
+        heatWatching = true
+        applyHeat(power.currentThermalStatus)
+    }
+
+    private fun applyHeat(status: Int) {
+        if (projection == null) return
+        val limit = HeatGuard.limitFor(status)
+        pauses.hot = limit.pause
+        capture?.setLimits(limit.maxFps, limit.maxJpegQuality)
+        MirrorState.heatEasing = limit.easing && !limit.pause
         applyPause()
     }
 
     /** Pushes the combined pause state to the car, the encoder, the screen and the notification. */
     private fun applyPause() {
-        val reason = when {
-            pausedByUser -> "privacy"
-            pausedByDriving -> "driving"
-            else -> null
-        }
+        val reason = pauses.reason
         hub?.setPaused(reason)
         capture?.setPaused(reason != null)
         MirrorState.paused = reason
@@ -217,9 +272,14 @@ class MirrorService : VpnService() {
     }
 
     private fun updateNotification() {
-        val text = when {
-            MirrorState.paused == "privacy" -> "Paused. The car's screen is blank."
-            MirrorState.paused == "driving" -> "Paused while the car is moving."
+        val text = when (MirrorState.paused) {
+            Pauses.PRIVACY -> "Paused. The car's screen is blank."
+            Pauses.LOCKED -> "Paused while your phone is locked."
+            Pauses.HOT -> "Paused while your phone cools down."
+            Pauses.DRIVING -> "Paused while the car is moving."
+            else -> null
+        } ?: when {
+            carConnected && MirrorState.heatEasing -> "Your car is connected. Your phone is warm, so the picture is eased off."
             carConnected -> "Your car is connected."
             else -> MirrorState.urls(this).firstOrNull()?.let { "Waiting for your car: ${CarUrls.typed(it)}" }
                 ?: "Turn on your hotspot, then connect the car to it."
@@ -295,6 +355,17 @@ class MirrorService : VpnService() {
     /** Tears everything down. Safe to call more than once. */
     private fun release() {
         mainHandler.removeCallbacks(carCheck)
+        if (lockWatching) {
+            try {
+                unregisterReceiver(lockReceiver)
+            } catch (_: IllegalArgumentException) {
+            }
+            lockWatching = false
+        }
+        if (heatWatching) {
+            service<PowerManager>().removeThermalStatusListener(thermalListener)
+            heatWatching = false
+        }
         motion?.stop()
         motion = null
         capture?.stop()
@@ -314,8 +385,7 @@ class MirrorService : VpnService() {
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         Brightness.restore(this)
-        pausedByUser = false
-        pausedByDriving = false
+        pauses.clear()
     }
 
     private fun stopMirroring(problem: String?) {
@@ -356,7 +426,7 @@ class MirrorService : VpnService() {
             .setCategory(Notification.CATEGORY_SERVICE)
         if (projection != null) {
             builder.addAction(
-                if (pausedByUser) action("Resume", ACTION_RESUME, 2) else action("Pause", ACTION_PAUSE, 3),
+                if (pauses.byUser) action("Resume", ACTION_RESUME, 2) else action("Pause", ACTION_PAUSE, 3),
             )
         }
         return builder.addAction(action("Stop", ACTION_STOP, 1)).build()

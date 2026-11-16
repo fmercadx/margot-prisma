@@ -45,6 +45,11 @@ app can skip that.
   car moves, and brings it back about 5 seconds after you stop. It pauses maps too. The
   first time you start, the app explains it before Android asks for location; declining,
   or switching it off under Settings, turns it off and mirroring works as before.
+- **Blank while locked.** While the phone's screen is off or on the lock screen, the car's
+  screen is blank, so an unlock pattern or PIN taps never show on it.
+- **Heat guard.** A phone on a sunny dashboard heats up fast. When Android reports it warm,
+  the picture drops to fewer, smaller frames; if it gets too hot, mirroring pauses until it
+  cools, before Android throttles the phone or turns the screen off.
 - **Auto quality.** When the Wi-Fi can't keep up, the picture gets a little softer instead
   of stuttering, then sharpens again. The picture setting you choose is the upper limit.
 - **Videos fill the screen.** A video played full screen on a phone has black bars around

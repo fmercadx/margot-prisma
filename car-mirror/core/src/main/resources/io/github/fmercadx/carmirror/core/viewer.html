@@ -219,6 +219,8 @@
       pending = null;
       draw();
       if (paused === 'driving') show('Paused while the car is moving.', 'The picture comes back when you stop.');
+      else if (paused === 'locked') show('The phone is locked.', 'Unlock it to bring the picture back.');
+      else if (paused === 'hot') show('The phone is too hot.', 'The picture comes back when it has cooled down.');
       else show('Paused on the phone.', 'Tap Resume on the phone to continue.');
     } else {
       show(bitmap ? '' : 'Resuming…');

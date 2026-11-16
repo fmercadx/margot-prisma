@@ -108,6 +108,16 @@ class ScreenshotTest {
     }
 
     @Test
+    fun tooHotLight() {
+        mirroring()
+        MirrorState.paused = "hot"
+        shoot("9-too-hot-light") { page ->
+            assertVisible(page, "Paused to cool down")
+            assertHidden(page, "Resume") // the phone resumes by itself once it has cooled
+        }
+    }
+
+    @Test
     fun cancelledLight() {
         MirrorState.stopped("Screen sharing was cancelled. Tap Start mirroring to try again.")
         shoot("7-cancelled-light") { page ->
