@@ -9,24 +9,37 @@
 // Everything read back is validated field by field. Storage is outside the
 // type system: an older build, a bug, or a half-finished write can leave
 // anything there, and a bad value must not crash the app on launch.
+//
+// Every value passes through a Codec on its way in and out. On phones that
+// is AES-256-GCM (dataCodec.ts), so the database on disk holds only
+// ciphertext; the web demo stores plain JSON.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { isSealed, plainCodec, type Codec } from './codec';
 import { isDateKey } from './date';
 import {
   CORE_HABITS,
+  DEFAULT_SETTINGS,
   ENERGY_MAX,
   ENERGY_MIN,
+  REMINDER_HOUR_MAX,
+  REMINDER_HOUR_MIN,
+  WATER_GOAL_MAX,
+  WATER_GOAL_MIN,
   WATER_MAX,
   type DayLog,
   type Expense,
   type Habit,
   type Note,
+  type Settings,
 } from './store';
 
 const PREFIX = 'pdh:v1:';
 export const HABITS_KEY = `${PREFIX}habits`;
-export const dayStorageKey = (date: string) => `${PREFIX}day:${date}`;
+export const SETTINGS_KEY = `${PREFIX}settings`;
+const DAY_PREFIX = `${PREFIX}day:`;
+export const dayStorageKey = (date: string) => `${DAY_PREFIX}${date}`;
 const quarantineKey = (key: string) => `${PREFIX}corrupt:${Date.now()}:${key}`;
 
 // ---- validation -----------------------------------------------------------
@@ -65,6 +78,17 @@ export function sanitizeDay(v: unknown): DayLog {
   };
 }
 
+export function sanitizeSettings(v: unknown): Settings {
+  const o = isObj(v) ? v : {};
+  const int = (x: unknown, lo: number, hi: number, fallback: number) =>
+    isNum(x) && Number.isInteger(x) && x >= lo && x <= hi ? x : fallback;
+  return {
+    waterGoal: int(o.waterGoal, WATER_GOAL_MIN, WATER_GOAL_MAX, DEFAULT_SETTINGS.waterGoal),
+    reminderHour: int(o.reminderHour, REMINDER_HOUR_MIN, REMINDER_HOUR_MAX, DEFAULT_SETTINGS.reminderHour),
+    lockEnabled: o.lockEnabled === true,
+  };
+}
+
 /** Custom habits from storage, with the four core habits always present. */
 export function sanitizeHabits(v: unknown): Habit[] {
   const custom = list(v, (h) =>
@@ -75,15 +99,50 @@ export function sanitizeHabits(v: unknown): Habit[] {
   return [...CORE_HABITS, ...custom];
 }
 
+// ---- the codec ------------------------------------------------------------
+
+let codec: Codec = plainCodec;
+
+/** Set once at launch, before anything is read or written. */
+export function setCodec(c: Codec) {
+  codec = c;
+}
+
+export function isEncrypted(): boolean {
+  return codec.encrypted;
+}
+
+/**
+ * Re-writes any value still stored as plain JSON (version 1.0 kept
+ * everything that way) in sealed form. Runs at launch before anything is
+ * read; once everything is sealed it reads the keys and writes nothing.
+ * Returns how many values it sealed.
+ */
+export async function ensureSealed(): Promise<number> {
+  if (!codec.encrypted) return 0;
+  const keys = (await AsyncStorage.getAllKeys()).filter((k) => k.startsWith(PREFIX));
+  if (keys.length === 0) return 0;
+  const updates: [string, string][] = [];
+  for (const [key, value] of await AsyncStorage.multiGet(keys)) {
+    if (value !== null && !isSealed(value)) updates.push([key, await codec.seal(key, value)]);
+  }
+  if (updates.length > 0) await AsyncStorage.multiSet(updates);
+  return updates.length;
+}
+
 // ---- reading --------------------------------------------------------------
 
-/** Parses a stored value; a corrupt one is copied aside before it is lost. */
+/**
+ * Opens and parses a stored value. One that cannot be decrypted (tampered
+ * with, or sealed under a key this install no longer has) or is not valid
+ * JSON is copied aside, as stored, before it can be overwritten.
+ */
 async function parse(key: string, raw: string | null): Promise<unknown> {
   if (raw === null) return undefined;
   try {
-    return JSON.parse(raw);
+    return JSON.parse(await codec.open(key, raw));
   } catch (err) {
-    console.warn(`[storage] ${key} is not valid JSON; keeping a copy and starting it fresh`, err);
+    console.warn(`[storage] ${key} could not be read; keeping a copy and starting it fresh`, err);
     try {
       await AsyncStorage.setItem(quarantineKey(key), raw);
     } catch {
@@ -96,6 +155,20 @@ async function parse(key: string, raw: string | null): Promise<unknown> {
 export async function loadHabits(): Promise<Habit[]> {
   const raw = await AsyncStorage.getItem(HABITS_KEY);
   return sanitizeHabits(await parse(HABITS_KEY, raw));
+}
+
+export async function loadSettings(): Promise<Settings> {
+  const raw = await AsyncStorage.getItem(SETTINGS_KEY);
+  return sanitizeSettings(await parse(SETTINGS_KEY, raw));
+}
+
+/** Every day that has anything stored, for export. */
+export async function loadAllDays(): Promise<Record<string, DayLog>> {
+  const dates = (await AsyncStorage.getAllKeys())
+    .filter((k) => k.startsWith(DAY_PREFIX))
+    .map((k) => k.slice(DAY_PREFIX.length))
+    .sort();
+  return loadDays(dates);
 }
 
 /** Loads the given days. Days with nothing stored are left out. */
@@ -125,7 +198,7 @@ export type Persister = {
 };
 
 /**
- * Debounces and serialises writes. A slider drag or quick tapping produces
+ * Debounces, encrypts and serialises writes. A slider drag or quick tapping produces
  * a burst of changes; this turns each burst into one `multiSet`, and chains
  * writes so an older value can never land after a newer one.
  *
@@ -151,7 +224,11 @@ export function createPersister(
     pending.clear();
     chain = chain.then(async () => {
       try {
-        await AsyncStorage.multiSet(batch);
+        // Sealed here, at write time, so a burst of edits is encrypted once.
+        const sealed = await Promise.all(
+          batch.map(async ([key, json]): Promise<[string, string]> => [key, await codec.seal(key, json)]),
+        );
+        await AsyncStorage.multiSet(sealed);
         opts.onSaved?.();
       } catch (err) {
         for (const [key, value] of batch) if (!pending.has(key)) pending.set(key, value);

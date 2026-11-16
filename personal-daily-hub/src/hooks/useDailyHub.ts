@@ -1,20 +1,36 @@
 import { useEffect, useReducer, useRef, useState, type Dispatch } from 'react';
 import { AppState } from 'react-native';
 
+import { createDataCodec } from '../lib/dataCodec';
 import { lastNDays } from '../lib/date';
 import {
   createPersister,
   dayStorageKey,
+  ensureSealed,
   HABITS_KEY,
   habitsForStorage,
+  isEncrypted,
   loadDays,
   loadHabits,
+  loadSettings,
+  setCodec,
+  SETTINGS_KEY,
   type Persister,
 } from '../lib/storage';
-import { initialState, reducer, type Action, type DayLog, type Habit, type HubState } from '../lib/store';
+import {
+  initialState,
+  reducer,
+  type Action,
+  type DayLog,
+  type Habit,
+  type HubState,
+  type Settings,
+} from '../lib/store';
 
-/** Days kept in memory for the history charts, today included. */
+/** Days shown in the history charts, today included. */
 export const HISTORY_DAYS = 7;
+/** Days kept in memory: enough for the charts and for habit streaks. */
+export const LOADED_DAYS = 60;
 
 export type DailyHub = {
   state: HubState;
@@ -24,17 +40,21 @@ export type DailyHub = {
   loadFailed: boolean;
   /** The most recent write failed; it will be retried. */
   saveFailed: boolean;
+  /** Stored data is encrypted on this device (true on phones, false on web). */
+  encrypted: boolean;
 };
 
 /**
  * The hub's state, loaded from and saved to AsyncStorage.
  *
- * Three rules keep stored data safe:
+ * Launch order: get the encryption key, seal anything still stored as plain
+ * JSON by version 1.0, then read. Three rules keep stored data safe:
  *  1. Nothing is written until the first load has finished, so an empty
  *     initial state can never overwrite saved data.
- *  2. Only what changed is written: each day's object is compared by
- *     reference with the one last queued, so loading writes nothing.
- *  3. If the first load fails, writing stays off for the session.
+ *  2. Only what changed is written: each object is compared by reference
+ *     with the one last queued, so loading writes nothing.
+ *  3. If any launch step fails — including reading the key — writing stays
+ *     off for the session.
  */
 export function useDailyHub(today: string): DailyHub {
   const [state, dispatch] = useReducer(reducer, initialState);
@@ -43,8 +63,9 @@ export function useDailyHub(today: string): DailyHub {
   const [saveFailed, setSaveFailed] = useState(false);
 
   // What was last handed to the persister, per key.
-  const queued = useRef<{ habits: Habit[] | null; days: Record<string, DayLog> }>({
+  const queued = useRef<{ habits: Habit[] | null; settings: Settings | null; days: Record<string, DayLog> }>({
     habits: null,
+    settings: null,
     days: {},
   });
   const loadedFor = useRef<string | null>(null);
@@ -64,22 +85,29 @@ export function useDailyHub(today: string): DailyHub {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let habits: Habit[] | null = null;
-      let days: Record<string, DayLog> = {};
+      let loaded: { habits: Habit[]; days: Record<string, DayLog>; settings: Settings } | null = null;
       try {
-        [habits, days] = await Promise.all([loadHabits(), loadDays(lastNDays(today, HISTORY_DAYS))]);
+        setCodec(await createDataCodec());
+        const sealed = await ensureSealed();
+        if (sealed > 0) console.info(`[storage] encrypted ${sealed} values saved by an earlier version`);
+        const [habits, days, settings] = await Promise.all([
+          loadHabits(),
+          loadDays(lastNDays(today, LOADED_DAYS)),
+          loadSettings(),
+        ]);
+        loaded = { habits, days, settings };
       } catch (err) {
         console.warn('[storage] could not read saved data', err);
       }
       if (cancelled) return;
-      if (habits === null) {
+      if (loaded === null) {
         setLoadFailed(true);
         setReady(true);
         return;
       }
-      queued.current = { habits, days: { ...days } };
+      queued.current = { habits: loaded.habits, settings: loaded.settings, days: { ...loaded.days } };
       loadedFor.current = today;
-      dispatch({ type: 'hydrate', habits, days });
+      dispatch({ type: 'hydrate', ...loaded });
       setReady(true);
     })();
     return () => {
@@ -94,7 +122,7 @@ export function useDailyHub(today: string): DailyHub {
     if (!ready || loadFailed || loadedFor.current === today) return;
     loadedFor.current = today;
     let cancelled = false;
-    loadDays(lastNDays(today, HISTORY_DAYS))
+    loadDays(lastNDays(today, LOADED_DAYS))
       .then((days) => {
         if (cancelled) return;
         for (const [date, day] of Object.entries(days)) {
@@ -116,6 +144,10 @@ export function useDailyHub(today: string): DailyHub {
       p.schedule(HABITS_KEY, habitsForStorage(state.habits));
       queued.current.habits = state.habits;
     }
+    if (state.settings !== queued.current.settings) {
+      p.schedule(SETTINGS_KEY, state.settings);
+      queued.current.settings = state.settings;
+    }
     for (const [date, day] of Object.entries(state.days)) {
       if (queued.current.days[date] !== day) {
         p.schedule(dayStorageKey(date), day);
@@ -135,5 +167,5 @@ export function useDailyHub(today: string): DailyHub {
     };
   }, []);
 
-  return { state, dispatch, ready, loadFailed, saveFailed };
+  return { state, dispatch, ready, loadFailed, saveFailed, encrypted: ready && !loadFailed && isEncrypted() };
 }

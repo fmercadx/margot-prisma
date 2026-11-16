@@ -1,4 +1,4 @@
-import { Check, CircleCheckBig, Lock, Plus, X } from '../icons';
+import { Check, CircleCheckBig, Flame, Lock, Plus, X } from '../icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -10,6 +10,10 @@ import { IconButton } from './IconButton';
 type Props = {
   habits: Habit[];
   done: string[];
+  /** Days in a row each habit has been done, by habit id. */
+  streaks: Record<string, number>;
+  /** The most days a streak can show (the history that is loaded). */
+  streakCap: number;
   isPremium: boolean;
   composerOpen: boolean;
   onToggle: (id: string) => void;
@@ -72,6 +76,7 @@ export function HabitChecklist(props: Props) {
                   {checked ? <Check size={15} color={colors.background} strokeWidth={3} /> : null}
                 </View>
                 <Text style={[styles.label, checked && styles.labelDone]}>{habit.label}</Text>
+                <StreakChip days={props.streaks[habit.id] ?? 0} cap={props.streakCap} />
               </Pressable>
               {habit.core ? null : (
                 <IconButton
@@ -129,6 +134,17 @@ export function HabitChecklist(props: Props) {
   );
 }
 
+/** Shown from two days in a row: one day is not yet a streak. */
+function StreakChip({ days, cap }: { days: number; cap: number }) {
+  if (days < 2) return null;
+  return (
+    <View style={styles.streak} accessible accessibilityLabel={`${days}-day streak`}>
+      <Flame size={13} color={colors.energy} strokeWidth={2.5} />
+      <Text style={styles.streakText}>{days >= cap ? `${cap}+` : days}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   count: { ...type.label, color: colors.textSecondary, fontVariant: ['tabular-nums'] },
   row: { flexDirection: 'row', alignItems: 'center' },
@@ -151,6 +167,16 @@ const styles = StyleSheet.create({
   },
   boxChecked: { backgroundColor: colors.habits, borderColor: colors.habits },
   label: { ...type.body, color: colors.text, flex: 1 },
+  streak: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    backgroundColor: colors.cardRaised,
+  },
+  streakText: { ...type.caption, color: colors.textSecondary, fontWeight: '700', fontVariant: ['tabular-nums'] },
   labelDone: { color: colors.textMuted, textDecorationLine: 'line-through' },
   composer: { gap: space.xs },
   composerRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },

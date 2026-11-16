@@ -16,8 +16,8 @@ beforeEach(async () => {
 });
 
 test('schedules one daily 8 PM reminder, and re-enabling replaces it', async () => {
-  expect(await enableDailyReminder()).toBe('enabled');
-  expect(await enableDailyReminder()).toBe('enabled');
+  expect(await enableDailyReminder(20)).toBe('enabled');
+  expect(await enableDailyReminder(20)).toBe('enabled');
   expect(N.__scheduled.size).toBe(1);
   expect(await isReminderScheduled()).toBe(true);
 
@@ -30,7 +30,7 @@ test('schedules one daily 8 PM reminder, and re-enabling replaces it', async () 
 
 test('a refused permission schedules nothing', async () => {
   N.getPermissionsAsync.mockResolvedValueOnce(denied);
-  expect(await enableDailyReminder()).toBe('denied');
+  expect(await enableDailyReminder(20)).toBe('denied');
   expect(N.requestPermissionsAsync).not.toHaveBeenCalled(); // cannot ask again
   expect(N.__scheduled.size).toBe(0);
 });
@@ -38,7 +38,7 @@ test('a refused permission schedules nothing', async () => {
 onAndroid('Android: the channel exists before permission is requested', async () => {
   // Android 13+ shows no permission prompt for an app with no channel.
   N.getPermissionsAsync.mockResolvedValueOnce(notYetAsked);
-  expect(await enableDailyReminder()).toBe('enabled');
+  expect(await enableDailyReminder(20)).toBe('enabled');
 
   const channel = N.setNotificationChannelAsync.mock.invocationCallOrder[0];
   const request = N.requestPermissionsAsync.mock.invocationCallOrder[0];
@@ -50,7 +50,7 @@ onAndroid('Android: the channel exists before permission is requested', async ()
 
 onIOS('iOS: no channel, and the prompt is shown when not yet asked', async () => {
   N.getPermissionsAsync.mockResolvedValueOnce(notYetAsked);
-  expect(await enableDailyReminder()).toBe('enabled');
+  expect(await enableDailyReminder(20)).toBe('enabled');
   expect(N.setNotificationChannelAsync).not.toHaveBeenCalled();
   expect(N.requestPermissionsAsync).toHaveBeenCalledTimes(1);
   const [req] = N.__scheduled.values();

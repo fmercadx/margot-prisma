@@ -10,7 +10,6 @@ import { Platform } from 'react-native';
 
 const REMINDER_ID = 'pdh-daily-reminder';
 const CHANNEL_ID = 'daily-reminder';
-export const REMINDER_HOUR = 20;
 export const REMINDER_MINUTE = 0;
 
 /** Local scheduled notifications do not exist on the web build. */
@@ -43,7 +42,17 @@ export async function isReminderScheduled(): Promise<boolean> {
 
 export type EnableResult = 'enabled' | 'denied' | 'unsupported' | 'failed';
 
-export async function enableDailyReminder(): Promise<EnableResult> {
+/** "8 PM" */
+export function hourLabel(hour: number): string {
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12} ${hour < 12 ? 'AM' : 'PM'}`;
+}
+
+/**
+ * Schedules (or moves) the daily reminder to `hour`:00. Reusing the
+ * identifier replaces any earlier schedule rather than adding a second.
+ */
+export async function enableDailyReminder(hour: number): Promise<EnableResult> {
   if (!remindersSupported) return 'unsupported';
   try {
     ensureHandler();
@@ -58,7 +67,6 @@ export async function enableDailyReminder(): Promise<EnableResult> {
     if (!perm.granted && perm.canAskAgain) perm = await Notifications.requestPermissionsAsync();
     if (!perm.granted) return 'denied';
 
-    // Reusing the identifier replaces any earlier schedule rather than doubling it.
     await Notifications.scheduleNotificationAsync({
       identifier: REMINDER_ID,
       content: {
@@ -67,7 +75,7 @@ export async function enableDailyReminder(): Promise<EnableResult> {
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DAILY,
-        hour: REMINDER_HOUR,
+        hour,
         minute: REMINDER_MINUTE,
         channelId: Platform.OS === 'android' ? CHANNEL_ID : undefined,
       },

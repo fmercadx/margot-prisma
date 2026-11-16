@@ -1,7 +1,7 @@
 import { Droplets, GlassWater, Minus, Plus, Zap } from '../icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { ENERGY_MAX, ENERGY_MIN, WATER_GOAL, WATER_MAX } from '../lib/store';
+import { ENERGY_MAX, ENERGY_MIN, WATER_MAX } from '../lib/store';
 import { colors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
 import { IconButton } from './IconButton';
@@ -9,6 +9,7 @@ import { StepSlider } from './StepSlider';
 
 type Props = {
   water: number;
+  goal: number;
   energy: number | null;
   onAdjustWater: (delta: number) => void;
   onSetEnergy: (value: number) => void;
@@ -23,8 +24,8 @@ export function energyWord(v: number): string {
   return 'Unstoppable';
 }
 
-export function WaterEnergy({ water, energy, onAdjustWater, onSetEnergy, onDragStateChange }: Props) {
-  const over = Math.max(0, water - WATER_GOAL);
+export function WaterEnergy({ water, goal, energy, onAdjustWater, onSetEnergy, onDragStateChange }: Props) {
+  const over = Math.max(0, water - goal);
 
   return (
     <Card
@@ -43,7 +44,7 @@ export function WaterEnergy({ water, energy, onAdjustWater, onSetEnergy, onDragS
           </View>
           <Text style={styles.value} testID="water-value">
             {water}
-            <Text style={styles.valueSub}> / {WATER_GOAL} glasses</Text>
+            <Text style={styles.valueSub}> / {goal} glasses</Text>
           </Text>
         </View>
 
@@ -52,9 +53,9 @@ export function WaterEnergy({ water, energy, onAdjustWater, onSetEnergy, onDragS
           accessible
           accessibilityRole="progressbar"
           accessibilityLabel="Water progress"
-          accessibilityValue={{ min: 0, max: WATER_GOAL, now: Math.min(water, WATER_GOAL) }}
+          accessibilityValue={{ min: 0, max: goal, now: Math.min(water, goal) }}
         >
-          {Array.from({ length: WATER_GOAL }, (_, i) => (
+          {Array.from({ length: goal }, (_, i) => (
             <View
               key={i}
               style={[styles.segment, { backgroundColor: i < water ? colors.water : tint(colors.water, 0.16) }]}
@@ -64,11 +65,11 @@ export function WaterEnergy({ water, energy, onAdjustWater, onSetEnergy, onDragS
 
         <View style={styles.rowBetween}>
           <Text style={styles.hint}>
-            {water >= WATER_GOAL
+            {water >= goal
               ? over > 0
                 ? `Goal reached · +${over} extra`
                 : 'Goal reached'
-              : `${WATER_GOAL - water} to go`}
+              : `${goal - water} to go`}
           </Text>
           <View style={styles.stepper}>
             <IconButton

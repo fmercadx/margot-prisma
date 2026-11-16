@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 
-import { dayStorageKey } from '../src/lib/storage';
+import { dayStorageKey, loadDays } from '../src/lib/storage';
 import HomeScreen from '../src/screens/HomeScreen';
 
 beforeEach(async () => {
@@ -28,7 +28,7 @@ test('left open past midnight, the screen rolls to a fresh day and yesterday is 
   expect(screen.queryByText('Late-night idea')).not.toBeOnTheScreen();
   expect(screen.getByTestId('water-value')).toHaveTextContent('0 / 8 glasses');
 
-  const sunday = JSON.parse((await AsyncStorage.getItem(dayStorageKey('2026-11-08')))!);
+  const sunday = (await loadDays(['2026-11-08']))['2026-11-08'];
   expect(sunday.notes.map((n: { text: string }) => n.text)).toEqual(['Late-night idea']);
   expect(sunday.water).toBe(1);
   expect(await AsyncStorage.getItem(dayStorageKey('2026-11-09'))).toBeNull();

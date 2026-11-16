@@ -4,15 +4,20 @@
 
 import type { EnableResult } from './reminders';
 
-export const REMINDER_HOUR = 20;
 export const REMINDER_MINUTE = 0;
+
+export function hourLabel(hour: number): string {
+  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${h12} ${hour < 12 ? 'AM' : 'PM'}`;
+}
+
 export const remindersSupported = false;
 
 export async function isReminderScheduled(): Promise<boolean> {
   return false;
 }
 
-export async function enableDailyReminder(): Promise<EnableResult> {
+export async function enableDailyReminder(_hour: number): Promise<EnableResult> {
   return 'unsupported';
 }
 

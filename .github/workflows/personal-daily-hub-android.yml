@@ -10,7 +10,13 @@ name: personal-daily-hub Android APK
 # hold it for you: `npx eas-cli build -p android`).
 #
 # Runs on pushes to any branch that touch the app, so a branch's APK is
-# ready without a PR; `cancel-in-progress` drops superseded builds.
+# ready without a PR; `cancel-in-progress` drops superseded builds. It only
+# uploads artifacts; it publishes nothing.
+#
+# The `emulator` job then installs that exact APK on an Android emulator and
+# drives it (scripts/android_smoke.py): launch, add a note, kill and restart,
+# confirm the note survived and is stored encrypted, confirm the app has no
+# internet permission, and check logcat for crashes.
 on:
   push:
     paths:
@@ -53,7 +59,11 @@ jobs:
 
       - run: npm ci
 
+      # PDH_RELEASE_OFFLINE makes app.config.js drop the INTERNET permission:
+      # the release build cannot reach the network at all.
       - run: npx expo prebuild --platform android --no-install
+        env:
+          PDH_RELEASE_OFFLINE: '1'
 
       # Every 64-bit phone, older 32-bit ARM phones, and x86_64 emulators.
       # Skips 32-bit x86, which only very old emulators use.
@@ -73,11 +83,14 @@ jobs:
           sed -n "s/^uses-permission: name='\([^']*\)'.*/\1/p" badging.txt | sort -u > permissions.txt
           echo "Permissions in the APK:"; sed 's/^/  /' permissions.txt
 
-          # Everything app.json blocks (storage, push, launcher badges) must be gone.
-          # Libraries re-add these whenever they update, so this reads the list
-          # from app.json rather than repeating it.
-          node -e 'for (const p of require("./app.json").expo.android.blockedPermissions) console.log(p)' \
+          # Everything the config blocks (storage, push, launcher badges, and in
+          # this release build the internet) must be gone. Libraries re-add these
+          # whenever they update, so this reads the list from the resolved config
+          # (app.json + app.config.js) rather than repeating it.
+          PDH_RELEASE_OFFLINE=1 npx expo config --type public --json \
+            | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{for (const p of JSON.parse(s).android.blockedPermissions) console.log(p)})' \
             | sort -u > blocked.txt
+          grep -Fxq android.permission.INTERNET blocked.txt
           # `if` rather than `! grep`: bash's -e ignores a negated command.
           if leaked=$(grep -Fx -f blocked.txt permissions.txt); then
             echo "::error::app.json blocks these, but they are in the APK:"
@@ -85,10 +98,16 @@ jobs:
             exit 1
           fi
 
-          # And the daily reminder still has what it needs.
-          for p in android.permission.POST_NOTIFICATIONS android.permission.RECEIVE_BOOT_COMPLETED; do
-            grep -Fxq "$p" permissions.txt || { echo "::error::$p is missing; the daily reminder needs it"; exit 1; }
+          # And the reminder and the app lock still have what they need.
+          for p in android.permission.POST_NOTIFICATIONS android.permission.RECEIVE_BOOT_COMPLETED \
+                   android.permission.USE_BIOMETRIC; do
+            grep -Fxq "$p" permissions.txt || { echo "::error::$p is missing; the app needs it"; exit 1; }
           done
+
+          # Backups are off, so the encrypted data never lands in a cloud backup.
+          "$aapt2" dump xmltree "$apk" --file AndroidManifest.xml > manifest.txt
+          grep -q 'android:allowBackup.*=false' manifest.txt \
+            || { echo "::error::android:allowBackup is not false"; grep -i allowBackup manifest.txt; exit 1; }
           {
             echo "### Personal Daily Hub APK"
             echo
@@ -108,4 +127,45 @@ jobs:
           name: personal-daily-hub-apk
           path: personal-daily-hub/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+          retention-days: 30
+
+  emulator:
+    needs: apk
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: personal-daily-hub-apk
+          path: apk
+
+      # Hardware acceleration for the emulator on GitHub's Linux runners.
+      - name: Enable KVM
+        working-directory: .
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # google_apis images allow `adb root`, which the smoke test needs to read
+      # the app's database and confirm it holds only ciphertext.
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          working-directory: personal-daily-hub
+          script: python3 scripts/android_smoke.py --apk ../apk/app-release.apk --out ../smoke
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: personal-daily-hub-emulator
+          path: smoke/
+          if-no-files-found: warn
           retention-days: 30

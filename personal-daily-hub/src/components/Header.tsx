@@ -1,19 +1,21 @@
-import { Bell, BellRing, CalendarDays, Clock, Crown } from '../icons';
+import { Bell, BellRing, CalendarDays, Clock, Crown, Settings } from '../icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useClock } from '../hooks/useClock';
 import { clockTime, greeting, longDate, weekdayName } from '../lib/date';
+import { hourLabel } from '../lib/reminders';
 import { colors, radius, space, tint, type } from '../theme';
 import { IconButton } from './IconButton';
 
 type Props = {
   isPremium: boolean;
   onPremiumPress: () => void;
-  reminder: { supported: boolean; on: boolean; busy: boolean; onToggle: () => void };
+  reminder: { supported: boolean; on: boolean; busy: boolean; hour: number; onToggle: () => void };
+  onSettingsPress: () => void;
   message: string | null;
 };
 
-export function Header({ isPremium, onPremiumPress, reminder, message }: Props) {
+export function Header({ isPremium, onPremiumPress, reminder, onSettingsPress, message }: Props) {
   const now = useClock();
 
   return (
@@ -35,13 +37,18 @@ export function Header({ isPremium, onPremiumPress, reminder, message }: Props) 
           {reminder.supported ? (
             <IconButton
               icon={reminder.on ? BellRing : Bell}
-              label={reminder.on ? 'Turn off the 8 PM daily reminder' : 'Turn on an 8 PM daily reminder'}
+              label={
+                reminder.on
+                  ? `Turn off the ${hourLabel(reminder.hour)} daily reminder`
+                  : `Turn on the ${hourLabel(reminder.hour)} daily reminder`
+              }
               onPress={reminder.onToggle}
               disabled={reminder.busy}
               color={reminder.on ? colors.premium : colors.textSecondary}
               filled
             />
           ) : null}
+          <IconButton icon={Settings} label="Settings" onPress={onSettingsPress} filled testID="open-settings" />
         </View>
       </View>
 

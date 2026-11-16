@@ -4,18 +4,19 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { longDate, parseDateKey, weekdayInitial, weekdayName } from '../lib/date';
 import { formatCents, formatCentsCompact } from '../lib/money';
-import { ENERGY_MAX, WATER_GOAL, totalCents, type DayLog } from '../lib/store';
+import { ENERGY_MAX, totalCents, type DayLog } from '../lib/store';
 import { colors, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
 
 type Props = {
   isPremium: boolean;
+  waterGoal: number;
   /** Oldest first; the last entry is today. A missing day is null. */
   days: { date: string; log: DayLog | null }[];
   onUnlock: () => void;
 };
 
-export function HistoryCard({ isPremium, days, onUnlock }: Props) {
+export function HistoryCard({ isPremium, waterGoal, days, onUnlock }: Props) {
   return (
     <Card
       icon={ChartColumnBig}
@@ -31,7 +32,7 @@ export function HistoryCard({ isPremium, days, onUnlock }: Props) {
             color={colors.water}
             days={days}
             value={(d) => (d && d.water > 0 ? d.water : null)}
-            scaleMax={(vals) => Math.max(WATER_GOAL, ...vals)}
+            scaleMax={(vals) => Math.max(waterGoal, ...vals)}
             format={(v) => `${v} ${v === 1 ? 'glass' : 'glasses'}`}
             short={(v) => String(v)}
           />

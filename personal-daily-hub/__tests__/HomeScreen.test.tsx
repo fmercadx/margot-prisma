@@ -3,7 +3,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 
 import { dateKey } from '../src/lib/date';
 import { FREE_NOTES_PER_DAY } from '../src/lib/premium';
-import { dayStorageKey, HABITS_KEY } from '../src/lib/storage';
+import { isSealed } from '../src/lib/codec';
+import { dayStorageKey, HABITS_KEY, loadDays, loadHabits } from '../src/lib/storage';
 import HomeScreen from '../src/screens/HomeScreen';
 
 // The mock purchase waits 600ms so its busy state shows on screen; here it
@@ -13,10 +14,9 @@ jest.mock('../src/lib/premium', () => ({
   purchasePremiumMock: jest.fn(async () => true),
 }));
 
-const storedDay = async (date = dateKey()) => {
-  const raw = await AsyncStorage.getItem(dayStorageKey(date));
-  return raw === null ? null : JSON.parse(raw);
-};
+// What is on "disk" is ciphertext now; read it back the way the app does.
+const storedDay = async (date = dateKey()) => (await loadDays([date]))[date] ?? null;
+const rawStored = async (key: string) => AsyncStorage.getItem(key);
 
 async function addNote(text: string) {
   await fireEvent.changeText(screen.getByLabelText('New note'), text);
@@ -99,10 +99,11 @@ test('custom habits are premium; after unlocking, one can be added and persists'
   expect(habit).toBeChecked();
 
   await waitFor(async () =>
-    expect(JSON.parse((await AsyncStorage.getItem(HABITS_KEY)) ?? '[]')).toEqual([
+    expect((await loadHabits()).filter((h) => !h.core)).toEqual([
       expect.objectContaining({ label: 'Stretch for 5 minutes', core: false }),
     ]),
   );
+  expect(isSealed((await rawStored(HABITS_KEY))!)).toBe(true);
 });
 
 test('habits, water and expenses update the screen and are saved under today’s date', async () => {
@@ -131,7 +132,11 @@ test('habits, water and expenses update the screen and are saved under today’s
   expect(screen.getByTestId('expense-total')).toHaveTextContent('$42.95');
 
   await waitFor(async () => expect((await storedDay())?.expenses).toHaveLength(2));
-  const saved = await storedDay();
+  const saved = (await storedDay())!;
+  // On disk it is sealed: none of what was typed is readable there.
+  const raw = (await rawStored(dayStorageKey(dateKey())))!;
+  expect(isSealed(raw)).toBe(true);
+  expect(raw).not.toContain('Coffee');
   expect(saved.water).toBe(2);
   expect(saved.habitsDone).toEqual(['core-read']);
   expect(saved.expenses.map((e: { cents: number }) => e.cents)).toEqual([3820, 475]);
@@ -152,10 +157,19 @@ test('saved data comes back on the next launch; yesterday stays out of today', a
   expect(screen.getByTestId('water-value')).toHaveTextContent('6 / 8 glasses');
 });
 
-test('loading writes nothing back', async () => {
-  await AsyncStorage.setItem(dayStorageKey(dateKey()), JSON.stringify({ water: 2 }));
+test('plain data from 1.0 is sealed once; after that, launching writes nothing', async () => {
+  const key = dayStorageKey(dateKey());
+  await AsyncStorage.setItem(key, JSON.stringify({ water: 2 }));
   const multiSet = AsyncStorage.multiSet as jest.Mock;
   multiSet.mockClear(); // the seeding above went through it
+
+  const first = await render(<HomeScreen />);
+  expect(await screen.findByTestId('water-value')).toHaveTextContent('2 / 8 glasses');
+  expect(isSealed((await rawStored(key))!)).toBe(true);
+  expect(multiSet).toHaveBeenCalledTimes(1); // the migration, nothing else
+  await first.unmount();
+
+  multiSet.mockClear();
   await render(<HomeScreen />);
   expect(await screen.findByTestId('water-value')).toHaveTextContent('2 / 8 glasses');
   await new Promise((r) => setTimeout(r, 500)); // longer than the save debounce
@@ -167,13 +181,13 @@ test('the daily reminder can be switched on and off', async () => {
   await render(<HomeScreen />);
   await screen.findByText('Habits');
 
-  await fireEvent.press(screen.getByRole('button', { name: 'Turn on an 8 PM daily reminder' }));
+  await fireEvent.press(screen.getByRole('button', { name: 'Turn on the 8 PM daily reminder' }));
   expect(await screen.findByRole('button', { name: 'Turn off the 8 PM daily reminder' })).toBeOnTheScreen();
   expect(Notifications.scheduleNotificationAsync).toHaveBeenCalledWith(
     expect.objectContaining({ trigger: expect.objectContaining({ type: 'daily', hour: 20, minute: 0 }) }),
   );
 
   await fireEvent.press(screen.getByRole('button', { name: 'Turn off the 8 PM daily reminder' }));
-  expect(await screen.findByRole('button', { name: 'Turn on an 8 PM daily reminder' })).toBeOnTheScreen();
+  expect(await screen.findByRole('button', { name: 'Turn on the 8 PM daily reminder' })).toBeOnTheScreen();
   expect(Notifications.__scheduled.size).toBe(0);
 });

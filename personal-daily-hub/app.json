@@ -2,7 +2,7 @@
   "expo": {
     "name": "Personal Daily Hub",
     "slug": "personal-daily-hub",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -12,6 +12,8 @@
     },
     "android": {
       "package": "com.fmercadx.personaldailyhub",
+      "versionCode": 2,
+      "allowBackup": false,
       "adaptiveIcon": {
         "backgroundColor": "#121212",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -60,7 +62,20 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 160
         }
-      ]
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Personal Daily Hub to use Face ID to unlock the app."
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Allow Personal Daily Hub to use Face ID to unlock the app."
+        }
+      ],
+      "expo-sharing"
     ]
   }
 }

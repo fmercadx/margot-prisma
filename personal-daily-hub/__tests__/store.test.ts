@@ -1,8 +1,10 @@
+import { buildExport } from '../src/lib/exportJson';
 import {
   CORE_HABITS,
   EMPTY_DAY,
   getDay,
   habitsDoneCount,
+  habitStreak,
   initialState,
   reducer,
   totalCents,
@@ -105,4 +107,81 @@ test('mergeDays never lets older stored data replace what is in memory', () => {
   });
   expect(getDay(merged, TODAY).water).toBe(4);
   expect(getDay(merged, YESTERDAY).water).toBe(2);
+});
+
+describe('settings', () => {
+  test('are clamped to their ranges, and an unchanged value is a no-op', () => {
+    let s = reducer(initialState, { type: 'updateSettings', patch: { waterGoal: 99, reminderHour: 2 } });
+    expect(s.settings).toEqual({ waterGoal: 16, reminderHour: 6, lockEnabled: false });
+    expect(reducer(s, { type: 'updateSettings', patch: { waterGoal: 16 } })).toBe(s);
+    s = reducer(s, { type: 'updateSettings', patch: { lockEnabled: true } });
+    expect(s.settings.lockEnabled).toBe(true);
+  });
+});
+
+describe('undo restores', () => {
+  test('a note goes back by time, not to the top, and is never duplicated', () => {
+    const n = (id: string, t: number) => ({ id, text: id, createdAt: t });
+    let s = run(
+      { type: 'addNote', date: TODAY, note: n('a', 1) },
+      { type: 'addNote', date: TODAY, note: n('c', 3) },
+    );
+    s = reducer(s, { type: 'restoreNote', date: TODAY, note: n('b', 2) });
+    expect(getDay(s, TODAY).notes.map((x) => x.id)).toEqual(['c', 'b', 'a']);
+    expect(reducer(s, { type: 'restoreNote', date: TODAY, note: n('b', 2) })).toBe(s);
+  });
+
+  test('a habit goes back to its old position, never above the core four', () => {
+    let s = run(
+      { type: 'addHabit', habit: { id: 'x', label: 'X', core: false } },
+      { type: 'addHabit', habit: { id: 'y', label: 'Y', core: false } },
+    );
+    const x = s.habits.find((h) => h.id === 'x')!;
+    s = reducer(s, { type: 'removeHabit', date: TODAY, id: 'x' });
+    s = reducer(s, { type: 'restoreHabit', date: TODAY, habit: x, index: 4, wasDone: true });
+    expect(s.habits.map((h) => h.id).slice(4)).toEqual(['x', 'y']);
+    expect(getDay(s, TODAY).habitsDone).toEqual(['x']);
+    const s2 = reducer(s, { type: 'restoreHabit', date: TODAY, habit: { ...x, id: 'z' }, index: 0, wasDone: false });
+    expect(s2.habits[4].id).toBe('z');
+  });
+});
+
+describe('habitStreak', () => {
+  const id = 'core-read';
+  const withDone = (dates: string[]): HubState =>
+    dates.reduce((s, date) => reducer(s, { type: 'toggleHabit', date, id }), initialState);
+
+  test('counts back from today, or from yesterday while today is still open', () => {
+    expect(habitStreak(withDone(['2026-11-06', '2026-11-07', TODAY]), id, TODAY, 60)).toBe(3);
+    expect(habitStreak(withDone(['2026-11-06', '2026-11-07']), id, TODAY, 60)).toBe(2);
+  });
+
+  test('a missed day ends it', () => {
+    expect(habitStreak(withDone(['2026-11-05', '2026-11-07', TODAY]), id, TODAY, 60)).toBe(2);
+    expect(habitStreak(withDone(['2026-11-06']), id, TODAY, 60)).toBe(0); // yesterday missed
+  });
+
+  test('stops at the loaded history', () => {
+    const many = Array.from({ length: 10 }, (_, i) => `2026-11-0${i}`).filter((d) => d <= TODAY && d >= '2026-11-01');
+    expect(habitStreak(withDone(many), id, TODAY, 5)).toBe(5);
+  });
+});
+
+describe('buildExport', () => {
+  test('leaves out empty days and the lock setting, and sorts by date', () => {
+    const { filename, json } = buildExport(
+      {
+        '2026-11-08': { ...EMPTY_DAY, water: 2 },
+        '2026-11-01': { ...EMPTY_DAY, energy: 7 },
+        '2026-11-05': EMPTY_DAY,
+      },
+      [...CORE_HABITS],
+      { waterGoal: 8, reminderHour: 20, lockEnabled: true },
+      new Date(2026, 10, 8, 12),
+    );
+    const file = JSON.parse(json);
+    expect(filename).toBe('personal-daily-hub-2026-11-08.json');
+    expect(Object.keys(file.days)).toEqual(['2026-11-01', '2026-11-08']);
+    expect(file.settings).toEqual({ waterGoal: 8, reminderHour: 20 });
+  });
 });

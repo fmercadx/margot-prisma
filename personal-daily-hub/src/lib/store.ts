@@ -1,6 +1,8 @@
 // State shape and every way it can change. Pure: no React, no storage, no
 // clock — the date and timestamps arrive in the actions — so it is tested
 // directly.
+
+import { lastNDays } from './date';
 //
 // Daily data is keyed by local date string, so "today" starts empty each
 // morning while every earlier day stays where it was:
@@ -25,12 +27,28 @@ export type DayLog = {
   expenses: Expense[]; // newest first
 };
 
+export type Settings = {
+  waterGoal: number; // glasses a day
+  reminderHour: number; // local hour of the daily reminder, 24h
+  lockEnabled: boolean; // require fingerprint / face / PIN to open
+};
+
 export type HubState = {
   habits: Habit[];
   days: Record<string, DayLog>;
+  settings: Settings;
 };
 
-export const WATER_GOAL = 8;
+export const WATER_GOAL_MIN = 4;
+export const WATER_GOAL_MAX = 16;
+export const REMINDER_HOUR_MIN = 6;
+export const REMINDER_HOUR_MAX = 23;
+export const DEFAULT_SETTINGS: Settings = Object.freeze({
+  waterGoal: 8,
+  reminderHour: 20,
+  lockEnabled: false,
+});
+
 export const WATER_MAX = 20;
 export const ENERGY_MIN = 1;
 export const ENERGY_MAX = 10;
@@ -54,10 +72,14 @@ export const EMPTY_DAY: DayLog = Object.freeze({
   expenses: [],
 }) as DayLog;
 
-export const initialState: HubState = { habits: [...CORE_HABITS], days: {} };
+export const initialState: HubState = { habits: [...CORE_HABITS], days: {}, settings: DEFAULT_SETTINGS };
 
 export type Action =
-  | { type: 'hydrate'; habits: Habit[]; days: Record<string, DayLog> }
+  | { type: 'hydrate'; habits: Habit[]; days: Record<string, DayLog>; settings: Settings }
+  | { type: 'updateSettings'; patch: Partial<Settings> }
+  | { type: 'restoreNote'; date: string; note: Note }
+  | { type: 'restoreExpense'; date: string; expense: Expense }
+  | { type: 'restoreHabit'; date: string; habit: Habit; index: number; wasDone: boolean }
   | { type: 'mergeDays'; days: Record<string, DayLog> }
   | { type: 'addNote'; date: string; note: Note }
   | { type: 'deleteNote'; date: string; id: string }
@@ -85,7 +107,51 @@ function updateDay(state: HubState, date: string, fn: (day: DayLog) => DayLog): 
 export function reducer(state: HubState, action: Action): HubState {
   switch (action.type) {
     case 'hydrate':
-      return { habits: action.habits, days: action.days };
+      return { habits: action.habits, days: action.days, settings: action.settings };
+
+    case 'updateSettings': {
+      const p = action.patch;
+      const cur = state.settings;
+      const next: Settings = {
+        waterGoal: p.waterGoal === undefined ? cur.waterGoal : clamp(Math.round(p.waterGoal), WATER_GOAL_MIN, WATER_GOAL_MAX),
+        reminderHour:
+          p.reminderHour === undefined
+            ? cur.reminderHour
+            : clamp(Math.round(p.reminderHour), REMINDER_HOUR_MIN, REMINDER_HOUR_MAX),
+        lockEnabled: p.lockEnabled === undefined ? cur.lockEnabled : p.lockEnabled === true,
+      };
+      const same =
+        next.waterGoal === cur.waterGoal &&
+        next.reminderHour === cur.reminderHour &&
+        next.lockEnabled === cur.lockEnabled;
+      return same ? state : { ...state, settings: next };
+    }
+
+    // Undo: put a deleted item back where it was. Lists are newest first, so
+    // it goes back by timestamp, not to the top.
+    case 'restoreNote':
+      return updateDay(state, action.date, (d) =>
+        d.notes.some((n) => n.id === action.note.id)
+          ? d
+          : { ...d, notes: insertByTime(d.notes, action.note) },
+      );
+
+    case 'restoreExpense':
+      return updateDay(state, action.date, (d) =>
+        d.expenses.some((e) => e.id === action.expense.id)
+          ? d
+          : { ...d, expenses: insertByTime(d.expenses, action.expense) },
+      );
+
+    case 'restoreHabit': {
+      if (state.habits.some((h) => h.id === action.habit.id)) return state;
+      const habits = [...state.habits];
+      habits.splice(clamp(action.index, CORE_HABITS.length, habits.length), 0, action.habit);
+      const next = { ...state, habits };
+      return action.wasDone
+        ? updateDay(next, action.date, (d) => ({ ...d, habitsDone: [...d.habitsDone, action.habit.id] }))
+        : next;
+    }
 
     case 'mergeDays': {
       // Days already in memory win: they are at least as new as storage.
@@ -171,7 +237,30 @@ export function reducer(state: HubState, action: Action): HubState {
   }
 }
 
+function insertByTime<T extends { createdAt: number }>(list: T[], item: T): T[] {
+  const i = list.findIndex((x) => x.createdAt < item.createdAt);
+  return i === -1 ? [...list, item] : [...list.slice(0, i), item, ...list.slice(i)];
+}
+
 // ---- selectors ------------------------------------------------------------
+
+/**
+ * Days in a row the habit was done, counting back from today — or from
+ * yesterday if it is not ticked yet today, so a streak is not shown as
+ * broken while there is still time to keep it. Stops at `maxDays`, the
+ * history the app has loaded.
+ */
+export function habitStreak(state: HubState, habitId: string, today: string, maxDays: number): number {
+  const days = lastNDays(today, maxDays + 1).reverse(); // today first
+  const doneOn = (date: string) => state.days[date]?.habitsDone.includes(habitId) ?? false;
+  let i = doneOn(days[0]) ? 0 : 1;
+  let streak = 0;
+  while (i < days.length && streak < maxDays && doneOn(days[i])) {
+    streak++;
+    i++;
+  }
+  return streak;
+}
 
 export function totalCents(day: DayLog): number {
   return day.expenses.reduce((sum, e) => sum + e.cents, 0);

@@ -21,7 +21,8 @@ another's tests. `car-mirror.yml` alone also runs on branch pushes, because each
 build publishes a release; its `scope` job skips a branch that hasn't changed
 car-mirror since it left `main`, since GitHub runs path-filtered workflows on new
 branches and force-pushes anyway. `personal-daily-hub-android.yml` also builds
-on branch pushes, but only uploads an artifact; it publishes nothing.
+on branch pushes, but only uploads artifacts (the APK, and screenshots from
+running it on an emulator); it publishes nothing.
 
 **`car-mirror/` network exposure is deliberate.** Its VPN covers only the app
 and routes a single link-local `/32` (link-local because Android 13+ drops
@@ -31,6 +32,21 @@ hotspot's own (`acceptLocal`), and checks the Host header. `POST /input` (touch 
 from `/status` in a custom header, and the server never sends CORS headers.
 Widening any of these would let whoever shares a network with the phone, or
 any page open in the car's browser, see the screen or tap on the phone.
+
+**`personal-daily-hub/` security is easy to undo by accident.** All of these
+are tested, but each looks like an implementation detail:
+
+- Every stored value goes through the codec in `src/lib/storage.ts`
+  (AES-256-GCM on phones). Never call AsyncStorage directly for app data,
+  and never log a decrypted value.
+- `src/lib/dataCodec.ts` creates the key only when none is stored. If reading
+  it throws, launch fails safe (saving off); minting a new key there would
+  orphan everything sealed with the old one.
+- The release APK has no INTERNET permission (`app.config.js`, set by the APK
+  workflow), and the emulator test asserts it. A network feature means
+  revisiting that, not quietly re-adding the permission.
+- `locked` in `src/hooks/useAppLock.ts` is derived during render. Moving it
+  into an effect draws the day for one frame before the lock screen.
 
 **Two Railway services, two configs.** The root `railway.json` and `Procfile`
 belong to the credit analyzer's Flask app. `shepherds-whisper/railway.json` and

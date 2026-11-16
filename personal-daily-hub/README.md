@@ -5,12 +5,49 @@ A one-screen, dark-mode daily dashboard built with React Native and Expo
 
 | Module | What it does |
 | --- | --- |
-| Header | Day, date and time, kept current to the minute; greeting; daily-reminder toggle |
+| Header | Day, date and time, kept current to the minute; greeting; daily-reminder toggle; Settings |
 | Quick Capture | Timestamped notes in a list that scrolls inside its card |
-| Habits | Four core habits with cross-out on completion; custom habits (Premium) |
-| Water & Energy | Glass-by-glass progress bar; 1–10 energy slider |
+| Habits | Four core habits with cross-out on completion and day streaks; custom habits (Premium) |
+| Water & Energy | Glass-by-glass progress bar toward your goal; 1–10 energy slider |
 | Expenses | Amount + optional label, running total for the day |
 | Last 7 days | Water, energy and spending charts (Premium) |
+| Settings | Water goal, reminder time, app lock, export your data |
+
+Deleting a note, an expense or a custom habit shows **Undo** for five
+seconds.
+
+## Security and privacy
+
+What protects what, and why each is there:
+
+| Layer | What it does | Where |
+| --- | --- | --- |
+| Encryption at rest | Every stored value is AES-256-GCM ciphertext. The key is made on first launch and held by the Android Keystore / iOS Keychain (`THIS_DEVICE_ONLY`), never in the database beside the data. | `src/lib/dataCodec.ts` |
+| Tamper and swap detection | Each value's storage key (e.g. `pdh:v1:day:2026-11-08`) is bound in as authenticated data, so editing a byte or moving one day's record onto another fails to decrypt. | `dataCodec.ts` |
+| App lock (optional) | Fingerprint, face or phone PIN at launch and after 30 s in the background. While on, Android shows a blank preview in recent apps and blocks screenshots (FLAG_SECURE); iOS blurs the app switcher. | `src/lib/appLock.ts`, `src/hooks/useAppLock.ts` |
+| No network | The release APK has **no INTERNET permission**, so Android itself refuses any connection. The app makes none anyway. | `app.config.js` |
+| No cloud backup | `allowBackup` is off, so the data never lands in a Google backup. Export is the explicit way to take a copy. | `app.json` |
+| Fewest permissions | Push, launcher-badge and storage permissions are stripped; CI fails if one comes back. | `app.json`, APK workflow |
+
+Limits worth knowing:
+
+- The lock keeps people out of the app on an unlocked phone; it does not
+  add to the encryption. The key opens without a fingerprint, so a lock
+  change or a new fingerprint can never make the data unreadable.
+- An exported file is plain JSON, by design (it is your copy, to open
+  anywhere). Settings says so. Export files are written to the app's private
+  cache and removed at the next launch.
+- The web demo has no secure key store, so it keeps plain JSON in the
+  browser. Its Settings says "Stored only on this device" rather than
+  "encrypted".
+- Development builds (Expo Go, `expo run`) keep the INTERNET permission,
+  because Metro serves the JavaScript over the network. Only the release
+  build drops it (`PDH_RELEASE_OFFLINE=1`, set by the APK workflow).
+
+If the key is ever lost (secure storage reset), values that will not
+decrypt are copied to `pdh:v1:corrupt:*` keys, not deleted, and the app
+starts those days fresh. A key read that merely fails switches saving off
+for the session instead of minting a new key over the old data.
 
 ## Running it
 
@@ -37,7 +74,7 @@ upload key: `npx eas-cli build -p android`.
 
 **Or live-reload with Expo Go.** Install Expo Go from the Play Store (it must
 support SDK 58), run `npx expo start` on a computer on the same Wi-Fi, and
-scan the QR code. Everything works, including the 8 PM reminder: Expo Go on
+scan the QR code. Everything works, including the daily reminder: Expo Go on
 Android only lacks *push* notifications, which this app does not use. It
 does log two expo-notifications warnings saying so; they are harmless.
 
@@ -80,8 +117,17 @@ npx expo export --platform android --platform ios --platform web --output-dir di
 ```
 
 CI (`.github/workflows/personal-daily-hub.yml`) runs all three, path-filtered
-to this folder. The suite covers logic, storage, the whole rendered screen,
-and platform branches such as Android's notification channel.
+to this folder. The suite covers logic, encryption (real AES-GCM, via Node's
+crypto standing in for the native module), storage and migration, the whole
+rendered screen, the app lock, export, and platform branches such as
+Android's notification channel.
+
+The APK workflow then runs the release APK on an **Android emulator**
+(`scripts/android_smoke.py`): it launches the app, adds a note, kills and
+restarts it, checks the note survived, reads the app's database as root to
+confirm it holds only ciphertext, confirms the app has no INTERNET
+permission, and checks logcat for crashes. Screenshots from the emulator are
+in the run's **personal-daily-hub-emulator** artifact.
 
 ## How data is stored
 
@@ -98,7 +144,9 @@ earlier days stay saved:
 ```
 
 On disk (AsyncStorage) every day has its own key, `pdh:v1:day:YYYY-MM-DD`,
-plus `pdh:v1:habits` for custom habits. One key per day keeps each write
+plus `pdh:v1:habits` for custom habits and `pdh:v1:settings`. Each value is
+stored sealed: `pdh1:` + base64(nonce ‖ ciphertext ‖ tag). Data saved by
+version 1.0 as plain JSON is encrypted in place at the first launch of 1.1. One key per day keeps each write
 small, means a corrupt value costs one day rather than the whole history,
 and stays far below Android's per-value size limit.
 
@@ -117,6 +165,8 @@ What keeps it safe (`src/hooks/useDailyHub.ts`, `src/lib/storage.ts`):
   an evening's entries under tomorrow in the Americas). Money is integer
   cents, so the running total cannot drift.
 - If the app is left open past midnight it rolls over to the new day.
+- Sixty days are kept in memory: seven for the charts, the rest so habit
+  streaks can count back. Export reads everything else from storage.
 
 ## Premium (mock)
 
@@ -146,20 +196,31 @@ Before release, replace that one function:
 ## Before shipping
 
 - `ios.bundleIdentifier` is not set in `app.json`; EAS will ask for it.
+- Bump `android.versionCode` for every release you hand out; Android only
+  installs an update over an older code.
 - The icon and splash images in `assets/` are Expo's template placeholders.
 
 ## Layout
 
 ```
 App.tsx                     providers + status bar
-src/screens/HomeScreen.tsx  composes the modules, owns isPremium and the paywall
-src/components/             one file per module, plus Card, IconButton, StepSlider
-src/hooks/useDailyHub.ts    reducer + load/save
+src/screens/HomeScreen.tsx  composes the modules; owns premium, undo, settings
+src/components/             one file per module, plus Card, IconButton, StepSlider,
+                            SettingsSheet, LockScreen, Toast, PaywallModal
+src/hooks/useDailyHub.ts    reducer + key, migration, load/save
+src/hooks/useAppLock.ts     when the lock screen shows
 src/hooks/useClock.ts       minute clock and today's date key
-src/lib/store.ts            state shape and reducer (pure)
-src/lib/storage.ts          AsyncStorage keys, validation, debounced writer
-src/lib/reminders.ts        8 PM local reminder (reminders.web.ts stubs it)
+src/lib/store.ts            state shape, reducer, streaks (pure)
+src/lib/storage.ts          AsyncStorage keys, validation, debounced encrypted writer
+src/lib/dataCodec.ts        AES-256-GCM with a Keystore/Keychain key (.web.ts: plain)
+src/lib/appLock.ts          biometric prompt, screen-capture protection (.web.ts: off)
+src/lib/exportData.ts       export via the share sheet (.web.ts: download)
+src/lib/exportJson.ts       the export file's contents (pure)
+src/lib/reminders.ts        daily local reminder (reminders.web.ts stubs it)
 src/lib/premium.ts          free limits, paywall copy, the mock purchase
+src/lib/utf8.ts             UTF-8 for the cipher, independent of Hermes
+scripts/android_smoke.py    the emulator test CI runs against the APK
+app.config.js               drops INTERNET from the release build
 src/icons.ts                every Lucide icon used, imported per file
 src/theme.ts                colours, spacing, type
 ```
