@@ -35,7 +35,8 @@ data class Viewer(val remoteAddress: String, val host: String, val lastSeenMs: L
  *                                   (see [serveFrameStream]): no round trip per frame
  *   GET  /stream.mjpeg              multipart MJPEG, for browsers without fetch/createImageBitmap
  *   GET  /status                    JSON: frame size, viewers, touch, quality, session token
- *   POST /input                     a [Gesture] from the car, when [control] allows touch
+ *   POST /input                     an [Input] from the car (a one- or two-finger [Gesture], or
+ *                                   Back/Home/Recents), when [control] allows touch
  *
  * POST /input must carry the session token from /status in X-Car-Mirror-Token. Only the
  * viewer page can read /status (no CORS headers are ever sent), and the custom header makes
@@ -251,8 +252,11 @@ class MirrorServer(
         val phone = control ?: return refuse(404, "Touch control is not available")
         if (hub.pausedReason != null) return refuse(409, "Mirroring is paused")
         if (!phone.touchAvailable) return refuse(409, "Touch control is off on the phone")
-        val gesture = Gesture.parse(String(body, Charsets.UTF_8)) ?: return refuse(400, "Malformed gesture")
-        if (!phone.perform(gesture)) return refuse(409, "The phone could not perform that")
+        val done = when (val input = Input.parse(String(body, Charsets.UTF_8)) ?: return refuse(400, "Malformed input")) {
+            is Gesture -> phone.perform(input)
+            is GlobalAction -> phone.perform(input)
+        }
+        if (!done) return refuse(409, "The phone could not perform that")
         respond(out, 204, null, EMPTY, keepAlive)
         return keepAlive
     }

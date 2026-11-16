@@ -37,9 +37,14 @@ class MirrorServerTest {
     /** Stands in for the phone's touch service. */
     private class FakePhone(var touchOn: Boolean = true, var succeeds: Boolean = true) : MirrorControl {
         val performed = mutableListOf<Gesture>()
+        val pressed = mutableListOf<GlobalAction>()
         override val touchAvailable get() = touchOn
         override fun perform(gesture: Gesture): Boolean {
             performed += gesture
+            return succeeds
+        }
+        override fun perform(action: GlobalAction): Boolean {
+            pressed += action
             return succeeds
         }
     }
@@ -489,6 +494,36 @@ class MirrorServerTest {
         assertEquals(204, post(port, "d=60&p=0.5,0.25", token).status)
         assertEquals(0.25f, phone.performed.single().points.single().y)
         assertTrue(MirrorServer(hub).token != token, "tokens must differ between sessions")
+    }
+
+    @Test
+    fun `back, home and recents reach the phone, with the same token rule`() {
+        val phone = FakePhone()
+        val port = startServer(control = phone)
+        val token = server!!.token
+        assertEquals(403, post(port, "a=home", token = null).status)
+        assertTrue(phone.pressed.isEmpty(), "pressed a button without the token")
+
+        assertEquals(204, post(port, "a=back", token).status)
+        assertEquals(204, post(port, "a=home", token).status)
+        assertEquals(204, post(port, "a=recents", token).status)
+        assertEquals(listOf(GlobalAction.BACK, GlobalAction.HOME, GlobalAction.RECENTS), phone.pressed)
+        assertEquals(400, post(port, "a=power", token).status, "only the three navigation buttons")
+
+        hub.setPaused("privacy")
+        assertEquals(409, post(port, "a=home", token).status, "no buttons while paused")
+        assertEquals(3, phone.pressed.size)
+    }
+
+    @Test
+    fun `a two-finger pinch reaches the phone as two strokes`() {
+        val phone = FakePhone()
+        val port = startServer(control = phone)
+        assertEquals(204, post(port, "d=400&p=0.45,0.5;0.3,0.5|0.55,0.5;0.7,0.5", server!!.token).status)
+        val pinch = phone.performed.single()
+        assertEquals(2, pinch.strokes.size)
+        assertEquals(0.3f, pinch.strokes[0].last().x)
+        assertEquals(0.7f, pinch.strokes[1].last().x)
     }
 
     @Test

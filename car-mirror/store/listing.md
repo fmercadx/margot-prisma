@@ -19,7 +19,7 @@ Built for cars with a full web browser on their center screen, such as Tesla.
 
 WHAT YOU CAN DO
 • Use your phone's apps on the big screen: maps, music, messages and more
-• Tap, swipe and long-press on the car's screen to control your phone (optional touch control)
+• Tap, swipe, pinch to zoom, and use Back, Home and Recent apps right on the car's screen (optional touch control)
 • Watch videos while parked: black bars are trimmed automatically, so videos fill the screen
 • Pause with one tap to blank the car's screen before opening something private
 • Dim your phone while mirroring, so it isn't glowing next to the car's screen

@@ -27,6 +27,7 @@ import io.github.fmercadx.carmirror.core.AutoQuality
 import io.github.fmercadx.carmirror.core.CarUrls
 import io.github.fmercadx.carmirror.core.FrameHub
 import io.github.fmercadx.carmirror.core.Gesture
+import io.github.fmercadx.carmirror.core.GlobalAction
 import io.github.fmercadx.carmirror.core.HeatGuard
 import io.github.fmercadx.carmirror.core.MirrorControl
 import io.github.fmercadx.carmirror.core.MirrorServer
@@ -105,13 +106,19 @@ class MirrorService : VpnService() {
         }
     }
 
-    /** Taps from the car, performed by [TouchService] when the user has turned it on. */
+    /** Taps, gestures and button presses from the car, performed by [TouchService] when the user has turned it on. */
     private val touch = object : MirrorControl {
         override val touchAvailable: Boolean get() = TouchService.instance != null
 
         override fun perform(gesture: Gesture): Boolean {
             val service = TouchService.instance ?: return false
             service.perform(gesture)
+            return true
+        }
+
+        override fun perform(action: GlobalAction): Boolean {
+            val service = TouchService.instance ?: return false
+            service.perform(action)
             return true
         }
     }

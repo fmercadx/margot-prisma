@@ -25,12 +25,33 @@ class ControlsTest {
     }
 
     @Test
+    fun `parses a two-finger gesture as two strokes`() {
+        val pinch = assertNotNull(Gesture.parse("d=400&p=0.45,0.5;0.3,0.5|0.55,0.5;0.7,0.5"))
+        assertEquals(2, pinch.strokes.size)
+        assertEquals(0.45f, pinch.strokes[0].first().x)
+        assertEquals(0.7f, pinch.strokes[1].last().x)
+        assertEquals(pinch.strokes[0], pinch.points, "points is the first finger")
+    }
+
+    @Test
+    fun `input is a button press or a gesture`() {
+        assertEquals(GlobalAction.BACK, Input.parse("a=back"))
+        assertEquals(GlobalAction.HOME, Input.parse("a=home\n"))
+        assertEquals(GlobalAction.RECENTS, Input.parse("a=recents"))
+        assertNull(Input.parse("a=power"))
+        assertNull(Input.parse("a="))
+        assertTrue(Input.parse("d=60&p=0.5,0.5") is Gesture)
+    }
+
+    @Test
     fun `rejects anything malformed or out of range`() {
         for (body in listOf(
             "", "d=60", "p=0.5,0.5", "d=0&p=0.5,0.5", "d=10001&p=0.5,0.5", "d=x&p=0.5,0.5",
             "d=60&p=", "d=60&p=1.5,0.5", "d=60&p=0.5,-0.1", "d=60&p=0.5", "d=60&p=0.5,0.5,0.5",
             "d=60&p=NaN,0.5", "d=60&p=a,b",
             "d=60&p=" + List(Gesture.MAX_POINTS + 1) { "0.5,0.5" }.joinToString(";"),
+            "d=60&p=0.5,0.5|", "d=60&p=|0.5,0.5", "d=60&p=0.5,0.5|0.5,2",
+            "d=60&p=" + List(Gesture.MAX_STROKES + 1) { "0.5,0.5" }.joinToString("|"),
         )) assertNull(Gesture.parse(body), body.take(40))
     }
 

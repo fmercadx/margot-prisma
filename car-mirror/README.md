@@ -35,7 +35,8 @@ app can skip that.
 
 ## Features
 
-- **Touch control.** Tap, swipe and long-press on the car's screen to control the phone.
+- **Touch control.** Tap, swipe, long-press and pinch with two fingers on the car's screen to
+  control the phone, with the phone's Back, Home and Recent apps buttons beside the picture.
   Turn it on from the app (it opens Android's Accessibility settings). It only performs
   taps: it is set up so it can't read the screen or what you type.
 - **Pause.** **Pause** in the app or the notification blanks the car's screen until you

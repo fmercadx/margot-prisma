@@ -23,7 +23,7 @@ import kotlin.math.sin
  * Args: [port] [portrait|landscape] [--control <dir>]
  *
  * With --control, the demo also behaves like a phone with touch control on: every gesture
- * the page sends is appended to <dir>/gestures.log, and writing "privacy" or "driving" to
+ * and button press the page sends is appended to <dir>/gestures.log, and writing "privacy" or "driving" to
  * <dir>/pause pauses the picture (an empty file resumes it). Writing "bars" to <dir>/scene
  * blacks out the top and bottom fifth of the picture, like a video played with black bars,
  * and writing "off" to <dir>/touch turns touch control off.
@@ -56,12 +56,18 @@ fun main(args: Array<String>) {
         object : MirrorControl {
             override val touchAvailable get() = touchOn
             override fun perform(gesture: Gesture): Boolean {
-                val first = gesture.points.first()
-                val last = gesture.points.last()
-                synchronized(log) {
-                    log.appendText("d=${gesture.durationMs} n=${gesture.points.size} " +
-                        "first=${first.x},${first.y} last=${last.x},${last.y}\n")
+                val line = StringBuilder("d=${gesture.durationMs} n=${gesture.points.size} strokes=${gesture.strokes.size}")
+                gesture.strokes.forEachIndexed { i, stroke ->
+                    val suffix = if (i == 0) "" else "${i + 1}"
+                    line.append(" first$suffix=${stroke.first().x},${stroke.first().y}")
+                    line.append(" last$suffix=${stroke.last().x},${stroke.last().y}")
                 }
+                synchronized(log) { log.appendText("$line\n") }
+                return true
+            }
+
+            override fun perform(action: GlobalAction): Boolean {
+                synchronized(log) { log.appendText("action=${action.wire}\n") }
                 return true
             }
         }

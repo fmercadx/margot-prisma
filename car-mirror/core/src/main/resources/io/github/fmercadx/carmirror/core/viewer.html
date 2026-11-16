@@ -28,6 +28,20 @@
     background: rgba(255, 255, 255, .14); color: #e6e6e6; opacity: .45;
     font: 700 24px/46px system-ui, sans-serif; text-align: center; cursor: pointer;
   }
+  #nav {
+    position: fixed; right: 16px; top: 50%; transform: translateY(-50%); display: none;
+    flex-direction: column; gap: 18px; transition: opacity .4s;
+  }
+  #nav.idle { opacity: .3; }
+  #nav button {
+    width: 72px; height: 72px; padding: 0; border: 0; border-radius: 36px; cursor: pointer;
+    background: rgba(255, 255, 255, .16); color: #eee;
+  }
+  #nav button:active { background: rgba(255, 255, 255, .42); }
+  #nav svg {
+    display: block; width: 30px; height: 30px; margin: auto; fill: none; stroke: currentColor;
+    stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+  }
   .touch {
     position: fixed; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%;
     background: rgba(255, 255, 255, .45); pointer-events: none;
@@ -42,6 +56,11 @@
 <div id="toast"></div>
 <div id="info"></div>
 <div id="menu" role="button" aria-label="Show details and go full screen">⋯</div>
+<div id="nav" aria-label="Phone buttons">
+  <button data-a="back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></svg></button>
+  <button data-a="home" aria-label="Home"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></svg></button>
+  <button data-a="recents" aria-label="Recent apps"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+</div>
 <script>
 (function () {
   'use strict';
@@ -53,6 +72,7 @@
   var toast = document.getElementById('toast');
   var info = document.getElementById('info');
   var menu = document.getElementById('menu');
+  var nav = document.getElementById('nav');
 
   var bitmap = null;        // last decoded frame, kept for redraws on resize
   var drawn = null;         // where the last frame went: { rect (screen, CSS px), src (frame px), fw, fh }
@@ -202,6 +222,7 @@
     fetch('status', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (s) {
       phone.token = s.token || '';
       phone.touch = !!s.touch;
+      updateNav();
       phone.quality = s.jpegQuality || 0;
       updateInfo();
     }).catch(function () {});
@@ -212,6 +233,7 @@
   function setPaused(reason) {
     if (reason === paused) return;
     paused = reason;
+    updateNav();
     if (paused) {
       // Drop the last picture: whatever the phone is hiding must not stay on the car's screen.
       if (bitmap && bitmap.close) bitmap.close();
@@ -402,9 +424,9 @@
     toggleDetails();
   });
 
-  // ---- Touch: taps and swipes on the picture are performed on the phone ----
+  // ---- Touch: taps, swipes and two-finger gestures on the picture are performed on the phone ----
 
-  var stroke = null;
+  var session = null; // the fingers down right now: { start, order: [pointerId], strokes: { id: { points, last, up } } }
 
   // Where (clientX, clientY) falls on the phone's screen, as fractions of the whole screen
   // (trimmed bars included). Null when outside the picture, unless clamp is set: a swipe
@@ -432,28 +454,42 @@
     setTimeout(function () { dot.remove(); }, 400);
   }
 
-  // A finished stroke as the phone expects it: `d=<ms>&p=x,y;x,y;...`. Barely moving is a tap
-  // (or a long press if held); anything else is a swipe along the sampled points.
-  function gestureBody(points, ms) {
+  // How far a finger strayed from where it landed, in screen pixels.
+  function travel(points) {
     var pxX = drawn.fw * drawn.rect.w / drawn.src.w, pxY = drawn.fh * drawn.rect.h / drawn.src.h;
     var x0 = points[0][0], y0 = points[0][1], far = 0;
     for (var i = 1; i < points.length; i++) {
       far = Math.max(far, Math.hypot((points[i][0] - x0) * pxX, (points[i][1] - y0) * pxY));
     }
-    var list, duration;
-    if (far < 12) {
-      list = [points[0]];
-      duration = ms < 450 ? 60 : Math.min(ms, 1500);
-    } else {
-      var step = Math.ceil(points.length / 60);
-      list = points.filter(function (p, i) { return i % step === 0 || i === points.length - 1; });
-      duration = Math.max(100, Math.min(ms, 3000));
-    }
-    return 'd=' + Math.round(duration) + '&p=' +
-      list.map(function (p) { return p[0].toFixed(4) + ',' + p[1].toFixed(4); }).join(';');
+    return far;
   }
 
-  function sendGesture(body) {
+  function sample(points, most) {
+    var step = Math.ceil(points.length / most);
+    return points.filter(function (p, i) { return i % step === 0 || i === points.length - 1; });
+  }
+
+  function path(points) {
+    return points.map(function (p) { return p[0].toFixed(4) + ',' + p[1].toFixed(4); }).join(';');
+  }
+
+  // Finished fingers as the phone expects them: `d=<ms>&p=x,y;x,y;...`, a second finger's
+  // path after a `|`. One finger barely moving is a tap (or a long press if held); anything
+  // else is a swipe, or with two fingers a pinch or two-finger scroll, along sampled points.
+  function gestureBody(strokes, ms) {
+    var still = strokes.every(function (points) { return travel(points) < 12; });
+    var duration, paths;
+    if (still) {
+      duration = strokes.length === 1 && ms >= 450 ? Math.min(ms, 1500) : 60;
+      paths = strokes.map(function (points) { return [points[0]]; });
+    } else {
+      duration = Math.max(100, Math.min(ms, 3000));
+      paths = strokes.map(function (points) { return sample(points, strokes.length === 1 ? 60 : 32); });
+    }
+    return 'd=' + Math.round(duration) + '&p=' + paths.map(path).join('|');
+  }
+
+  function sendInput(body) {
     fetch('input', {
       method: 'POST',
       cache: 'no-store',
@@ -464,10 +500,45 @@
     }).catch(function () {});
   }
 
+  // ---- Back, Home and Recent apps: shown while touch control works, dimmed when idle ----
+
+  var navIdle = 0;
+
+  function updateNav() {
+    nav.style.display = phone.touch && phone.token && !paused && mode !== 'mjpeg' ? 'flex' : 'none';
+  }
+
+  function wakeNav() {
+    nav.classList.remove('idle');
+    clearTimeout(navIdle);
+    navIdle = setTimeout(function () { nav.classList.add('idle'); }, 5000);
+  }
+
+  nav.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+  nav.addEventListener('click', function (e) {
+    var button = e.target.closest('button');
+    if (!button) return;
+    e.stopPropagation();
+    wakeNav();
+    sendInput('a=' + button.getAttribute('data-a'));
+  });
+
   var askedFullScreen = false;
 
   canvas.addEventListener('pointerdown', function (e) {
     if (!askedFullScreen) { askedFullScreen = true; goFullScreen(); } // needs a tap; the first one will do
+    wakeNav();
+    if (session) {                                  // a second finger joining the first
+      if (session.order.length >= 2 || paused) return;
+      var q = onPicture(e.clientX, e.clientY, true);
+      if (!q) return;
+      e.preventDefault();
+      session.strokes[e.pointerId] = { points: [q], last: e.timeStamp, up: false };
+      session.order.push(e.pointerId);
+      if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+      ripple(e.clientX, e.clientY);
+      return;
+    }
     var p = onPicture(e.clientX, e.clientY, false);
     if (!p) { toggleDetails(); return; }           // the black area around the picture
     if (paused) return;
@@ -476,24 +547,31 @@
       return;
     }
     e.preventDefault();
-    stroke = { id: e.pointerId, points: [p], start: e.timeStamp, last: e.timeStamp };
+    session = { start: e.timeStamp, order: [e.pointerId], strokes: {} };
+    session.strokes[e.pointerId] = { points: [p], last: e.timeStamp, up: false };
     if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
     ripple(e.clientX, e.clientY);
   });
 
   canvas.addEventListener('pointermove', function (e) {
-    if (!stroke || e.pointerId !== stroke.id || e.timeStamp - stroke.last < 16) return;
-    stroke.points.push(onPicture(e.clientX, e.clientY, true));
-    stroke.last = e.timeStamp;
+    var s = session && session.strokes[e.pointerId];
+    if (!s || s.up || e.timeStamp - s.last < 16) return;
+    s.points.push(onPicture(e.clientX, e.clientY, true));
+    s.last = e.timeStamp;
   });
 
   function endStroke(e, cancelled) {
-    if (!stroke || e.pointerId !== stroke.id) return;
-    var s = stroke;
-    stroke = null;
-    if (cancelled || !drawn) return;
+    var s = session && session.strokes[e.pointerId];
+    if (!s || s.up) return;
+    if (cancelled || !drawn) { session = null; return; }
     s.points.push(onPicture(e.clientX, e.clientY, true));
-    sendGesture(gestureBody(s.points, e.timeStamp - s.start));
+    s.up = true;
+    var done = session.order.every(function (id) { return session.strokes[id].up; });
+    if (!done) return;                             // wait for the other finger
+    var finished = session;
+    session = null;
+    sendInput(gestureBody(finished.order.map(function (id) { return finished.strokes[id].points; }),
+      e.timeStamp - finished.start));
   }
 
   canvas.addEventListener('pointerup', function (e) { endStroke(e, false); });

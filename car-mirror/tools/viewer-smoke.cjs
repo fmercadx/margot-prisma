@@ -79,11 +79,16 @@ async function nextGesture(countBefore, what, timeout = 5000) {
   }
 }
 
-// "d=60 n=1 first=0.5,0.5 last=0.5,0.5" -> { d, n, first: [x, y], last: [x, y] }
+// "d=60 n=1 strokes=1 first=0.5,0.5 last=0.5,0.5" -> { d, n, strokes, first: [x, y], last: [x, y] },
+// with first2/last2 for a second finger; "action=back" -> { action: 'back' }.
 function parseGesture(line) {
   const f = Object.fromEntries(line.split(' ').map((kv) => kv.split('=')));
-  const pt = (s) => s.split(',').map(Number);
-  return { d: Number(f.d), n: Number(f.n), first: pt(f.first), last: pt(f.last) };
+  if (f.action) return { action: f.action };
+  const pt = (s) => (s ? s.split(',').map(Number) : null);
+  return {
+    d: Number(f.d), n: Number(f.n), strokes: Number(f.strokes),
+    first: pt(f.first), last: pt(f.last), first2: pt(f.first2), last2: pt(f.last2),
+  };
 }
 
 function setPhonePause(reason) {
@@ -227,9 +232,43 @@ async function main() {
     check(await page.locator('#info').isVisible(), 'a tap beside the picture shows details instead');
     await page.click('#menu');
 
+    // The phone's own Back, Home and Recent apps buttons, beside the picture.
+    check(await page.locator('#nav').isVisible(), 'Back, Home and Recents buttons show while touch control is on');
+    for (const action of ['back', 'home', 'recents']) {
+      count = gestures().length;
+      await page.click(`#nav button[data-a="${action}"]`);
+      g = await nextGesture(count, `the ${action} button`);
+      check(g.action === action, `the ${action} button presses ${action} on the phone`);
+    }
+
+    // Two fingers spreading apart: a pinch to zoom, performed as two strokes at once.
+    const touchPage = await browser.newPage({ viewport: { width: 1920, height: 1200 }, hasTouch: true });
+    await touchPage.goto(base);
+    await until(touchPage, messageHidden, 'the first frame on the touch screen');
+    await until(touchPage, () => document.getElementById('nav').style.display === 'flex', 'touch to be on for the touch screen');
+    const touchCdp = await touchPage.context().newCDPSession(touchPage);
+    const fingers = (spread) => [
+      { x: px(0.5 - spread), y: py(0.5), id: 1 },
+      { x: px(0.5 + spread), y: py(0.5), id: 2 },
+    ];
+    count = gestures().length;
+    await touchCdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: fingers(0.05) });
+    for (let i = 1; i <= 10; i++) {
+      await touchCdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: fingers(0.05 + 0.015 * i) });
+      await sleep(25);
+    }
+    await touchCdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    g = await nextGesture(count, 'a pinch');
+    const spreadBefore = g.first2 && g.first2[0] - g.first[0];
+    const spreadAfter = g.last2 && g.last2[0] - g.last[0];
+    check(g.strokes === 2 && spreadAfter > spreadBefore + 0.2,
+      `two fingers spreading are performed as a pinch (${g.strokes} strokes, spread ${spreadBefore && spreadBefore.toFixed(2)} → ${spreadAfter && spreadAfter.toFixed(2)})`);
+    await touchPage.close();
+
     // Paused on the phone: the picture is dropped, not just covered, and taps stop.
     setPhonePause('privacy');
     await until(page, messageIncludes, 'the privacy pause', 10000, 'Paused on the phone');
+    check(!(await page.locator('#nav').isVisible()), 'paused: the phone buttons are hidden');
     check(isBlack(await pixel(page, 960, 600)) && isBlack(await pixel(page, 960, 100)), 'paused: the last picture is gone from the car');
     if (shots) await page.screenshot({ path: path.join(shots, 'viewer-paused.png') });
     count = gestures().length;
@@ -279,6 +318,7 @@ async function main() {
     await until(page, () => getComputedStyle(document.getElementById('toast')).display !== 'none', 'the touch hint');
     const hint = await page.locator('#toast').innerText();
     check(/Touch control is off/.test(hint), `tapping with touch control off explains it [${hint}]`);
+    check(!(await page.locator('#nav').isVisible()), 'touch control off: the phone buttons are hidden');
     fs.writeFileSync(path.join(control, 'touch'), 'on');
   }
 
