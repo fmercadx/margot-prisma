@@ -7,11 +7,15 @@ on:
     paths:
       - 'takeoff/**'
       - '.github/workflows/takeoff.yml'
+      - 'package.json'
+      - 'package-lock.json'
   push:
     branches: [main]
     paths:
       - 'takeoff/**'
       - '.github/workflows/takeoff.yml'
+      - 'package.json'
+      - 'package-lock.json'
   workflow_dispatch:
 
 permissions:
@@ -58,3 +62,34 @@ jobs:
             echo "$leaked"
             exit 1
           fi
+
+  # The click screen runs the same modules compiled to WebAssembly, behind a
+  # PDF.js canvas. None of the tests above touch that: this builds the page the
+  # way the Pages deploy does and drives it in Chromium.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: takeoff/requirements.txt
+
+      - run: npm ci
+        working-directory: .
+
+      - run: pip install -r takeoff/requirements.txt playwright && python -m playwright install --with-deps chromium
+        working-directory: .
+
+      - run: python3 takeoff/browser/build.py --out dist/takeoff
+        working-directory: .
+
+      - run: python3 takeoff/browser/smoke.py --dist dist/takeoff
+        working-directory: .

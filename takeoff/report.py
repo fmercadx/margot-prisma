@@ -9,12 +9,14 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 
-import pypdfium2 as pdfium
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from PIL import Image, ImageDraw, ImageFont
 
 from match import MATCH, REVIEW, Hit
+
+# The markup renders with pypdfium2 and Pillow, which the browser build has no
+# use for (the page draws its own boxes), so they load only when a markup is
+# drawn. The spreadsheet needs openpyxl alone.
 
 DRAFT = "DRAFT - CANDIDATE COUNTS - VERIFY EVERY ITEM BEFORE BIDDING"
 REVIEW_COLOUR = (235, 120, 0)
@@ -24,6 +26,7 @@ _ITEM_COLOURS = [(0, 150, 70), (30, 90, 220), (150, 40, 170), (0, 140, 150),
 
 
 def _font(size: int):
+    from PIL import ImageFont
     try:
         return ImageFont.truetype("DejaVuSans-Bold.ttf", size)
     except OSError:
@@ -32,7 +35,7 @@ def _font(size: int):
 
 def markup(pdf_path: str, page_number: int, hits: list[Hit], scale: float = 1.5,
            crop: tuple[float, float, float, float] | None = None,
-           items: list[str] | None = None) -> Image.Image:
+           items: list[str] | None = None):
     """Render one page with every hit boxed and numbered.
 
     Each item's matches get their own colour, keyed under the banner; orange
@@ -41,6 +44,9 @@ def markup(pdf_path: str, page_number: int, hits: list[Hit], scale: float = 1.5,
     (x0, top, x1, bottom in points) renders part of the page, for zooming.
     `items` fixes the colour order so it stays the same across pages.
     """
+    import pypdfium2 as pdfium
+    from PIL import ImageDraw
+
     items = items or list(dict.fromkeys(h.item for h in hits))
     colours = {name: _ITEM_COLOURS[i % len(_ITEM_COLOURS)] for i, name in enumerate(items)}
     pdf = pdfium.PdfDocument(pdf_path)

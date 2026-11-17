@@ -232,7 +232,9 @@ def sample(segs: np.ndarray, step: float = STEP, with_index: bool = False):
     if len(segs) == 0:
         return (np.zeros((0, 2)), np.zeros(0, np.int64)) if with_index else np.zeros((0, 2))
     d = segs[:, 2:] - segs[:, :2]
-    n = np.maximum(1, np.ceil(np.hypot(d[:, 0], d[:, 1]) / step).astype(np.int64))
+    # np.intp, not int64: in the browser numpy is 32-bit, and np.repeat
+    # refuses counts it would have to narrow.
+    n = np.maximum(1, np.ceil(np.hypot(d[:, 0], d[:, 1]) / step).astype(np.intp))
     reps = n + 1
     seg_idx = np.repeat(np.arange(len(segs)), reps)
     starts = np.repeat(np.cumsum(reps) - reps, reps)
@@ -748,7 +750,7 @@ def flag_marks(hits: list[Hit], min_share: float = 0.15, min_cells: int = 3) -> 
 # the standard modifiers, and mounting heights. Anything else short near a
 # symbol is as likely to be a letter inside a neighbouring symbol (the J of a
 # junction box, the F of a fire alarm device) or a room name.
-_MODIFIERS = {"GFI", "GFCI", "WP", "USB", "TR", "IG", "C", "SR", "E", "ER", "EX", "R", "SP", "DED"}
+_MODIFIERS = {"GFI", "GFCI", "WP", "USB", "TR", "IG", "C", "SR", "E", "ER", "EX", "SP", "DED"}
 _HEIGHT_RE = re.compile(r'^(?:\+?\d{1,3}(?:\.\d)?(?:"|”|IN)(?:AFF)?|\d{1,3}"?AFF|AFF|A\.F\.F\.?)$')
 _TAG_RE = re.compile("^(?:" + "|".join(sorted(_MODIFIERS, key=len, reverse=True)) + ")$|" + _HEIGHT_RE.pattern)
 _NOT_TAGS: set[str] = set()

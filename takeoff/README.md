@@ -17,6 +17,31 @@ page's top-left corner, on any stroke of one example symbol. `PAGE:X0,TOP,X1,BOT
 gives the box by hand instead. The output is `out/takeoff.xlsx` (totals, counts
 per sheet, every location) and `out/markup.pdf` (each hit boxed and numbered).
 
+## The click screen
+
+`browser/` is the same tool as a web page, built into `dist/takeoff` and served
+by GitHub Pages at `fmercadx.github.io/margot-prisma/takeoff/`:
+
+1. Open a drawing set. Pick a sheet, type a name, and click one symbol (or drag
+   a box around it). The dashed box shows what was taken as the example.
+2. Add one example of each kind to count, then press **Count** (this sheet or
+   all sheets).
+3. Each kind's copies are boxed in its own colour; orange needs a look. Click
+   any box to count or drop it. **Next to check** walks the orange ones.
+4. Download the spreadsheet, with your calls applied.
+
+It runs entirely in the browser: PDF.js draws the sheets, and the counting runs
+these same Python modules in Pyodide (CPython compiled to WebAssembly) in a web
+worker. Every file is served from the page's own origin, so the drawing never
+leaves the visitor's computer, which matters for confidential bid documents.
+`browser/smoke.py` asserts it in Chromium, along with the counts on a
+synthetic set.
+
+```bash
+npm ci && npm run build:takeoff          # from the repo root
+python3 takeoff/browser/smoke.py --dist dist/takeoff
+```
+
 ## Never commit a drawing set
 
 Construction drawings are the copyrighted work of the architects and engineers

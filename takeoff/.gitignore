@@ -14,3 +14,6 @@ out/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Wheels downloaded by browser/build.py, reused between builds.
+browser/.cache/

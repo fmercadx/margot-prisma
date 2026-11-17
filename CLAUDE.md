@@ -11,10 +11,13 @@ Five unrelated products share this repository:
 - **`car-mirror/`** — an Android app that mirrors the owner's phone screen to
   their Tesla's browser. Its own Gradle build; ships as an APK on GitHub
   Releases, not on Pages or Railway. Its README explains the design.
-- **`takeoff/`** — a test of counting symbols on CAD-exported electrical
-  drawings from one clicked example. A Python command-line tool; not deployed.
+- **`takeoff/`** — counts symbols on CAD-exported electrical drawings from one
+  clicked example. A Python command-line tool, and a click screen serving
+  `fmercadx.github.io/margot-prisma/takeoff/` that runs the same modules in the
+  browser.
 
-They are independent. `deploy.yml` builds the first two into one `dist/`, and
+They are independent. `deploy.yml` builds the salon site, the analyzer and the
+takeoff page into one `dist/`, and
 `credit-analyzer.yml`, `shepherds-whisper.yml`, `car-mirror.yml` and
 `takeoff.yml` are path-filtered so no product's changes run another's tests. `car-mirror.yml`
 alone also runs on branch pushes, because each build publishes a release; its
@@ -142,6 +145,12 @@ cd shepherds-whisper && npm ci && npm run build && npm run smoke
 # Takeoff: tests on a synthetic drawing set. Real sets stay outside the repo.
 cd takeoff && python -m pytest test_takeoff.py -q
 
+# Takeoff click screen: build (needs `npm ci`; fetches Pyodide's numpy and
+# cryptography wheels from cdn.jsdelivr.net once, into takeoff/browser/.cache),
+# then drive it in Chromium.
+npm ci && npm run build:takeoff
+python3 takeoff/browser/smoke.py --dist dist/takeoff
+
 # Car mirror: core tests (JDK only), then the viewer page in Chromium.
 # The APK itself cannot build here (dl.google.com is blocked); CI builds it.
 # Maven Central sometimes answers 429 through the proxy: just rerun.
@@ -196,6 +205,12 @@ differs and `build.py --target` picks it:
 
 Anything host-specific belongs behind that seam. If a change to `app.js` needs
 to know where it is running, it is in the wrong file.
+
+**The takeoff page runs numpy as 32-bit WebAssembly.** Its `intp` is 32-bit
+there, so `np.repeat` and friends reject int64 counts that work everywhere on a
+desktop. Use `np.intp` for anything used as a count or index; `smoke.py` is the
+only place that catches it. The page uses PDF.js's legacy build because the
+modern one needs browser features only the newest have.
 
 **`<a download>` does nothing in a web view.** The native shell rewires those
 buttons through the platform's file and share APIs; `smoke_native.py` asserts
