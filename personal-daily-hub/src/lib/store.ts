@@ -15,7 +15,7 @@ import { lastNDays } from './date';
 //     },
 //   }
 
-export type Note = { id: string; text: string; createdAt: number };
+export type Note = { id: string; text: string; createdAt: number; editedAt?: number };
 export type Expense = { id: string; cents: number; label: string; createdAt: number };
 export type Habit = { id: string; label: string; core: boolean };
 
@@ -24,6 +24,7 @@ export type DayLog = {
   habitsDone: string[]; // ids of habits ticked that day
   water: number; // glasses
   energy: number | null; // 1–10, null until logged
+  mood: number | null; // 1–5, null until logged
   expenses: Expense[]; // newest first
 };
 
@@ -31,6 +32,7 @@ export type Settings = {
   waterGoal: number; // glasses a day
   reminderHour: number; // local hour of the daily reminder, 24h
   lockEnabled: boolean; // require fingerprint / face / PIN to open
+  haptics: boolean; // a light tap of feedback on ticks, steps and saves
 };
 
 export type HubState = {
@@ -47,11 +49,14 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   waterGoal: 8,
   reminderHour: 20,
   lockEnabled: false,
+  haptics: true,
 });
 
 export const WATER_MAX = 20;
 export const ENERGY_MIN = 1;
 export const ENERGY_MAX = 10;
+export const MOOD_MIN = 1;
+export const MOOD_MAX = 5;
 export const NOTE_MAX_LENGTH = 500;
 export const HABIT_MAX_LENGTH = 60;
 export const EXPENSE_LABEL_MAX_LENGTH = 40;
@@ -69,6 +74,7 @@ export const EMPTY_DAY: DayLog = Object.freeze({
   habitsDone: [],
   water: 0,
   energy: null,
+  mood: null,
   expenses: [],
 }) as DayLog;
 
@@ -88,6 +94,9 @@ export type Action =
   | { type: 'removeHabit'; date: string; id: string }
   | { type: 'adjustWater'; date: string; delta: number }
   | { type: 'setEnergy'; date: string; value: number }
+  | { type: 'setMood'; date: string; value: number | null }
+  | { type: 'editNote'; date: string; id: string; text: string; now: number }
+  | { type: 'importBackup'; habits: Habit[]; days: Record<string, DayLog> }
   | { type: 'addExpense'; date: string; expense: Expense }
   | { type: 'deleteExpense'; date: string; id: string };
 
@@ -119,11 +128,13 @@ export function reducer(state: HubState, action: Action): HubState {
             ? cur.reminderHour
             : clamp(Math.round(p.reminderHour), REMINDER_HOUR_MIN, REMINDER_HOUR_MAX),
         lockEnabled: p.lockEnabled === undefined ? cur.lockEnabled : p.lockEnabled === true,
+        haptics: p.haptics === undefined ? cur.haptics : p.haptics === true,
       };
       const same =
         next.waterGoal === cur.waterGoal &&
         next.reminderHour === cur.reminderHour &&
-        next.lockEnabled === cur.lockEnabled;
+        next.lockEnabled === cur.lockEnabled &&
+        next.haptics === cur.haptics;
       return same ? state : { ...state, settings: next };
     }
 
@@ -166,6 +177,18 @@ export function reducer(state: HubState, action: Action): HubState {
         ...d,
         notes: [{ ...action.note, text }, ...d.notes],
       }));
+    }
+
+    case 'editNote': {
+      const text = action.text.trim().slice(0, NOTE_MAX_LENGTH);
+      if (!text) return state; // emptying a note is a delete, not an edit
+      return updateDay(state, action.date, (d) => {
+        const i = d.notes.findIndex((n) => n.id === action.id);
+        if (i === -1 || d.notes[i].text === text) return d;
+        const notes = [...d.notes];
+        notes[i] = { ...notes[i], text, editedAt: action.now };
+        return { ...d, notes };
+      });
     }
 
     case 'deleteNote':
@@ -216,6 +239,15 @@ export function reducer(state: HubState, action: Action): HubState {
         return energy === d.energy ? d : { ...d, energy };
       });
 
+    case 'setMood':
+      return updateDay(state, action.date, (d) => {
+        const mood = action.value === null ? null : clamp(Math.round(action.value), MOOD_MIN, MOOD_MAX);
+        return mood === d.mood ? d : { ...d, mood };
+      });
+
+    case 'importBackup':
+      return mergeBackup(state, action.habits, action.days).state;
+
     case 'addExpense': {
       const { cents } = action.expense;
       if (!Number.isInteger(cents) || cents <= 0) return state;
@@ -235,6 +267,87 @@ export function reducer(state: HubState, action: Action): HubState {
     default:
       return state;
   }
+}
+
+export type MergeStats = {
+  daysAdded: number; // dates the phone had nothing for
+  daysMerged: number; // dates both had; the phone's entries are kept
+  notesAdded: number;
+  expensesAdded: number;
+  habitsAdded: number;
+};
+
+const byNewest = <T extends { createdAt: number }>(a: T, b: T) => b.createdAt - a.createdAt;
+
+function unionById<T extends { id: string; createdAt: number }>(mine: T[], theirs: T[]): { list: T[]; added: number } {
+  const have = new Set(mine.map((x) => x.id));
+  const extra = theirs.filter((x) => !have.has(x.id));
+  return extra.length === 0 ? { list: mine, added: 0 } : { list: [...mine, ...extra].sort(byNewest), added: extra.length };
+}
+
+/**
+ * Folds a restored backup into what is on the phone. Nothing on the phone
+ * is ever overwritten or removed: where both have a value, the phone's
+ * wins; notes and expenses are combined by id; habit ticks are combined;
+ * water takes the larger count. Restoring the same file twice changes
+ * nothing the second time. The input must already be sanitized.
+ */
+export function mergeBackup(
+  state: HubState,
+  habits: Habit[],
+  days: Record<string, DayLog>,
+): { state: HubState; stats: MergeStats } {
+  const stats: MergeStats = { daysAdded: 0, daysMerged: 0, notesAdded: 0, expensesAdded: 0, habitsAdded: 0 };
+
+  let nextHabits = state.habits;
+  for (const h of habits) {
+    const custom = nextHabits.filter((x) => !x.core).length;
+    const clash = nextHabits.some((x) => x.id === h.id || x.label.toLowerCase() === h.label.toLowerCase());
+    if (h.core || clash || custom >= CUSTOM_HABITS_MAX) continue;
+    nextHabits = [...nextHabits, { ...h, core: false }];
+    stats.habitsAdded++;
+  }
+
+  let nextDays = state.days;
+  for (const [date, theirs] of Object.entries(days)) {
+    const mine = state.days[date];
+    let merged: DayLog;
+    if (!mine) {
+      merged = theirs;
+      stats.daysAdded++;
+      stats.notesAdded += theirs.notes.length;
+      stats.expensesAdded += theirs.expenses.length;
+    } else {
+      const notes = unionById(mine.notes, theirs.notes);
+      const expenses = unionById(mine.expenses, theirs.expenses);
+      const habitsDone = [...new Set([...mine.habitsDone, ...theirs.habitsDone])];
+      const candidate: DayLog = {
+        notes: notes.list,
+        expenses: expenses.list,
+        habitsDone: habitsDone.length === mine.habitsDone.length ? mine.habitsDone : habitsDone,
+        water: Math.max(mine.water, theirs.water),
+        energy: mine.energy ?? theirs.energy,
+        mood: mine.mood ?? theirs.mood,
+      };
+      const changed =
+        candidate.notes !== mine.notes ||
+        candidate.expenses !== mine.expenses ||
+        candidate.habitsDone !== mine.habitsDone ||
+        candidate.water !== mine.water ||
+        candidate.energy !== mine.energy ||
+        candidate.mood !== mine.mood;
+      if (!changed) continue;
+      merged = candidate;
+      stats.daysMerged++;
+      stats.notesAdded += notes.added;
+      stats.expensesAdded += expenses.added;
+    }
+    if (nextDays === state.days) nextDays = { ...state.days };
+    nextDays[date] = merged;
+  }
+
+  const unchanged = nextHabits === state.habits && nextDays === state.days;
+  return { state: unchanged ? state : { ...state, habits: nextHabits, days: nextDays }, stats };
 }
 
 function insertByTime<T extends { createdAt: number }>(list: T[], item: T): T[] {
@@ -277,6 +390,7 @@ export function hasAnyData(day: DayLog): boolean {
     day.habitsDone.length > 0 ||
     day.water > 0 ||
     day.energy !== null ||
+    day.mood !== null ||
     day.expenses.length > 0
   );
 }

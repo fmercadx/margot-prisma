@@ -6,12 +6,12 @@ A one-screen, dark-mode daily dashboard built with React Native and Expo
 | Module | What it does |
 | --- | --- |
 | Header | Day, date and time, kept current to the minute; greeting; daily-reminder toggle; Settings |
-| Quick Capture | Timestamped notes in a list that scrolls inside its card |
+| Quick Capture | Timestamped notes in a list that scrolls inside its card; tap a note to edit it |
 | Habits | Four core habits with cross-out on completion and day streaks; custom habits (Premium) |
-| Water & Energy | Glass-by-glass progress bar toward your goal; 1–10 energy slider |
+| Water, Energy & Mood | Glass-by-glass progress bar toward your goal; 1–10 energy slider; five-face mood check-in |
 | Expenses | Amount + optional label, running total for the day |
-| Last 7 days | Water, energy and spending charts (Premium) |
-| Settings | Water goal, reminder time, app lock, export your data |
+| Last 7 days | Weekly summary (water, energy, spending, habits done), water / energy / mood / spending charts, and every past day in full (Premium) |
+| Settings | Water goal, reminder time, haptic feedback, app lock, export and restore your data |
 
 Deleting a note, an expense or a custom habit shows **Undo** for five
 seconds.
@@ -28,12 +28,18 @@ What protects what, and why each is there:
 | No network | The release APK has **no INTERNET permission**, so Android itself refuses any connection. The app makes none anyway. | `app.config.js` |
 | No cloud backup | `allowBackup` is off, so the data never lands in a Google backup. Export is the explicit way to take a copy. | `app.json` |
 | Fewest permissions | Push, launcher-badge, storage and photo (`READ_MEDIA_IMAGES`) permissions are stripped; CI fails if one comes back. | `app.json`, APK workflow |
+| Restore treats the file as hostile | A picked backup is size-capped (5 MB), must name this app and a format it knows, and passes the same sanitizers as stored data, with length caps on every string, per-day caps on notes and expenses, real non-future dates only, and at most ten years. Restoring only adds: nothing on the phone is overwritten, and the picker's plain-JSON copy is deleted from the cache once read. | `src/lib/importJson.ts`, `mergeBackup` in `store.ts` |
 
 Limits worth knowing:
 
 - The lock keeps people out of the app on an unlocked phone; it does not
   add to the encryption. The key opens without a fingerprint, so a lock
   change or a new fingerprint can never make the data unreadable.
+- Restore merges rather than replaces. Where the backup and the phone
+  both have a value, the phone's wins; notes and expenses are combined by
+  id; water takes the larger count. Restoring the same file twice adds
+  nothing the second time. The preview says exactly what will be added
+  before anything is written.
 - An exported file is plain JSON, by design (it is your copy, to open
   anywhere). Settings says so. Export files are written to the app's private
   cache and removed at the next launch.
@@ -211,7 +217,7 @@ Before release, replace that one function:
 App.tsx                     providers + status bar
 src/screens/HomeScreen.tsx  composes the modules; owns premium, undo, settings
 src/components/             one file per module, plus Card, IconButton, StepSlider,
-                            SettingsSheet, LockScreen, Toast, PaywallModal
+                            SettingsSheet, LockScreen, Toast, PaywallModal, DaySheet
 src/hooks/useDailyHub.ts    reducer + key, migration, load/save
 src/hooks/useAppLock.ts     when the lock screen shows
 src/hooks/useClock.ts       minute clock and today's date key
@@ -221,6 +227,11 @@ src/lib/dataCodec.ts        AES-256-GCM with a Keystore/Keychain key (.web.ts: p
 src/lib/appLock.ts          biometric prompt, screen-capture protection (.web.ts: off)
 src/lib/exportData.ts       export via the share sheet (.web.ts: download)
 src/lib/exportJson.ts       the export file's contents (pure)
+src/lib/importJson.ts       reading a backup back in, as untrusted input (pure)
+src/lib/importData.ts       the system file chooser (.web.ts: the browser's)
+src/lib/summary.ts          the week at a glance (pure)
+src/lib/haptics.ts          feedback taps, switchable, silent on web
+src/lib/mood.ts             the five mood words
 src/lib/reminders.ts        daily local reminder (reminders.web.ts stubs it)
 src/lib/premium.ts          free limits, paywall copy, the mock purchase
 src/lib/utf8.ts             UTF-8 for the cipher, independent of Hermes

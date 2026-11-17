@@ -6,29 +6,38 @@
 
 export type { LucideIcon } from 'lucide-react-native';
 
+export { default as Annoyed } from 'lucide-react-native/icons/annoyed';
 export { default as ArrowUp } from 'lucide-react-native/icons/arrow-up';
 export { default as Bell } from 'lucide-react-native/icons/bell';
 export { default as BellRing } from 'lucide-react-native/icons/bell-ring';
 export { default as CalendarDays } from 'lucide-react-native/icons/calendar-days';
 export { default as ChartColumnBig } from 'lucide-react-native/icons/chart-column-big';
 export { default as Check } from 'lucide-react-native/icons/check';
+export { default as ChevronLeft } from 'lucide-react-native/icons/chevron-left';
+export { default as ChevronRight } from 'lucide-react-native/icons/chevron-right';
 export { default as CircleCheckBig } from 'lucide-react-native/icons/circle-check-big';
 export { default as Clock } from 'lucide-react-native/icons/clock';
 export { default as Crown } from 'lucide-react-native/icons/crown';
 export { default as Droplets } from 'lucide-react-native/icons/droplets';
 export { default as FileDown } from 'lucide-react-native/icons/file-down';
+export { default as FileUp } from 'lucide-react-native/icons/file-up';
 export { default as Flame } from 'lucide-react-native/icons/flame';
+export { default as Frown } from 'lucide-react-native/icons/frown';
 export { default as GlassWater } from 'lucide-react-native/icons/glass-water';
 export { default as InfinityIcon } from 'lucide-react-native/icons/infinity';
+export { default as Laugh } from 'lucide-react-native/icons/laugh';
 export { default as ListPlus } from 'lucide-react-native/icons/list-plus';
 export { default as Lock } from 'lucide-react-native/icons/lock';
 export { default as LockKeyhole } from 'lucide-react-native/icons/lock-keyhole';
+export { default as Meh } from 'lucide-react-native/icons/meh';
 export { default as Minus } from 'lucide-react-native/icons/minus';
 export { default as NotebookPen } from 'lucide-react-native/icons/notebook-pen';
 export { default as Plus } from 'lucide-react-native/icons/plus';
 export { default as Settings } from 'lucide-react-native/icons/settings';
 export { default as ShieldCheck } from 'lucide-react-native/icons/shield-check';
+export { default as Smile } from 'lucide-react-native/icons/smile';
 export { default as Undo2 } from 'lucide-react-native/icons/undo-2';
+export { default as Vibrate } from 'lucide-react-native/icons/vibrate';
 export { default as Wallet } from 'lucide-react-native/icons/wallet';
 export { default as X } from 'lucide-react-native/icons/x';
 export { default as Zap } from 'lucide-react-native/icons/zap';

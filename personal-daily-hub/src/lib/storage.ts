@@ -18,11 +18,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { isSealed, plainCodec, type Codec } from './codec';
 import { isDateKey } from './date';
+import { MAX_EXPENSE_CENTS } from './money';
 import {
   CORE_HABITS,
+  CUSTOM_HABITS_MAX,
   DEFAULT_SETTINGS,
   ENERGY_MAX,
   ENERGY_MIN,
+  EXPENSE_LABEL_MAX_LENGTH,
+  HABIT_MAX_LENGTH,
+  MOOD_MAX,
+  MOOD_MIN,
+  NOTE_MAX_LENGTH,
   REMINDER_HOUR_MAX,
   REMINDER_HOUR_MIN,
   WATER_GOAL_MAX,
@@ -43,37 +50,71 @@ export const dayStorageKey = (date: string) => `${DAY_PREFIX}${date}`;
 const quarantineKey = (key: string) => `${PREFIX}corrupt:${Date.now()}:${key}`;
 
 // ---- validation -----------------------------------------------------------
+//
+// The same checks guard two doors: values read back from storage, and a
+// backup file someone picks to restore. The second is outside input, so
+// every string has a length cap, every list a size cap, and anything that
+// does not fit is dropped rather than repaired into something plausible.
+
+/** Longest id accepted; the app's own are about 25 characters. */
+const ID_MAX_LENGTH = 64;
+/** Per-day ceilings, far above real use, so a hostile file cannot balloon memory. */
+export const DAY_ITEMS_MAX = 1000;
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const isId = (v: unknown): v is string => isStr(v) && v.length > 0 && v.length <= ID_MAX_LENGTH;
+const isTime = (v: unknown): v is number => isNum(v) && v > 0 && v < 8.64e15; // a valid Date
 
 function sanitizeNote(v: unknown): Note | null {
-  if (!isObj(v) || !isStr(v.id) || !isStr(v.text) || !isNum(v.createdAt)) return null;
-  return { id: v.id, text: v.text, createdAt: v.createdAt };
+  if (!isObj(v) || !isId(v.id) || !isStr(v.text) || !isTime(v.createdAt)) return null;
+  const text = v.text.slice(0, NOTE_MAX_LENGTH);
+  if (!text.trim()) return null;
+  const note: Note = { id: v.id, text, createdAt: v.createdAt };
+  if (isTime(v.editedAt)) note.editedAt = v.editedAt;
+  return note;
 }
 
 function sanitizeExpense(v: unknown): Expense | null {
-  if (!isObj(v) || !isStr(v.id) || !isNum(v.createdAt)) return null;
-  if (!Number.isInteger(v.cents) || (v.cents as number) <= 0) return null;
-  return { id: v.id, cents: v.cents as number, label: isStr(v.label) ? v.label : '', createdAt: v.createdAt };
+  if (!isObj(v) || !isId(v.id) || !isTime(v.createdAt)) return null;
+  if (!Number.isInteger(v.cents) || (v.cents as number) <= 0 || (v.cents as number) > MAX_EXPENSE_CENTS) return null;
+  const label = isStr(v.label) ? v.label.slice(0, EXPENSE_LABEL_MAX_LENGTH) : '';
+  return { id: v.id, cents: v.cents as number, label, createdAt: v.createdAt };
 }
 
-function list<T>(v: unknown, each: (x: unknown) => T | null): T[] {
-  return Array.isArray(v) ? v.map(each).filter((x): x is T => x !== null) : [];
+function list<T>(v: unknown, each: (x: unknown) => T | null, max = DAY_ITEMS_MAX): T[] {
+  if (!Array.isArray(v)) return [];
+  const out: T[] = [];
+  const seen = new Set<string>();
+  for (const x of v.slice(0, max)) {
+    const item = each(x);
+    if (item === null) continue;
+    const id = (item as { id?: unknown }).id;
+    if (typeof id === 'string') {
+      if (seen.has(id)) continue; // one entry per id
+      seen.add(id);
+    }
+    out.push(item);
+  }
+  return out;
 }
+
+const inRange = (v: unknown, lo: number, hi: number): number | null =>
+  isNum(v) && v >= lo && v <= hi ? Math.round(v) : null;
 
 export function sanitizeDay(v: unknown): DayLog {
   const o = isObj(v) ? v : {};
   const water = isNum(o.water) ? Math.min(WATER_MAX, Math.max(0, Math.round(o.water))) : 0;
-  const energy =
-    isNum(o.energy) && o.energy >= ENERGY_MIN && o.energy <= ENERGY_MAX ? Math.round(o.energy) : null;
   return {
     notes: list(o.notes, sanitizeNote),
-    habitsDone: Array.isArray(o.habitsDone) ? [...new Set(o.habitsDone.filter(isStr))] : [],
+    habitsDone: Array.isArray(o.habitsDone)
+      ? [...new Set(o.habitsDone.slice(0, CUSTOM_HABITS_MAX + CORE_HABITS.length).filter(isId))]
+      : [],
     water,
-    energy,
+    energy: inRange(o.energy, ENERGY_MIN, ENERGY_MAX),
+    mood: inRange(o.mood, MOOD_MIN, MOOD_MAX),
     expenses: list(o.expenses, sanitizeExpense),
   };
 }
@@ -86,16 +127,22 @@ export function sanitizeSettings(v: unknown): Settings {
     waterGoal: int(o.waterGoal, WATER_GOAL_MIN, WATER_GOAL_MAX, DEFAULT_SETTINGS.waterGoal),
     reminderHour: int(o.reminderHour, REMINDER_HOUR_MIN, REMINDER_HOUR_MAX, DEFAULT_SETTINGS.reminderHour),
     lockEnabled: o.lockEnabled === true,
+    haptics: o.haptics !== false, // on unless switched off
   };
 }
 
 /** Custom habits from storage, with the four core habits always present. */
 export function sanitizeHabits(v: unknown): Habit[] {
-  const custom = list(v, (h) =>
-    isObj(h) && isStr(h.id) && isStr(h.label) && h.core !== true && h.label.trim()
-      ? { id: h.id, label: h.label, core: false }
-      : null,
-  ).filter((h) => !CORE_HABITS.some((c) => c.id === h.id));
+  const custom = list(
+    v,
+    (h) =>
+      isObj(h) && isId(h.id) && isStr(h.label) && h.core !== true && h.label.trim()
+        ? { id: h.id, label: h.label.trim().slice(0, HABIT_MAX_LENGTH), core: false }
+        : null,
+    CUSTOM_HABITS_MAX * 2,
+  )
+    .filter((h) => !CORE_HABITS.some((c) => c.id === h.id))
+    .slice(0, CUSTOM_HABITS_MAX);
   return [...CORE_HABITS, ...custom];
 }
 

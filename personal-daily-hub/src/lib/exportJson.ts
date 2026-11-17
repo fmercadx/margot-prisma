@@ -9,15 +9,15 @@ export type ExportFile = {
   app: 'Personal Daily Hub';
   format: 1;
   exportedAt: string;
-  settings: Omit<Settings, 'lockEnabled'>;
+  settings: Pick<Settings, 'waterGoal' | 'reminderHour'>;
   habits: Habit[];
   days: Record<string, DayLog>;
 };
 
 /**
  * Everything the person has logged, newest day last. Empty days are left
- * out. The app-lock setting is not exported: it describes this phone, not
- * the data.
+ * out. The app-lock and haptics settings are not exported: they describe
+ * this phone, not the data.
  */
 export function buildExport(
   days: Record<string, DayLog>,
