@@ -1,6 +1,6 @@
 # Working in this repo
 
-Five unrelated products share this repository:
+Six unrelated products share this repository:
 
 - **the salon site** — React + Vite + Tailwind, at the repo root, serving
   `fmercadx.github.io/margot-prisma/`
@@ -11,11 +11,16 @@ Five unrelated products share this repository:
 - **`car-mirror/`** — an Android app that mirrors the owner's phone screen to
   their Tesla's browser. Its own Gradle build; ships as an APK on GitHub
   Releases, not on Pages or Railway. Its README explains the design.
+- **`takeoff/`** — counts symbols on CAD-exported electrical drawings from one
+  clicked example. A Python command-line tool, and a click screen serving
+  `fmercadx.github.io/margot-prisma/takeoff/` that runs the same modules in the
+  browser.
 - **`personal-daily-hub/`** — a React Native + Expo (SDK 58) daily dashboard
   app; built for phones through EAS, not deployed from this repo
 
-They are independent. `deploy.yml` builds the first two into one `dist/`, and
-`credit-analyzer.yml`, `shepherds-whisper.yml`, `car-mirror.yml` and the two
+They are independent. `deploy.yml` builds the salon site, the analyzer and the
+takeoff page into one `dist/`, and `credit-analyzer.yml`,
+`shepherds-whisper.yml`, `car-mirror.yml`, `takeoff.yml` and the two
 `personal-daily-hub*` workflows are path-filtered so no product's changes run
 another's tests. `car-mirror.yml` alone also runs on branch pushes, because each
 build publishes a release; its `scope` job skips a branch that hasn't changed
@@ -68,6 +73,14 @@ and this repo is public with a live Pages site.
 
 CI hard-fails if a non-synthetic file is tracked under `fixtures/`. Do not
 weaken that gate. Tests run on synthetic tradelines for exactly this reason.
+
+## Never commit a drawing set
+
+Construction drawings belong to the architects and engineers who drew them,
+even when an agency posts them publicly for bidding. `takeoff/` gitignores PDFs
+and images, and `takeoff.yml` fails if one is tracked there. Test against real
+sets from a scratch directory; the tests build a synthetic set at run time.
+Nothing rendered from a real set goes into marketing without written permission.
 
 ---
 
@@ -153,6 +166,15 @@ cd credit-analyzer/mobile  && npm test
 # The adult family home site: build, then browser checks against dist/
 cd shepherds-whisper && npm ci && npm run build && npm run smoke
 
+# Takeoff: tests on a synthetic drawing set. Real sets stay outside the repo.
+cd takeoff && python -m pytest test_takeoff.py -q
+
+# Takeoff click screen: build (needs `npm ci`; fetches Pyodide's numpy and
+# cryptography wheels from cdn.jsdelivr.net once, into takeoff/browser/.cache),
+# then drive it in Chromium.
+npm ci && npm run build:takeoff
+python3 takeoff/browser/smoke.py --dist dist/takeoff
+
 # Car mirror: core tests (JDK only), then the viewer page in Chromium.
 # The APK itself cannot build here (dl.google.com is blocked); CI builds it.
 # Maven Central sometimes answers 429 through the proxy: just rerun.
@@ -218,6 +240,12 @@ differs and `build.py --target` picks it:
 
 Anything host-specific belongs behind that seam. If a change to `app.js` needs
 to know where it is running, it is in the wrong file.
+
+**The takeoff page runs numpy as 32-bit WebAssembly.** Its `intp` is 32-bit
+there, so `np.repeat` and friends reject int64 counts that work everywhere on a
+desktop. Use `np.intp` for anything used as a count or index; `smoke.py` is the
+only place that catches it. The page uses PDF.js's legacy build because the
+modern one needs browser features only the newest have.
 
 **`<a download>` does nothing in a web view.** The native shell rewires those
 buttons through the platform's file and share APIs; `smoke_native.py` asserts

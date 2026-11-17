@@ -1,0 +1,95 @@
+name: takeoff tests
+
+# Path-filtered like the other products' workflows, so no other product's
+# changes run this and this never runs theirs.
+on:
+  pull_request:
+    paths:
+      - 'takeoff/**'
+      - '.github/workflows/takeoff.yml'
+      - 'package.json'
+      - 'package-lock.json'
+  push:
+    branches: [main]
+    paths:
+      - 'takeoff/**'
+      - '.github/workflows/takeoff.yml'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: takeoff-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: takeoff
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: takeoff/requirements.txt
+
+      - run: pip install -r requirements.txt
+
+      # Runs against a synthetic drawing set the tests build themselves.
+      - run: python -m pytest test_takeoff.py -q
+
+      - name: Fail if a drawing set was committed
+        # Drawings are the engineers' copyrighted work and this repo is public.
+        # The .gitignore keeps them out; a --force or a rename could slip one
+        # in, and git history is permanent.
+        working-directory: .
+        run: |
+          leaked=$(git ls-files -- 'takeoff/**' | grep -iE '\.(pdf|png|jpe?g|tiff?)$' || true)
+          if [ -n "$leaked" ]; then
+            echo "::error::Drawing files are tracked under takeoff/:"
+            echo "$leaked"
+            exit 1
+          fi
+
+  # The click screen runs the same modules compiled to WebAssembly, behind a
+  # PDF.js canvas. None of the tests above touch that: this builds the page the
+  # way the Pages deploy does and drives it in Chromium.
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: takeoff/requirements.txt
+
+      - run: npm ci
+        working-directory: .
+
+      - run: pip install -r takeoff/requirements.txt playwright && python -m playwright install --with-deps chromium
+        working-directory: .
+
+      - run: python3 takeoff/browser/build.py --out dist/takeoff
+        working-directory: .
+
+      - run: python3 takeoff/browser/smoke.py --dist dist/takeoff
+        working-directory: .

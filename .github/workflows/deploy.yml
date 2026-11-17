@@ -39,6 +39,12 @@ jobs:
       # Vite clears dist, so building it first would delete it.
       - run: npm run build:analyzer
 
+      # The takeoff counter is a third self-contained page, under dist/takeoff,
+      # built the same way: Python in WebAssembly, every file same-origin. Its
+      # numpy and cryptography wheels come from the Pyodide CDN at build time,
+      # checked against pyodide-lock.json; nothing is fetched at run time.
+      - run: npm run build:takeoff
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
