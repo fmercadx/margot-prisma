@@ -11,8 +11,6 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLDecoder
-import java.security.SecureRandom
-import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -26,20 +24,24 @@ data class Viewer(val remoteAddress: String, val host: String, val lastSeenMs: L
  * A small HTTP/1.1 server for the car's browser. No dependencies, so it runs the same on
  * the phone and in JVM tests.
  *
- *   GET  /                          the viewer page
- *   GET  /frame?after=N&paused=R    long-poll: the newest JPEG with seq > N, or 204 when the
- *                                   pause state differs from R or after [longPollMs]. Every
- *                                   response carries the state in X-Mirror-Paused.
- *   GET  /frames?paused=R           one long response that pushes every new frame as it is made
+ *   GET  /                          the viewer page, and /crypto.js its vendored crypto
+ *   POST /pair/start, /pair/finish  pairing a car (see [Pairing]); /pair/wait?id= long-polls
+ *                                   for the user's answer on the phone
+ *   POST /session/start, /finish    opening an encrypted session for a paired car
+ *   GET  /frames?s=&paused=R        one long response that pushes every new frame as it is made
  *                                   (see [serveFrameStream]): no round trip per frame
- *   GET  /stream.mjpeg              multipart MJPEG, for browsers without fetch/createImageBitmap
- *   GET  /status                    JSON: frame size, viewers, touch, quality, session token
- *   POST /input                     a [Gesture] from the car, when [control] allows touch
+ *   GET  /frame?s=&after=N&paused=R long-poll fallback: one record, the newest frame with seq > N,
+ *                                   or the pause state when it differs from R, or a ping
+ *   GET  /status?s=                 encrypted JSON: frame size, viewers, touch, quality
+ *   POST /input                     an encrypted [Input] (a one- or two-finger [Gesture], or
+ *                                   Back/Home/Recents), when [control] allows touch
  *
- * POST /input must carry the session token from /status in X-Car-Mirror-Token. Only the
- * viewer page can read /status (no CORS headers are ever sent), and the custom header makes
- * a browser preflight any cross-site attempt, which this server refuses. So another web
- * page open in the car can neither read the screen nor tap on the phone.
+ * Nothing that shows the screen or touches the phone is served without a session (`s`, or
+ * X-Car-Mirror-Session for /input), and a session needs a car the user paired on the phone.
+ * Everything in a session is encrypted and authenticated, and each message from the car
+ * carries a counter the phone has never seen before, so taps can be neither forged nor
+ * replayed by someone else on the hotspot. No CORS headers are ever sent, so another web page
+ * open in the car can read none of this either.
  */
 class MirrorServer(
     private val hub: FrameHub,
@@ -52,12 +54,31 @@ class MirrorServer(
      * serve only the hotspot and the VPN address, never the phone's Wi-Fi or cellular side.
      */
     private val acceptLocal: (InetAddress) -> Boolean = { true },
+    /** Paired cars and their sessions. The phone keeps one across restarts of mirroring. */
+    val pairing: Pairing = Pairing(MemoryPairingStore()),
+    /**
+     * In video mode, the encoder's H.264 as fragmented MP4; [hub] then only carries the pause
+     * state. Once it is closed (the encoder failed, or a car can't play it), streams carry
+     * JPEG frames from [hub] again.
+     */
+    private val video: VideoHub? = null,
     private val longPollMs: Long = 10_000,
+    private val pairWaitMs: Long = 25_000,
     private val streamPingMs: Long = 2_000,
     private val idleTimeoutMs: Int = 30_000,
     private val maxConnections: Int = 16,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
+    /**
+     * Called when a paired car asks for JPEG frames while in video mode: its browser can't play
+     * the video (or can't stream at all). The phone should switch to JPEG; until it does,
+     * the car waits on the frame hub.
+     */
+    @Volatile var onVideoRefused: (() -> Unit)? = null
+
+    /** The video hub, while video mode is on. */
+    private val liveVideo: VideoHub? get() = video?.takeUnless { it.isClosed }
+
     @Volatile private var serverSocket: ServerSocket? = null
     @Volatile private var running = false
     private var pool: ExecutorService? = null
@@ -70,10 +91,11 @@ class MirrorServer(
             ?: error("viewer.html is missing from the build")
         stream.use { it.readBytes() }
     }
-
-    /** Changes every time a server is created, so a token from an earlier session is useless. */
-    val token: String = ByteArray(16).also { SecureRandom().nextBytes(it) }
-        .let { Base64.getUrlEncoder().withoutPadding().encodeToString(it) }
+    private val cryptoJs: ByteArray by lazy {
+        val stream = MirrorServer::class.java.getResourceAsStream("/io/github/fmercadx/carmirror/core/crypto.js")
+            ?: error("crypto.js is missing from the build")
+        stream.use { it.readBytes() }
+    }
 
     val port: Int get() = serverSocket?.localPort ?: -1
 
@@ -84,6 +106,7 @@ class MirrorServer(
     fun start(preferredPort: Int, bindAddress: InetAddress? = null): Int {
         check(!running) { "already started" }
         viewerHtml // fail now, not on the first request, if the page is missing
+        cryptoJs
         var lastError: IOException? = null
         var bound: ServerSocket? = null
         for (candidate in preferredPort until preferredPort + 10) {
@@ -193,7 +216,16 @@ class MirrorServer(
             respond(out, 403, TEXT, "Open this page with the address shown in the Car Mirror app.".toByteArray(), keepAlive = false)
             return false
         }
-        if (request.method == "POST" && request.path == "/input") return handleInput(request, input, out)
+        if (request.method == "POST") {
+            return when (request.path) {
+                "/input" -> handleInput(request, input, out)
+                "/pair/start", "/pair/finish", "/session/start", "/session/finish" -> handleHandshake(request, socket, input, out)
+                else -> {
+                    respond(out, 404, TEXT, "Not found".toByteArray(), keepAlive = false)
+                    false
+                }
+            }
+        }
         val headOnly = request.method == "HEAD"
         if (request.method != "GET" && !headOnly) {
             respond(out, 405, TEXT, "Method not allowed".toByteArray(), keepAlive = false, extra = listOf("Allow" to "GET, HEAD, POST"))
@@ -206,32 +238,52 @@ class MirrorServer(
         val keepAlive = request.keepAlive
         when (request.path) {
             "/", "/index.html" -> respond(out, 200, "text/html; charset=utf-8", viewerHtml, keepAlive, headOnly, PAGE_HEADERS)
-            "/frame" -> serveFrame(request, socket, out, keepAlive, headOnly)
+            "/crypto.js" -> respond(out, 200, "text/javascript; charset=utf-8", cryptoJs, keepAlive, headOnly)
+            "/pair/wait" -> {
+                val state = pairing.await(request.query["id"].orEmpty(),
+                    Pairing.State.entries.firstOrNull { it.wire == request.query["state"] }, pairWaitMs)
+                respond(out, 200, JSON, "{\"state\":\"${state.wire}\"}".toByteArray(), keepAlive, headOnly)
+            }
+            "/frame" -> {
+                // One request per frame can only carry pictures: a browser that can't stream
+                // can't play video either.
+                val session = pairing.session(request.query["s"]) ?: return unauthorized(out)
+                if (liveVideo != null) onVideoRefused?.invoke()
+                serveFrame(request, session, socket, out, keepAlive, headOnly)
+            }
             "/frames" -> {
-                serveFrameStream(request, socket, out)
+                val session = pairing.session(request.query["s"]) ?: return unauthorized(out)
+                val live = liveVideo
+                when {
+                    live == null -> serveFrameStream(request, session, socket, out)
+                    request.query["jpeg"] == "1" -> {
+                        onVideoRefused?.invoke()
+                        serveFrameStream(request, session, socket, out)
+                    }
+                    else -> serveVideoStream(request, session, live, socket, out)
+                }
                 return false
             }
-            "/stream.mjpeg" -> {
-                serveMjpeg(request, socket, out)
-                return false
+            "/status" -> {
+                val session = pairing.session(request.query["s"]) ?: return unauthorized(out)
+                respond(out, 200, BINARY, session.seal(STATUS_AAD, statusJson().toByteArray()), keepAlive, headOnly)
             }
-            "/status" -> respond(out, 200, "application/json", statusJson().toByteArray(), keepAlive, headOnly)
             "/favicon.ico" -> respond(out, 204, null, EMPTY, keepAlive, headOnly)
             else -> respond(out, 404, TEXT, "Not found".toByteArray(), keepAlive, headOnly)
         }
         return keepAlive
     }
 
-    private fun handleInput(request: Request, input: InputStream, out: OutputStream): Boolean {
-        val keepAlive = request.keepAlive
+    /** Reads a POST body of at most [max] bytes, or answers 411/413 and returns null. */
+    private fun readBody(request: Request, input: InputStream, out: OutputStream, max: Int): ByteArray? {
         val length = request.headers["content-length"]?.toIntOrNull()
         if (length == null || request.headers.containsKey("transfer-encoding")) {
             respond(out, 411, TEXT, "Content-Length required".toByteArray(), keepAlive = false)
-            return false
+            return null
         }
-        if (length !in 0..MAX_INPUT_BYTES) {
-            respond(out, 413, TEXT, "Gesture too large".toByteArray(), keepAlive = false)
-            return false
+        if (length !in 0..max) {
+            respond(out, 413, TEXT, "Request too large".toByteArray(), keepAlive = false)
+            return null
         }
         // Not InputStream.readNBytes: Android only has it from API 33, and this app runs on 29.
         val body = ByteArray(length)
@@ -241,22 +293,79 @@ class MirrorServer(
             if (n < 0) throw IOException("connection closed mid-body")
             read += n
         }
+        return body
+    }
+
+    private fun unauthorized(out: OutputStream): Boolean {
+        respond(out, 401, TEXT, "Pair this screen with the phone first".toByteArray(), keepAlive = false)
+        return false
+    }
+
+    /** Pairing and session handshakes: small form bodies in, public values out as JSON. */
+    private fun handleHandshake(request: Request, socket: Socket, input: InputStream, out: OutputStream): Boolean {
+        val keepAlive = request.keepAlive
+        val body = readBody(request, input, out, MAX_HANDSHAKE_BYTES) ?: return false
+        val form = Input.fields(String(body, Charsets.UTF_8))
+        fun json(text: String): Boolean {
+            respond(out, 200, JSON, text.toByteArray(), keepAlive)
+            return keepAlive
+        }
+        fun refuse(status: Int, why: String): Boolean {
+            respond(out, status, TEXT, why.toByteArray(), keepAlive)
+            return keepAlive
+        }
+        val remote = socket.inetAddress?.hostAddress.orEmpty()
+        when (request.path) {
+            "/pair/start" -> {
+                val commitment = Crypto.unb64(form["c"]) ?: return refuse(400, "Malformed pairing request")
+                return when (val started = pairing.start(commitment, remote)) {
+                    is Pairing.Start.Started -> json("{\"id\":\"${started.id}\",\"pub\":\"${Crypto.b64(started.phoneKey)}\"}")
+                    Pairing.Start.Refused -> refuse(429, "Too many pairing requests; try again shortly")
+                }
+            }
+            "/pair/finish" -> {
+                val key = Crypto.unb64(form["pub"]) ?: return refuse(400, "Malformed pairing request")
+                val state = pairing.finish(form["id"].orEmpty(), key, remote) ?: return refuse(400, "Pairing request rejected")
+                return json("{\"state\":\"${state.wire}\"}")
+            }
+            "/session/start" -> {
+                val key = Crypto.unb64(form["pub"]) ?: return refuse(400, "Malformed session request")
+                val challenge = pairing.challenge(form["pair"].orEmpty(), key) ?: return refuse(404, "This screen isn't paired")
+                return json("{\"pub\":\"${Crypto.b64(challenge.phoneKey)}\",\"nonce\":\"${Crypto.b64(challenge.nonce)}\"}")
+            }
+            else -> {
+                val key = Crypto.unb64(form["pub"]) ?: return refuse(400, "Malformed session request")
+                val proof = Crypto.unb64(form["proof"]) ?: return refuse(400, "Malformed session request")
+                val session = pairing.open(form["pair"].orEmpty(), key, proof) ?: return refuse(403, "Session refused")
+                return json("{\"session\":\"${session.id}\"}")
+            }
+        }
+    }
+
+    private fun handleInput(request: Request, input: InputStream, out: OutputStream): Boolean {
+        val keepAlive = request.keepAlive
+        val body = readBody(request, input, out, MAX_INPUT_BYTES) ?: return false
 
         fun refuse(status: Int, why: String): Boolean {
             respond(out, status, TEXT, why.toByteArray(), keepAlive)
             return keepAlive
         }
-        if (request.headers["x-car-mirror-token"] != token) return refuse(403, "Stale or missing session token")
+        val session = pairing.session(request.headers["x-car-mirror-session"]) ?: return refuse(401, "No session")
+        // Altered, from another session, or replayed: dropped without a hint which.
+        val text = session.openFromCar(INPUT_AAD, body) ?: return refuse(403, "Refused")
         val phone = control ?: return refuse(404, "Touch control is not available")
         if (hub.pausedReason != null) return refuse(409, "Mirroring is paused")
         if (!phone.touchAvailable) return refuse(409, "Touch control is off on the phone")
-        val gesture = Gesture.parse(String(body, Charsets.UTF_8)) ?: return refuse(400, "Malformed gesture")
-        if (!phone.perform(gesture)) return refuse(409, "The phone could not perform that")
+        val done = when (val input = Input.parse(String(text, Charsets.UTF_8)) ?: return refuse(400, "Malformed input")) {
+            is Gesture -> phone.perform(input)
+            is GlobalAction -> phone.perform(input)
+        }
+        if (!done) return refuse(409, "The phone could not perform that")
         respond(out, 204, null, EMPTY, keepAlive)
         return keepAlive
     }
 
-    private fun serveFrame(request: Request, socket: Socket, out: OutputStream, keepAlive: Boolean, headOnly: Boolean) {
+    private fun serveFrame(request: Request, session: Session, socket: Socket, out: OutputStream, keepAlive: Boolean, headOnly: Boolean) {
         noteViewer(socket, request)
         if (hub.isClosed) {
             respond(out, 503, TEXT, "Mirroring stopped".toByteArray(), keepAlive, headOnly)
@@ -265,20 +374,16 @@ class MirrorServer(
         val after = request.query["after"]?.toLongOrNull() ?: 0L
         val viewerPaused = request.query["paused"]?.let { decode(it) }?.ifEmpty { null }
         val update = hub.awaitUpdate(after, viewerPaused, longPollMs)
-        val paused = update?.paused ?: hub.pausedReason
-        val state = listOf(PAUSED_HEADER to paused.orEmpty())
+        val record = java.io.ByteArrayOutputStream()
         val frame = update?.frame
-        if (frame == null) {
-            respond(out, 204, null, EMPTY, keepAlive, headOnly, state)
-            return
+        when {
+            update == null -> writeRecord(record, session, RECORD_PING)
+            frame == null -> writeRecord(record, session, RECORD_STATE, update.paused.orEmpty().toByteArray(Charsets.UTF_8))
+            else -> writeFrameRecord(record, session, frame)
         }
-        respond(out, 200, "image/jpeg", frame.jpeg, keepAlive, headOnly, state + listOf(
-            "X-Frame-Seq" to frame.seq.toString(),
-            "X-Frame-Width" to frame.width.toString(),
-            "X-Frame-Height" to frame.height.toString(),
-        ))
+        respond(out, 200, BINARY, record.toByteArray(), keepAlive, headOnly)
         noteViewer(socket, request)
-        if (!headOnly) {
+        if (frame != null && !headOnly) {
             framesServed.incrementAndGet()
             // Frames between the one the viewer last drew and this one were never drawn.
             val skipped = if (after in 1 until frame.seq) (frame.seq - after - 1).toInt() else 0
@@ -292,18 +397,19 @@ class MirrorServer(
      * hotspot (often 50 to 100 ms) caps the picture at 10 to 15 fps however small the frames.
      *
      * The body is a series of records, each a type byte, a 4-byte big-endian length and a
-     * payload:
+     * payload sealed for the session ([Session.seal], with the type byte as associated data),
+     * whose plaintext is:
      *
-     *   1  frame  width (2 bytes), height (2 bytes), then the JPEG
+     *   1  frame  seq (8 bytes), width (2), height (2), then the JPEG
      *   2  state  the pause reason in UTF-8, empty when live
-     *   3  ping   no payload; sent when nothing else has been, so a dead car is noticed
+     *   3  ping   nothing; sent when nothing else has been, so a dead car is noticed
      *
      * The socket's send buffer is kept small. When the link can't keep up, a write blocks,
      * frames made meanwhile are skipped, and the next write is the newest frame: the picture
      * drops frames instead of falling behind. Skipped frames also tell [autoQuality] to shrink
      * the JPEGs.
      */
-    private fun serveFrameStream(request: Request, socket: Socket, out: OutputStream) {
+    private fun serveFrameStream(request: Request, session: Session, socket: Socket, out: OutputStream) {
         noteViewer(socket, request)
         try {
             socket.sendBufferSize = STREAM_SEND_BUFFER
@@ -322,24 +428,21 @@ class MirrorServer(
         var viewerPaused: String? = request.query["paused"]?.let { decode(it) }?.ifEmpty { null }
         // Frames made during a pause were withheld on purpose; they don't mean the car fell behind.
         var countSkips = false
-        while (running && !hub.isClosed) {
+        // Ends when the session does: the car was forgotten, or its session dropped.
+        while (running && !hub.isClosed && pairing.session(session.id) != null) {
             val update = hub.awaitUpdate(seen, viewerPaused, streamPingMs)
             when {
-                update == null -> writeRecord(out, RECORD_PING, EMPTY)
+                update == null -> writeRecord(out, session, RECORD_PING)
                 update.frame == null -> {
                     viewerPaused = update.paused
                     countSkips = false
-                    writeRecord(out, RECORD_STATE, viewerPaused.orEmpty().toByteArray(Charsets.UTF_8))
+                    writeRecord(out, session, RECORD_STATE, viewerPaused.orEmpty().toByteArray(Charsets.UTF_8))
                 }
                 else -> {
                     val frame = update.frame
                     val skipped = if (countSkips && seen in 1 until frame.seq) (frame.seq - seen - 1).toInt() else 0
                     countSkips = true
-                    val size = byteArrayOf(
-                        (frame.width shr 8).toByte(), frame.width.toByte(),
-                        (frame.height shr 8).toByte(), frame.height.toByte(),
-                    )
-                    writeRecord(out, RECORD_FRAME, size, frame.jpeg)
+                    writeFrameRecord(out, session, frame)
                     seen = frame.seq
                     framesServed.incrementAndGet()
                     autoQuality?.onFrameServed(skipped)
@@ -350,44 +453,76 @@ class MirrorServer(
         }
     }
 
-    private fun writeRecord(out: OutputStream, type: Int, vararg parts: ByteArray) {
-        val length = parts.sumOf { it.size }
-        out.write(byteArrayOf(type.toByte(), (length ushr 24).toByte(), (length ushr 16).toByte(),
-            (length ushr 8).toByte(), length.toByte()))
-        for (part in parts) out.write(part)
-    }
-
-    private fun serveMjpeg(request: Request, socket: Socket, out: OutputStream) {
+    /**
+     * The video-mode stream: the same records and encryption as [serveFrameStream], with
+     *
+     *   4  init     codec name length (1 byte), the codec name (e.g. avc1.640028), init segment
+     *   5  segment  keyframe flag (1 byte), then one frame as a media segment (moof + mdat)
+     *
+     * in place of JPEG frames. Video frames can't be skipped one by one, since each depends on
+     * the last; a car that falls behind catches up at the next keyframe (see [VideoHub]).
+     */
+    private fun serveVideoStream(request: Request, session: Session, video: VideoHub, socket: Socket, out: OutputStream) {
         noteViewer(socket, request)
+        try {
+            socket.sendBufferSize = STREAM_SEND_BUFFER
+        } catch (_: IOException) {
+        }
         val head = "HTTP/1.1 200 OK\r\n" +
-            "Content-Type: multipart/x-mixed-replace; boundary=$BOUNDARY\r\n" +
+            "Content-Type: application/octet-stream\r\n" +
             "Cache-Control: no-store\r\n" +
+            "X-Content-Type-Options: nosniff\r\n" +
             "Connection: close\r\n\r\n"
         out.write(head.toByteArray(Charsets.ISO_8859_1))
         out.flush()
         if (request.method == "HEAD") return
-        var seen = 0L
-        var paused: String? = null
-        while (running && !hub.isClosed) {
-            val update = hub.awaitUpdate(seen, paused, 3_000)
-            val jpeg: ByteArray = when {
-                update == null -> if (paused != null) BLACK_JPEG else hub.latest()?.jpeg ?: continue
-                update.frame == null -> {
-                    paused = update.paused
-                    if (paused != null) BLACK_JPEG else continue // resumed: wait for the next frame
+
+        var generation = 0
+        var after = 0L
+        var viewerPaused: String? = request.query["paused"]?.let { decode(it) }?.ifEmpty { null }
+        while (running && !video.isClosed && pairing.session(session.id) != null) {
+            val update = video.await(generation, after, viewerPaused, streamPingMs)
+            when {
+                update == null -> writeRecord(out, session, RECORD_PING)
+                update.paused != viewerPaused -> {
+                    viewerPaused = update.paused
+                    if (viewerPaused != null) generation = 0 // after the pause: a fresh init and keyframe
+                    writeRecord(out, session, RECORD_STATE, viewerPaused.orEmpty().toByteArray(Charsets.UTF_8))
                 }
-                else -> update.frame.jpeg.also { seen = update.frame.seq }
+                else -> {
+                    update.init?.let {
+                        val codec = it.codec.toByteArray(Charsets.ISO_8859_1)
+                        writeRecord(out, session, RECORD_INIT, byteArrayOf(codec.size.toByte()), codec, it.segment)
+                        generation = it.generation
+                    }
+                    for (segment in update.segments) {
+                        writeRecord(out, session, RECORD_SEGMENT, byteArrayOf(if (segment.keyframe) 1 else 0), segment.bytes)
+                        after = segment.index
+                        framesServed.incrementAndGet()
+                    }
+                }
             }
-            // While paused or idle the current picture is re-sent every few seconds anyway, so
-            // a browser that vanished without closing the connection is noticed on write.
-            val part = "--$BOUNDARY\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.size}\r\n\r\n"
-            out.write(part.toByteArray(Charsets.ISO_8859_1))
-            out.write(jpeg)
-            out.write(CRLF)
             out.flush()
-            framesServed.incrementAndGet()
             noteViewer(socket, request)
         }
+    }
+
+    private fun writeRecord(out: OutputStream, session: Session, type: Int, vararg plaintext: ByteArray) {
+        val sealed = session.seal(byteArrayOf(type.toByte()), *plaintext)
+        val length = sealed.size
+        out.write(byteArrayOf(type.toByte(), (length ushr 24).toByte(), (length ushr 16).toByte(),
+            (length ushr 8).toByte(), length.toByte()))
+        out.write(sealed)
+    }
+
+    private fun writeFrameRecord(out: OutputStream, session: Session, frame: Frame) {
+        val header = ByteArray(12)
+        Crypto.putLong(header, 0, frame.seq)
+        header[8] = (frame.width shr 8).toByte()
+        header[9] = frame.width.toByte()
+        header[10] = (frame.height shr 8).toByte()
+        header[11] = frame.height.toByte()
+        writeRecord(out, session, RECORD_FRAME, header, frame.jpeg)
     }
 
     private fun noteViewer(socket: Socket, request: Request) {
@@ -402,8 +537,7 @@ class MirrorServer(
             "\"framesSent\":${framesServed.get()},\"viewers\":${recentViewers().size}," +
             "\"paused\":${if (paused == null) "null" else "\"$paused\""}," +
             "\"touch\":${control?.touchAvailable == true}," +
-            "\"jpegQuality\":${autoQuality?.current ?: 0}," +
-            "\"token\":\"$token\"}"
+            "\"jpegQuality\":${autoQuality?.current ?: 0},\"video\":${liveVideo != null}}"
     }
 
     private fun respond(
@@ -440,35 +574,27 @@ class MirrorServer(
     }
 
     private companion object {
-        const val BOUNDARY = "carmirrorframe"
         const val TEXT = "text/plain; charset=utf-8"
-        const val PAUSED_HEADER = "X-Mirror-Paused"
+        const val JSON = "application/json"
+        const val BINARY = "application/octet-stream"
         const val MAX_INPUT_BYTES = 4 * 1024
+        const val MAX_HANDSHAKE_BYTES = 1024
         const val RECORD_FRAME = 1
         const val RECORD_STATE = 2
         const val RECORD_PING = 3
+        const val RECORD_INIT = 4
+        const val RECORD_SEGMENT = 5
+        val STATUS_AAD = Crypto.utf8("status")
+        val INPUT_AAD = Crypto.utf8("input")
 
         /** About one frame: enough to keep the link busy, too little to build up a backlog. */
         const val STREAM_SEND_BUFFER = 64 * 1024
-        val CRLF = "\r\n".toByteArray(Charsets.ISO_8859_1)
         val EMPTY = ByteArray(0)
-
-        /** 16x16 black, sent to the MJPEG fallback while paused so the last picture disappears. */
-        val BLACK_JPEG: ByteArray = Base64.getDecoder().decode(
-            "/9j/4AAQSkZJRgABAgAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4z" +
-                "NDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAAQABADASIA" +
-                "AhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEI" +
-                "I0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKj" +
-                "pKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcI" +
-                "CQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNE" +
-                "RUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna" +
-                "4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwD5/ooooA//2Q==",
-        )
 
         /** The page loads nothing from anywhere but the phone. */
         val PAGE_HEADERS = listOf(
-            "Content-Security-Policy" to "default-src 'none'; script-src 'unsafe-inline'; " +
-                "style-src 'unsafe-inline'; img-src 'self' blob:; connect-src 'self'",
+            "Content-Security-Policy" to "default-src 'none'; script-src 'self' 'unsafe-inline'; " +
+                "style-src 'unsafe-inline'; img-src 'self' blob:; media-src blob:; connect-src 'self'",
             "Referrer-Policy" to "no-referrer",
         )
 
@@ -482,12 +608,14 @@ class MirrorServer(
             200 -> "OK"
             204 -> "No Content"
             400 -> "Bad Request"
+            401 -> "Unauthorized"
             403 -> "Forbidden"
             404 -> "Not Found"
             405 -> "Method Not Allowed"
             409 -> "Conflict"
             411 -> "Length Required"
             413 -> "Payload Too Large"
+            429 -> "Too Many Requests"
             503 -> "Service Unavailable"
             else -> "Status"
         }

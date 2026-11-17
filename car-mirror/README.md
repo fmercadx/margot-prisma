@@ -35,7 +35,8 @@ app can skip that.
 
 ## Features
 
-- **Touch control.** Tap, swipe and long-press on the car's screen to control the phone.
+- **Touch control.** Tap, swipe, long-press and pinch with two fingers on the car's screen to
+  control the phone, with the phone's Back, Home and Recent apps buttons beside the picture.
   Turn it on from the app (it opens Android's Accessibility settings). It only performs
   taps: it is set up so it can't read the screen or what you type.
 - **Pause.** **Pause** in the app or the notification blanks the car's screen until you
@@ -45,6 +46,22 @@ app can skip that.
   car moves, and brings it back about 5 seconds after you stop. It pauses maps too. The
   first time you start, the app explains it before Android asks for location; declining,
   or switching it off under Settings, turns it off and mirroring works as before.
+- **Start from the car's Bluetooth.** Pick your car's Bluetooth once in Settings; when the
+  phone connects to it, a notification offers Start. Android still asks to share the screen
+  each time. Needs the Nearby devices permission, asked for when you pick the car.
+- **Languages.** English, Spanish, French and German, on the phone and on the car's page;
+  each follows its own device's language.
+- **Blank while locked.** While the phone's screen is off or on the lock screen, the car's
+  screen is blank, so an unlock pattern or PIN taps never show on it.
+- **Heat guard.** A phone on a sunny dashboard heats up fast. When Android reports it warm,
+  the picture drops to fewer, smaller frames; if it gets too hot, mirroring pauses until it
+  cools, before Android throttles the phone or turns the screen off.
+- **Video mode** (beta, off by default). For shows and games: the phone's hardware video
+  encoder compresses the screen as H.264 instead of a JPEG per frame, which is smoother and
+  lighter on the Wi-Fi; small text can look a little softer. The car's page plays it with
+  the browser's own video player. If the phone has no encoder that will take the screen,
+  or the car's browser can't play it, Car Mirror switches to pictures by itself and says so
+  under the setting.
 - **Auto quality.** When the Wi-Fi can't keep up, the picture gets a little softer instead
   of stuttering, then sharpens again. The picture setting you choose is the upper limit.
 - **Videos fill the screen.** A video played full screen on a phone has black bars around
@@ -76,6 +93,13 @@ app can skip that.
   frame and capped the picture at 10 to 15 fps; pushed, it keeps up with the phone's 30.)
   When the link can't keep up, frames are skipped rather than queued, so the picture never
   falls behind.
+- **Video mode** sends the screen as H.264 from the phone's hardware encoder instead, fed
+  straight from the screen capture so the picture never passes through the app. Each frame
+  is packed as a fragment of an MP4 stream (`core/Fmp4.kt`) and played by the car through
+  Media Source Extensions, the one way to play live video on a plain-http page. A car that
+  joins starts at the latest keyframe; one that falls behind skips to the next. Nothing
+  encoded while paused is ever sent, not even a keyframe, and the encoder gets no picture at
+  all while paused or while no car is watching. The video is encrypted like the frames.
 - **Two ways in.** The car can open the phone at the hotspot's own address (like
   `192.168.43.1`), or at `169.254.73.1`, an extra address the app adds. Tesla's browser has
   been reported to refuse private addresses like `192.168.x.x`, which is all a hotspot hands
@@ -96,8 +120,19 @@ app can skip that.
   from, say, a café Wi-Fi network the phone is on is closed unanswered. It also refuses
   requests that name any other host, so a web page can't point its own domain at your phone
   and read the screen.
-- **Who can tap.** A tap must carry a token that changes every session and that only the
-  car's own Car Mirror page can read. Another web page open in the car can't send taps.
+- **Pairing.** Being on the hotspot isn't enough to see anything. The first time a screen
+  opens the address, it and the phone both show a 6-digit code, and the phone asks whether
+  to allow it. The car commits to its key before seeing the phone's, so a device in the
+  middle can't search for keys that make the codes match. Allowed, both sides derive a pair
+  key that never crosses the network; the phone keeps it, and so does the car's browser, so
+  it reconnects without asking. **Paired screens → Forget** in Settings un-pairs them all.
+- **Encryption.** Every visit opens a session: a fresh X25519 key exchange mixed with the
+  pair key, which the car must prove it holds. Frames (JPEG or video), the pause state, status and taps are
+  then ChaCha20-Poly1305 encrypted, so someone else on the hotspot sees only ciphertext.
+  Every message from the car carries a counter the phone has never accepted before, so a
+  recorded tap can't be replayed, and another web page open in the car can do none of it.
+  The car's page can't use the browser's own crypto on a plain-http address, so the phone
+  serves it the audited noble libraries, bundled by `tools/crypto` into `crypto.js`.
 
 ## If the car's page doesn't load
 
@@ -116,26 +151,34 @@ app can skip that.
   capture, and Android enforces that.
 - **No sound** goes through the browser. Pair the phone with the car over Bluetooth.
 - **Touch is performed after you lift your finger.** A drag on a map happens as one quick
-  swipe when you let go, not while you move. Pinch-to-zoom isn't supported.
+  swipe when you let go, not while you move.
 - **The phone screen must stay on.** The app keeps it on, dimmed. Pressing the power
   button stops the picture.
 - **Battery.** Compressing frames is steady work. Keep the phone plugged in.
-- **Picture.** Each frame is a JPEG. Choose **Sharp** for maps and text, **Smooth** for
-  motion.
+- **Picture.** Each frame is a JPEG unless Video mode is on. Choose **Sharp** for maps and
+  text, **Smooth** for motion, or Video mode for shows.
 
 ## Driving
 
 The car stops video in its own browser while you drive. This app draws still images, so
 the car may keep showing it. Use it like a phone on a dash mount: navigation is fine, video
-is not. Local laws about screens the driver can see still apply. **Pause while moving**
+is not. (In Video mode the car may stop the picture while moving, as it stops any video in
+its browser.) Local laws about screens the driver can see still apply. **Pause while moving**
 (above) enforces this, at the cost of maps.
 
 ## Signing
 
-`app/signing.keystore` is committed (its password is in `app/build.gradle.kts`) so that
-each build installs over the last. This repo is public, so anyone can use that key to sign
-an APK your phone would accept as an update to this app. **Install Car Mirror only from
-this repo's releases page**, never from a file someone sends you.
+Builds are signed with the owner's **private key** once it is in the repo's secrets (below):
+the APK on each release, and the Google Play bundle. Nobody else can then make an APK that
+a phone accepts as an update to Car Mirror. Each release says which key signed it.
+
+Until then, and in forks, builds fall back to `app/signing.keystore`, a test key committed
+with its password in `app/build.gradle.kts`. Anyone can sign with that one, so treat such
+builds as tests and install them only from this repo's releases page.
+
+Switching keys: Android refuses to install an app signed with a different key over the
+installed one, so the first privately signed build needs the old app uninstalled first.
+Settings and paired screens start fresh.
 
 ## Selling on Google Play
 
@@ -149,11 +192,12 @@ Already in place:
 - Targets Android 16 (API 36), which Play requires of new apps since August 31, 2026.
 - The app explains the VPN in its own words before Android's VPN prompt.
 - A privacy policy: [PRIVACY.md](PRIVACY.md). Play asks for its URL.
-- CI builds the bundle Play takes (`.aab`), signed with a private upload key, once that key
-  exists as repo secrets (below). The shared key above is never used for Play.
+- CI builds the bundle Play takes (`.aab`) with the private key, once it is in the repo's
+  secrets (below). The test key is never used for Play.
 
-To create the upload key, run this once on a computer with Java, and keep the file and
-password somewhere safe. Losing them means asking Google to reset the key.
+To create the private key, run this once on a computer with Java, and keep the file and
+password somewhere safe. Losing them means asking Google to reset the key, and that phones
+with the sideloaded app can't take updates until it is reinstalled.
 
 ```bash
 keytool -genkeypair -keystore upload.keystore -storetype PKCS12 -alias upload \
@@ -163,9 +207,9 @@ base64 -w0 upload.keystore > upload.keystore.b64   # macOS: base64 -i upload.key
 
 Then in the repo's **Settings → Secrets and variables → Actions**, add
 `CAR_MIRROR_UPLOAD_KEYSTORE` (the contents of `upload.keystore.b64`) and
-`CAR_MIRROR_UPLOAD_PASSWORD`. The next build attaches `car-mirror-store-builds` to the
-workflow run: the Play bundle (`.aab`) and an APK for the Galaxy Store, both signed with this
-key. Download it from the run's page.
+`CAR_MIRROR_UPLOAD_PASSWORD`. From the next build on, the release's APK is signed with this
+key (it is also the one to upload to the Galaxy Store), and the workflow run carries
+`car-mirror-play-bundle`, the `.aab` for Google Play. Download it from the run's page.
 
 Every release also carries `car-mirror-store-kit-N.zip`: captioned listing screenshots made
 from that build's real screens by `tools/store-kit.cjs`, the icon and banner, the listing text
@@ -197,6 +241,7 @@ repo root.
 | `core/` | Frame hub, HTTP server, viewer page, gestures, auto quality, the moving/stopped rule. Plain Kotlin, no Android, tested on the JVM. |
 | `app/` | The Android app: screen capture, the VPN address, touch, the driving pause, the tile, the one-screen UI. |
 | `tools/viewer-smoke.cjs` | Drives the viewer page in Chromium against a fake phone, including touch and pause. |
+| `tools/video-smoke.cjs` | The same for Video mode: the fake phone encodes H.264 (jcodec, tests only) and the page plays it. Needs a browser with H.264; falls back to Google Chrome. |
 
 ```bash
 # Core tests (any machine with a JDK)
@@ -206,6 +251,10 @@ repo root.
 # The control folder lets the test pause the fake phone and see the taps it received.
 ./gradlew -PcoreOnly :core:demoServer --args="8090 --control $PWD/build/smoke" &   # wait for READY
 node tools/viewer-smoke.cjs http://127.0.0.1:8090/ --control $PWD/build/smoke
+
+# Video mode, the same way (a fresh fake phone: the last check switches it to pictures)
+./gradlew -PcoreOnly :core:demoServer --args="8091 --control $PWD/build/video --video" &   # wait for READY
+node tools/video-smoke.cjs http://127.0.0.1:8091/ --control $PWD/build/video
 
 # The APK (needs the Android SDK; CI does this on every push)
 ./gradlew :app:assembleRelease

@@ -18,10 +18,10 @@ only you can do: accounts, payments, testers and a few short recordings.
    create the app: a free app can never be changed to paid.
 2. **Pick a contact email** you're happy to have shown publicly on the listing.
 3. **The private signing key.** Both stores need the app signed with a key only you hold, not
-   the shared one the test builds use. Create it once (README, "Selling on Google Play") and
-   add it to the repository's secrets; from then on every build also produces the Play bundle
-   (`.aab`) and a privately signed APK for the Galaxy Store, as a download on the build's
-   run page (`car-mirror-store-builds`).
+   the test key early builds used. Add it to the repository's secrets once (README,
+   "Signing"); from then on each release's APK is signed with it (that APK is the one for
+   the Galaxy Store), and each build's run page carries `car-mirror-play-bundle`, the
+   `.aab` for Google Play.
 
 ## Google Play
 
@@ -30,12 +30,15 @@ only you can do: accounts, payments, testers and a few short recordings.
 2. **Payments profile** (Play Console → Settings → Payments profile), so you can sell.
 3. **Create app.** Name: paste `app-name.txt`. Language: English (United States). App, *Paid*.
 4. **Main store listing.** Paste the three text files, upload the icon, the feature graphic and
-   the five screenshots. Category: Auto & Vehicles. Add your contact email.
+   the five screenshots. Category: Auto & Vehicles. Add your contact email. Then **Manage
+   translations → Add your own translation** for Spanish, French and German, pasting the files
+   in `text/es`, `text/fr` and `text/de`. The app itself is already translated into all three.
 5. **App content.** Work down the list with `play-console-answers.md`. Three declarations need a
    short screen recording; record each on your phone with its built-in screen recorder, using
    a laptop or second phone on your hotspot as "the car":
-   - *Foreground service: media projection.* Tap Start mirroring, allow screen sharing, then
-     show the picture appearing in the laptop's browser.
+   - *Foreground service: media projection.* Tap Start mirroring, allow screen sharing, open
+     the address on the laptop, tap Allow when the phone shows the same code as the laptop,
+     then show the picture appearing in the laptop's browser.
    - *Foreground service: location.* Start mirroring, show the "Pause while driving"
      explanation and allow location.
    - *Accessibility (touch control).* Tap Turn on touch control, show the app's explanation,
@@ -53,7 +56,8 @@ only you can do: accounts, payments, testers and a few short recordings.
 
 1. **Seller account** at seller.samsungapps.com: free. For a paid app, Samsung asks you to
    become a commercial seller, with bank and tax details.
-2. **Add New App → Android.** Upload the privately signed APK (`car-mirror-N-galaxy.apk`).
+2. **Add New App → Android.** Upload `car-mirror-N.apk` from a release whose notes say
+   "Signed with the owner's private key".
 3. **Listing.** The same text, icon and screenshots. Samsung shows its exact size rules on the
    upload page; if it refuses the landscape `listing-1-car.png`, leave that one out.
 4. **Age rating, price and countries**, then submit for review.

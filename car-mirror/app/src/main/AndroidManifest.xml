@@ -20,8 +20,17 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
+    <!--
+        Only for the optional "start from your car's Bluetooth": to list the phone's paired
+        Bluetooth devices so the user can pick their car, and to notice when the phone connects
+        to it. Nothing about Bluetooth devices is stored beyond the one chosen, or sent anywhere.
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+
     <!-- GPS is only needed for the optional driving pause; the app works without it. -->
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
     <application
         android:allowBackup="false"
@@ -72,6 +81,19 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/touch_service" />
         </service>
+
+        <!--
+            Offers to start when the phone connects to the car's Bluetooth. ACL_CONNECTED is a
+            protected broadcast only the system can send, and one of the few still delivered
+            to a receiver in the manifest.
+        -->
+        <receiver
+            android:name=".CarBluetoothReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+            </intent-filter>
+        </receiver>
 
         <!-- Quick Settings tile: start and stop mirroring. -->
         <service

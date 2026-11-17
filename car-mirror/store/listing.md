@@ -19,22 +19,26 @@ Built for cars with a full web browser on their center screen, such as Tesla.
 
 WHAT YOU CAN DO
 • Use your phone's apps on the big screen: maps, music, messages and more
-• Tap, swipe and long-press on the car's screen to control your phone (optional touch control)
+• Tap, swipe, pinch to zoom, and use Back, Home and Recent apps right on the car's screen (optional touch control)
 • Watch videos while parked: black bars are trimmed automatically, so videos fill the screen
 • Pause with one tap to blank the car's screen before opening something private
 • Dim your phone while mirroring, so it isn't glowing next to the car's screen
-• Start from a Quick Settings tile or the app icon's shortcut
+• Start from a Quick Settings tile, the app icon's shortcut, or a prompt when your phone joins your car's Bluetooth
 
 SMOOTH AND SIMPLE
 • Frames are pushed straight from your phone to the car over the hotspot, up to 30 per second
+• Video mode (beta) uses your phone's hardware video encoder for smoother shows and games, and switches to pictures by itself if your car can't play it
 • The picture adapts to your Wi-Fi: it softens a little rather than stuttering
 • The app remembers which address your car accepts and shows only that one
 • Stops by itself if you leave it running without the car, to save battery
+• Eases off when your phone gets hot on a sunny dashboard, instead of overheating
 
 PRIVATE BY DESIGN
 • Nothing is collected: no account, no ads, no analytics, no server of our own
 • Your screen goes directly from your phone to your car and is never stored
-• Only devices connected to your phone's hotspot can see it
+• Pair your car once by matching a code on both screens; nothing else on your hotspot can see or tap
+• The picture and your taps are end-to-end encrypted between your phone and your car
+• The car's screen goes blank while your phone is locked, so your unlock pattern or PIN never shows
 • The app uses Android's VPN feature only to give your phone an address the car's browser will open. The VPN carries no traffic and sends nothing anywhere
 
 SAFETY

@@ -11,7 +11,9 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -27,9 +29,10 @@ class MirrorServerTest {
         control: MirrorControl? = null,
         autoQuality: AutoQuality? = null,
         acceptLocal: (InetAddress) -> Boolean = { true },
+        streamPingMs: Long = 2_000,
     ): Int {
         val s = MirrorServer(hub, hostAllowed, control, autoQuality, acceptLocal,
-            longPollMs = longPollMs, maxConnections = maxConnections)
+            longPollMs = longPollMs, pairWaitMs = 2_000, streamPingMs = streamPingMs, maxConnections = maxConnections)
         server = s
         return s.start(0, loopback)
     }
@@ -37,9 +40,14 @@ class MirrorServerTest {
     /** Stands in for the phone's touch service. */
     private class FakePhone(var touchOn: Boolean = true, var succeeds: Boolean = true) : MirrorControl {
         val performed = mutableListOf<Gesture>()
+        val pressed = mutableListOf<GlobalAction>()
         override val touchAvailable get() = touchOn
         override fun perform(gesture: Gesture): Boolean {
             performed += gesture
+            return succeeds
+        }
+        override fun perform(action: GlobalAction): Boolean {
+            pressed += action
             return succeeds
         }
     }
@@ -104,6 +112,86 @@ class MirrorServerTest {
             readResponse(BufferedInputStream(socket.getInputStream()))
         }
 
+    private fun post(port: Int, path: String, body: ByteArray, headers: String = ""): Response =
+        connect(port).use { socket ->
+            socket.getOutputStream().write(
+                ("POST $path HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n$headers" +
+                    "Content-Length: ${body.size}\r\n\r\n").toByteArray() + body,
+            )
+            readResponse(BufferedInputStream(socket.getInputStream()))
+        }
+
+    private fun post(port: Int, path: String, form: String) = post(port, path, form.toByteArray())
+
+    private fun field(json: String, name: String): String =
+        Regex("\"$name\":\"([^\"]*)\"").find(json)?.groupValues?.get(1) ?: fail("no $name in $json")
+
+    /** A car paired with the phone and holding an open session, set up directly. */
+    private fun pairedCar(): TestCar = TestCar().also { it.pairAndOpen(server!!.pairing, "127.0.0.1") }
+
+    private fun TestCar.query() = "s=$sessionId"
+
+    // ---- Frames as the car decrypts them ----
+
+    private class Record(val type: Int, val sealed: ByteArray)
+
+    private class Shown(val seq: Long, val width: Int, val height: Int, val jpeg: ByteArray)
+
+    private fun readRecord(input: InputStream): Record {
+        val head = ByteArray(5)
+        var read = 0
+        while (read < 5) {
+            val n = input.read(head, read, 5 - read)
+            if (n < 0) throw IOException("stream ended")
+            read += n
+        }
+        val length = ((head[1].toInt() and 0xFF) shl 24) or ((head[2].toInt() and 0xFF) shl 16) or
+            ((head[3].toInt() and 0xFF) shl 8) or (head[4].toInt() and 0xFF)
+        val payload = ByteArray(length)
+        read = 0
+        while (read < length) {
+            val n = input.read(payload, read, length - read)
+            if (n < 0) throw IOException("stream ended mid-record")
+            read += n
+        }
+        return Record(head[0].toInt(), payload)
+    }
+
+    private fun TestCar.plaintext(record: Record): ByteArray =
+        open(byteArrayOf(record.type.toByte()), record.sealed) ?: fail("record ${record.type} did not decrypt")
+
+    private fun TestCar.frame(record: Record): Shown {
+        assertEquals(1, record.type, "expected a frame record")
+        val p = plaintext(record)
+        return Shown(Crypto.getLong(p, 0), ((p[8].toInt() and 0xFF) shl 8) or (p[9].toInt() and 0xFF),
+            ((p[10].toInt() and 0xFF) shl 8) or (p[11].toInt() and 0xFF), p.copyOfRange(12, p.size))
+    }
+
+    private fun TestCar.state(record: Record): String {
+        assertEquals(2, record.type, "expected a pause-state record")
+        return String(plaintext(record))
+    }
+
+    private fun recordOf(response: Response): Record {
+        assertEquals(200, response.status, response.text)
+        return readRecord(response.body.inputStream())
+    }
+
+    private fun openStream(port: Int, car: TestCar, query: String = ""): Pair<Socket, InputStream> {
+        val socket = connect(port)
+        send(socket, "/frames?${car.query()}$query")
+        val input = BufferedInputStream(socket.getInputStream())
+        val (status, headers) = readHead(input)
+        assertEquals(200, status)
+        assertEquals("application/octet-stream", headers["content-type"])
+        return socket to input
+    }
+
+    private fun input(port: Int, car: TestCar, text: String): Response =
+        post(port, "/input", car.seal(Crypto.utf8("input"), Crypto.utf8(text)), "X-Car-Mirror-Session: ${car.sessionId}\r\n")
+
+    // ---- The page ----
+
     @Test
     fun `serves the viewer page, which loads nothing from elsewhere`() {
         val port = startServer()
@@ -112,61 +200,17 @@ class MirrorServerTest {
         assertTrue(response.headers["content-type"]!!.startsWith("text/html"))
         assertTrue("<canvas" in response.text)
         val csp = assertNotNull(response.headers["content-security-policy"])
-        assertTrue("default-src 'none'" in csp && "connect-src 'self'" in csp, csp)
+        assertTrue("default-src 'none'" in csp && "connect-src 'self'" in csp && "script-src 'self'" in csp, csp)
         assertEquals("no-store", response.headers["cache-control"])
     }
 
     @Test
-    fun `answers 204 when the screen has not changed`() {
-        val port = startServer(longPollMs = 150)
-        val response = get(port, "/frame?after=0")
-        assertEquals(204, response.status)
-        assertEquals(null, response.headers["content-length"], "204 must not carry a Content-Length")
-    }
-
-    @Test
-    fun `returns the newest frame with its sequence number and size`() {
+    fun `serves the page's crypto from the phone itself`() {
         val port = startServer()
-        hub.publish(byteArrayOf(1, 2, 3), 640, 480)
-        val response = get(port, "/frame?after=0")
+        val response = get(port, "/crypto.js")
         assertEquals(200, response.status)
-        assertEquals("image/jpeg", response.headers["content-type"])
-        assertEquals("1", response.headers["x-frame-seq"])
-        assertEquals("640", response.headers["x-frame-width"])
-        assertEquals("480", response.headers["x-frame-height"])
-        assertContentEquals(byteArrayOf(1, 2, 3), response.body)
-    }
-
-    @Test
-    fun `a waiting request is answered as soon as a new frame arrives`() {
-        val port = startServer(longPollMs = 5_000)
-        hub.publish(byteArrayOf(1), 1, 1)
-        thread {
-            Thread.sleep(150)
-            hub.publish(byteArrayOf(2), 1, 1)
-        }
-        val started = System.nanoTime()
-        val response = get(port, "/frame?after=1")
-        val elapsedMs = (System.nanoTime() - started) / 1_000_000
-        assertEquals(200, response.status)
-        assertEquals("2", response.headers["x-frame-seq"])
-        assertTrue(elapsedMs in 100..2_000, "took $elapsedMs ms")
-    }
-
-    @Test
-    fun `keeps the connection open between frame requests`() {
-        val port = startServer()
-        connect(port).use { socket ->
-            val input = BufferedInputStream(socket.getInputStream())
-            for (n in 1..3) {
-                hub.publish(byteArrayOf(n.toByte()), 1, 1)
-                send(socket, "/frame?after=${n - 1}")
-                val response = readResponse(input)
-                assertEquals(200, response.status)
-                assertEquals("keep-alive", response.headers["connection"])
-                assertEquals(n.toString(), response.headers["x-frame-seq"])
-            }
-        }
+        assertTrue(response.headers["content-type"]!!.startsWith("text/javascript"))
+        assertTrue("CarCrypto" in response.text)
     }
 
     @Test
@@ -180,8 +224,9 @@ class MirrorServerTest {
     fun `rejects other methods, bodies, malformed requests and unknown paths`() {
         val port = startServer()
         assertEquals(404, get(port, "/nope").status)
+        assertEquals(404, post(port, "/", "x=1").status)
         connect(port).use { socket ->
-            send(socket, "/", method = "POST", extra = "Content-Length: 0\r\n")
+            send(socket, "/", method = "PUT", extra = "Content-Length: 0\r\n")
             val response = readResponse(BufferedInputStream(socket.getInputStream()))
             assertEquals(405, response.status)
             assertEquals("close", response.headers["connection"])
@@ -228,50 +273,187 @@ class MirrorServerTest {
         }
     }
 
+    // ---- Nothing without pairing ----
+
     @Test
-    fun `streams MJPEG parts for browsers without fetch`() {
+    fun `nothing that shows the screen is served without a session`() {
+        val port = startServer(control = FakePhone())
+        hub.publish(byteArrayOf(1, 2, 3), 2, 2)
+        assertEquals(401, get(port, "/frame?after=0").status)
+        assertEquals(401, get(port, "/frames").status)
+        assertEquals(401, get(port, "/status").status)
+        assertEquals(401, get(port, "/frame?after=0&s=made-up").status)
+        assertEquals(404, get(port, "/stream.mjpeg").status, "the unencrypted MJPEG fallback is gone")
+        assertEquals(401, post(port, "/input", "d=60&p=0.5,0.5").status)
+    }
+
+    @Test
+    fun `a car pairs over http once the user allows it, then opens a session`() {
+        val phone = FakePhone()
+        val port = startServer(control = phone)
+        val car = TestCar()
+        val started = post(port, "/pair/start", "c=" + Crypto.b64(car.commitment())).text
+        val id = field(started, "id")
+        val phoneKey = Crypto.unb64(field(started, "pub"))!!
+        assertTrue(server!!.pairing.waiting().isEmpty(), "the user isn't asked until the car reveals its key")
+
+        assertEquals("waiting", field(post(port, "/pair/finish", "id=$id&pub=" + Crypto.b64(car.publicKey)).text, "state"))
+        val asked = server!!.pairing.waiting().single()
+        assertEquals(car.code(phoneKey), asked.code, "the phone and the car show the same code")
+        assertEquals("waiting", field(get(port, "/pair/wait?id=$id&state=started").text, "state"))
+
+        thread { Thread.sleep(200); server!!.pairing.approve(id) }
+        assertEquals("approved", field(get(port, "/pair/wait?id=$id&state=waiting").text, "state"))
+        car.paired(id, phoneKey)
+
+        val key = car.sessionKey()
+        val challenge = post(port, "/session/start", "pair=$id&pub=" + Crypto.b64(key)).text
+        val sessionPhoneKey = Crypto.unb64(field(challenge, "pub"))!!
+        val nonce = Crypto.unb64(field(challenge, "nonce"))!!
+        val opened = post(port, "/session/finish", "pair=$id&pub=" + Crypto.b64(key) +
+            "&proof=" + Crypto.b64(car.proof(sessionPhoneKey, nonce))).text
+        car.opened(field(opened, "session"), sessionPhoneKey, nonce)
+
+        val status = get(port, "/status?${car.query()}")
+        val json = String(car.open(Crypto.utf8("status"), status.body)!!)
+        assertTrue("\"touch\":true" in json, json)
+        assertEquals(204, input(port, car, "a=home").status)
+        assertEquals(listOf(GlobalAction.HOME), phone.pressed)
+    }
+
+    @Test
+    fun `a denied car gets nothing`() {
         val port = startServer()
-        hub.publish(byteArrayOf(9, 8, 7), 2, 2)
+        val car = TestCar()
+        val id = field(post(port, "/pair/start", "c=" + Crypto.b64(car.commitment())).text, "id")
+        post(port, "/pair/finish", "id=$id&pub=" + Crypto.b64(car.publicKey))
+        server!!.pairing.deny(id)
+        assertEquals("denied", field(get(port, "/pair/wait?id=$id&state=waiting").text, "state"))
+        assertEquals(404, post(port, "/session/start", "pair=$id&pub=" + Crypto.b64(car.sessionKey())).status)
+        assertEquals(429, post(port, "/pair/start", "c=" + Crypto.b64(TestCar().commitment())).status,
+            "the same address may not ask again straight away")
+    }
+
+    @Test
+    fun `a session needs the pair key's proof`() {
+        val port = startServer()
+        val car = pairedCar()
+        val key = car.sessionKey()
+        post(port, "/session/start", "pair=${car.pairId}&pub=" + Crypto.b64(key))
+        assertEquals(403, post(port, "/session/finish", "pair=${car.pairId}&pub=" + Crypto.b64(key) +
+            "&proof=" + Crypto.b64(ByteArray(32))).status)
+        assertEquals(400, post(port, "/pair/finish", "id=nope&pub=" + Crypto.b64(ByteArray(32))).status)
+        assertEquals(400, post(port, "/pair/start", "c=not-base64!").status)
+    }
+
+    // ---- Frames, one at a time (the fallback) ----
+
+    @Test
+    fun `the poll fallback returns the newest frame, encrypted, with its number and size`() {
+        val port = startServer()
+        val car = pairedCar()
+        hub.publish(byteArrayOf(1, 2, 3), 640, 480)
+        val shown = car.frame(recordOf(get(port, "/frame?${car.query()}&after=0")))
+        assertEquals(1, shown.seq)
+        assertEquals(640, shown.width)
+        assertEquals(480, shown.height)
+        assertContentEquals(byteArrayOf(1, 2, 3), shown.jpeg)
+    }
+
+    @Test
+    fun `the poll fallback pings when the screen has not changed`() {
+        val port = startServer(longPollMs = 150)
+        val car = pairedCar()
+        val record = recordOf(get(port, "/frame?${car.query()}&after=0"))
+        assertEquals(3, record.type)
+        assertEquals(0, car.plaintext(record).size)
+    }
+
+    @Test
+    fun `a waiting request is answered as soon as a new frame arrives`() {
+        val port = startServer(longPollMs = 5_000)
+        val car = pairedCar()
+        hub.publish(byteArrayOf(1), 1, 1)
+        thread {
+            Thread.sleep(150)
+            hub.publish(byteArrayOf(2), 1, 1)
+        }
+        val started = System.nanoTime()
+        val shown = car.frame(recordOf(get(port, "/frame?${car.query()}&after=1")))
+        val elapsedMs = (System.nanoTime() - started) / 1_000_000
+        assertEquals(2, shown.seq)
+        assertTrue(elapsedMs in 100..2_000, "took $elapsedMs ms")
+    }
+
+    @Test
+    fun `keeps the connection open between frame requests`() {
+        val port = startServer()
+        val car = pairedCar()
         connect(port).use { socket ->
-            send(socket, "/stream.mjpeg")
             val input = BufferedInputStream(socket.getInputStream())
-            val (status, headers) = readHead(input)
-            assertEquals(200, status)
-            assertTrue(headers["content-type"]!!.startsWith("multipart/x-mixed-replace; boundary="))
-            val boundary = headers["content-type"]!!.substringAfter("boundary=")
-            assertEquals("--$boundary", readLine(input))
-            val part = readResponseBodyOfPart(input)
-            assertContentEquals(byteArrayOf(9, 8, 7), part)
+            for (n in 1..3) {
+                hub.publish(byteArrayOf(n.toByte()), 1, 1)
+                send(socket, "/frame?${car.query()}&after=${n - 1}")
+                val response = readResponse(input)
+                assertEquals("keep-alive", response.headers["connection"])
+                assertEquals(n.toLong(), car.frame(recordOf(response)).seq)
+            }
         }
     }
 
-    private fun readResponseBodyOfPart(input: InputStream): ByteArray {
-        var length = -1
-        while (true) {
-            val line = readLine(input)
-            if (line.isEmpty()) break
-            if (line.lowercase().startsWith("content-length:")) length = line.substringAfter(':').trim().toInt()
-        }
-        val body = ByteArray(length)
-        var read = 0
-        while (read < length) read += input.read(body, read, length - read)
-        return body
+    @Test
+    fun `a paused viewer gets the pause, never the frame`() {
+        val port = startServer(longPollMs = 150)
+        val car = pairedCar()
+        hub.publish(byteArrayOf(1, 2, 3), 2, 2)
+        hub.setPaused("privacy")
+        assertEquals("privacy", car.state(recordOf(get(port, "/frame?${car.query()}&after=0"))))
+
+        // Knowing it is paused, the viewer waits the full poll and still gets nothing.
+        val started = System.nanoTime()
+        assertEquals(3, recordOf(get(port, "/frame?${car.query()}&after=0&paused=privacy")).type)
+        assertTrue((System.nanoTime() - started) / 1_000_000 >= 100, "did not wait while paused")
+
+        hub.setPaused(null)
+        assertEquals("", car.state(recordOf(get(port, "/frame?${car.query()}&after=0&paused=privacy"))))
+        assertEquals(1, recordOf(get(port, "/frame?${car.query()}&after=0")).type)
+    }
+
+    @Test
+    fun `tells auto quality how many frames the car skipped`() {
+        val quality = AutoQuality(max = 70, min = 40, windowMs = 0)
+        val port = startServer(autoQuality = quality)
+        val car = pairedCar()
+        repeat(5) { hub.publish(byteArrayOf(it.toByte()), 1, 1) }
+        // The car drew frame 1 and now gets frame 5: it skipped 2, 3 and 4.
+        assertEquals(5, car.frame(recordOf(get(port, "/frame?${car.query()}&after=1"))).seq)
+        assertEquals(60, quality.current)
     }
 
     @Test
     fun `remembers which address each viewer typed`() {
         val port = startServer(longPollMs = 50)
-        get(port, "/frame?after=0", host = "100-73-0-1.sslip.io:$port")
+        val car = pairedCar()
+        get(port, "/frame?${car.query()}&after=0", host = "100-73-0-1.sslip.io:$port")
         val viewer = server!!.recentViewers().single()
         assertEquals("100-73-0-1.sslip.io:$port", viewer.host)
         assertEquals("127.0.0.1", viewer.remoteAddress)
     }
 
     @Test
+    fun `an unpaired device doesn't count as the car`() {
+        val port = startServer(longPollMs = 50)
+        get(port, "/frame?after=0")
+        get(port, "/frames")
+        assertTrue(server!!.recentViewers().isEmpty())
+    }
+
+    @Test
     fun `turns away connections beyond the limit`() {
         val port = startServer(longPollMs = 5_000, maxConnections = 1)
+        val car = pairedCar()
         connect(port).use { held ->
-            send(held, "/frame?after=0") // parks in a long poll
+            send(held, "/frame?${car.query()}&after=0") // parks in a long poll
             Thread.sleep(150)
             assertEquals(503, get(port, "/").status)
         }
@@ -280,8 +462,9 @@ class MirrorServerTest {
     @Test
     fun `stop ends connections that are waiting for a frame`() {
         val port = startServer(longPollMs = 30_000)
+        val car = pairedCar()
         connect(port).use { socket ->
-            send(socket, "/frame?after=0")
+            send(socket, "/frame?${car.query()}&after=0")
             Thread.sleep(150)
             val started = System.nanoTime()
             server!!.stop()
@@ -298,96 +481,94 @@ class MirrorServerTest {
 
     // ---- The frame stream ----
 
-    private class Record(val type: Int, val payload: ByteArray)
-
-    private fun readRecord(input: InputStream): Record {
-        val head = ByteArray(5)
-        var read = 0
-        while (read < 5) {
-            val n = input.read(head, read, 5 - read)
-            if (n < 0) throw IOException("stream ended")
-            read += n
-        }
-        val length = ((head[1].toInt() and 0xFF) shl 24) or ((head[2].toInt() and 0xFF) shl 16) or
-            ((head[3].toInt() and 0xFF) shl 8) or (head[4].toInt() and 0xFF)
-        val payload = ByteArray(length)
-        read = 0
-        while (read < length) {
-            val n = input.read(payload, read, length - read)
-            if (n < 0) throw IOException("stream ended mid-record")
-            read += n
-        }
-        return Record(head[0].toInt(), payload)
-    }
-
-    private fun openStream(port: Int, query: String = ""): Pair<Socket, InputStream> {
-        val socket = connect(port)
-        send(socket, "/frames$query")
-        val input = BufferedInputStream(socket.getInputStream())
-        val (status, headers) = readHead(input)
-        assertEquals(200, status)
-        assertEquals("application/octet-stream", headers["content-type"])
-        return socket to input
-    }
-
     @Test
     fun `the stream pushes each new frame without being asked again`() {
         val port = startServer()
-        val (socket, input) = openStream(port)
+        val car = pairedCar()
+        val (socket, input) = openStream(port, car)
         socket.use {
             for (n in 1..3) {
                 hub.publish(byteArrayOf(n.toByte(), 9), 640, 296)
-                val record = readRecord(input)
-                assertEquals(1, record.type)
-                assertEquals(640, ((record.payload[0].toInt() and 0xFF) shl 8) or (record.payload[1].toInt() and 0xFF))
-                assertEquals(296, ((record.payload[2].toInt() and 0xFF) shl 8) or (record.payload[3].toInt() and 0xFF))
-                assertContentEquals(byteArrayOf(n.toByte(), 9), record.payload.copyOfRange(4, record.payload.size))
+                val shown = car.frame(readRecord(input))
+                assertEquals(640, shown.width)
+                assertEquals(296, shown.height)
+                assertContentEquals(byteArrayOf(n.toByte(), 9), shown.jpeg)
             }
+        }
+    }
+
+    @Test
+    fun `frames are encrypted on the wire`() {
+        val port = startServer()
+        val car = pairedCar()
+        val jpeg = Crypto.utf8("JFIF-this-is-the-phone-screen").let { byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte()) + it }
+        val (socket, input) = openStream(port, car)
+        socket.use {
+            hub.publish(jpeg, 2, 2)
+            val record = readRecord(input)
+            assertFalse(String(record.sealed, Charsets.ISO_8859_1).contains("phone-screen"), "the JPEG crossed the network in the clear")
+            assertContentEquals(jpeg, car.frame(record).jpeg)
+            assertNull(TestCar().also { it.pairAndOpen(server!!.pairing, "127.0.0.1") }.open(byteArrayOf(1), record.sealed),
+                "another car's session can't read it")
         }
     }
 
     @Test
     fun `a car that falls behind gets the newest frame, not a backlog`() {
         val port = startServer()
+        val car = pairedCar()
         repeat(5) { hub.publish(byteArrayOf(it.toByte()), 1, 1) }
-        val (socket, input) = openStream(port)
+        val (socket, input) = openStream(port, car)
         socket.use {
-            val record = readRecord(input)
-            assertEquals(1, record.type)
-            assertEquals(4, record.payload[4].toInt(), "should start from the newest frame")
+            assertEquals(4, car.frame(readRecord(input)).jpeg[0].toInt(), "should start from the newest frame")
         }
     }
 
     @Test
     fun `the stream carries pauses and sends no frames while paused`() {
         val port = startServer()
+        val car = pairedCar()
         hub.publish(byteArrayOf(1), 1, 1)
-        val (socket, input) = openStream(port)
+        val (socket, input) = openStream(port, car)
         socket.use {
-            assertEquals(1, readRecord(input).type)
+            car.frame(readRecord(input))
             hub.setPaused("privacy")
-            val state = readRecord(input)
-            assertEquals(2, state.type)
-            assertEquals("privacy", String(state.payload))
+            assertEquals("privacy", car.state(readRecord(input)))
             hub.publish(byteArrayOf(2), 1, 1) // made while paused: must not be sent
             hub.setPaused(null)
-            val resumed = readRecord(input)
-            assertEquals(2, resumed.type)
-            assertEquals("", String(resumed.payload))
-            val next = readRecord(input)
-            assertEquals(1, next.type)
-            assertEquals(2, next.payload[4].toInt())
+            assertEquals("", car.state(readRecord(input)))
+            assertEquals(2, car.frame(readRecord(input)).jpeg[0].toInt())
         }
     }
 
     @Test
     fun `an idle stream sends pings so a vanished car is noticed`() {
-        val s = MirrorServer(hub, streamPingMs = 100)
-        server = s
-        val port = s.start(0, loopback)
-        val (socket, input) = openStream(port)
+        val port = startServer(streamPingMs = 100)
+        val car = pairedCar()
+        val (socket, input) = openStream(port, car)
         socket.use {
-            assertEquals(3, readRecord(input).type)
+            val ping = readRecord(input)
+            assertEquals(3, ping.type)
+            assertEquals(0, car.plaintext(ping).size)
+        }
+    }
+
+    @Test
+    fun `forgetting the car ends its stream`() {
+        val port = startServer(streamPingMs = 100)
+        val car = pairedCar()
+        val (socket, input) = openStream(port, car)
+        socket.use {
+            readRecord(input)
+            server!!.pairing.forgetAll()
+            val ended = try {
+                repeat(10) { readRecord(input) }
+                false
+            } catch (_: IOException) {
+                true
+            }
+            assertTrue(ended, "the stream outlived the pairing")
+            assertEquals(401, get(port, "/status?${car.query()}").status)
         }
     }
 
@@ -395,6 +576,7 @@ class MirrorServerTest {
     fun `when the link can't keep up, frames are skipped and auto quality steps down`() {
         val quality = AutoQuality(max = 70, min = 40, windowMs = 0)
         val port = startServer(autoQuality = quality)
+        val car = pairedCar()
         // A car that reads slowly: a tiny receive buffer, and nothing read until frames pile up.
         val socket = Socket().apply {
             receiveBufferSize = 4 * 1024
@@ -402,18 +584,16 @@ class MirrorServerTest {
             connect(java.net.InetSocketAddress(loopback, port))
         }
         socket.use {
-            send(socket, "/frames")
+            send(socket, "/frames?${car.query()}")
             val input = BufferedInputStream(socket.getInputStream())
             readHead(input)
             hub.publish(byteArrayOf(1), 1, 1)
-            assertEquals(1, readRecord(input).type) // the stream is live
+            car.frame(readRecord(input)) // the stream is live
             hub.publish(ByteArray(4 * 1024 * 1024), 1, 1) // far bigger than every buffer: the write blocks
             Thread.sleep(200)
             repeat(3) { hub.publish(byteArrayOf(9), 1, 1) } // made while the write is stuck
-            val big = readRecord(input)
-            assertEquals(4 * 1024 * 1024 + 4, big.payload.size)
-            val next = readRecord(input)
-            assertEquals(9, next.payload[4].toInt())
+            assertEquals(4 * 1024 * 1024, car.frame(readRecord(input)).jpeg.size)
+            assertEquals(9, car.frame(readRecord(input)).jpeg[0].toInt())
             assertEquals(60, quality.current, "skipping two frames out of three should lower quality")
         }
     }
@@ -422,7 +602,8 @@ class MirrorServerTest {
     fun `frames withheld during a pause don't count as the car falling behind`() {
         val quality = AutoQuality(max = 70, min = 40, windowMs = 0)
         val port = startServer(autoQuality = quality)
-        val (socket, input) = openStream(port)
+        val car = pairedCar()
+        val (socket, input) = openStream(port, car)
         socket.use {
             hub.publish(byteArrayOf(1), 1, 1)
             readRecord(input)
@@ -435,6 +616,8 @@ class MirrorServerTest {
             assertEquals(70, quality.current)
         }
     }
+
+    // ---- Connections ----
 
     @Test
     fun `closes connections that arrive on an address it should not serve`() {
@@ -466,47 +649,75 @@ class MirrorServerTest {
 
     // ---- Touch control ----
 
-    private fun post(port: Int, body: String, token: String?, extraHeaders: String = ""): Response =
-        connect(port).use { socket ->
-            val tokenHeader = if (token == null) "" else "X-Car-Mirror-Token: $token\r\n"
-            val bytes = body.toByteArray()
-            socket.getOutputStream().write(
-                ("POST /input HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n$tokenHeader" +
-                    "Content-Length: ${bytes.size}\r\n$extraHeaders\r\n").toByteArray() + bytes,
-            )
-            readResponse(BufferedInputStream(socket.getInputStream()))
-        }
-
     @Test
-    fun `a tap reaches the phone only with this session's token`() {
+    fun `a tap reaches the phone only from a paired car's session`() {
         val phone = FakePhone()
         val port = startServer(control = phone)
-        val token = server!!.token
-        assertEquals(403, post(port, "d=60&p=0.5,0.5", token = null).status)
-        assertEquals(403, post(port, "d=60&p=0.5,0.5", token = "from-an-earlier-session").status)
-        assertTrue(phone.performed.isEmpty(), "performed a gesture without the token")
-
-        assertEquals(204, post(port, "d=60&p=0.5,0.25", token).status)
+        assertEquals(401, post(port, "/input", "d=60&p=0.5,0.5").status)
+        val car = pairedCar()
+        assertEquals(204, input(port, car, "d=60&p=0.5,0.25").status)
         assertEquals(0.25f, phone.performed.single().points.single().y)
-        assertTrue(MirrorServer(hub).token != token, "tokens must differ between sessions")
+    }
+
+    @Test
+    fun `a recorded tap can't be replayed, and a forged one is refused`() {
+        val phone = FakePhone()
+        val port = startServer(control = phone)
+        val car = pairedCar()
+        val tap = car.seal(Crypto.utf8("input"), Crypto.utf8("a=home"))
+        val header = "X-Car-Mirror-Session: ${car.sessionId}\r\n"
+        assertEquals(204, post(port, "/input", tap, header).status)
+        assertEquals(403, post(port, "/input", tap, header).status, "the same message again")
+        val forged = TestCar().also { it.pairAndOpen(server!!.pairing, "127.0.0.1") }.seal(Crypto.utf8("input"), Crypto.utf8("a=back"))
+        assertEquals(403, post(port, "/input", forged, header).status, "sealed with another session's key")
+        assertEquals(403, post(port, "/input", "a=back".toByteArray(), header).status, "not encrypted at all")
+        assertEquals(listOf(GlobalAction.HOME), phone.pressed)
+    }
+
+    @Test
+    fun `back, home and recents reach the phone`() {
+        val phone = FakePhone()
+        val port = startServer(control = phone)
+        val car = pairedCar()
+        assertEquals(204, input(port, car, "a=back").status)
+        assertEquals(204, input(port, car, "a=home").status)
+        assertEquals(204, input(port, car, "a=recents").status)
+        assertEquals(listOf(GlobalAction.BACK, GlobalAction.HOME, GlobalAction.RECENTS), phone.pressed)
+        assertEquals(400, input(port, car, "a=power").status, "only the three navigation buttons")
+
+        hub.setPaused("privacy")
+        assertEquals(409, input(port, car, "a=home").status, "no buttons while paused")
+        assertEquals(3, phone.pressed.size)
+    }
+
+    @Test
+    fun `a two-finger pinch reaches the phone as two strokes`() {
+        val phone = FakePhone()
+        val port = startServer(control = phone)
+        val car = pairedCar()
+        assertEquals(204, input(port, car, "d=400&p=0.45,0.5;0.3,0.5|0.55,0.5;0.7,0.5").status)
+        val pinch = phone.performed.single()
+        assertEquals(2, pinch.strokes.size)
+        assertEquals(0.3f, pinch.strokes[0].last().x)
+        assertEquals(0.7f, pinch.strokes[1].last().x)
     }
 
     @Test
     fun `refuses taps while paused, while touch is off, or when the phone can't`() {
         val phone = FakePhone()
         val port = startServer(control = phone)
-        val token = server!!.token
+        val car = pairedCar()
 
         hub.setPaused("privacy")
-        assertEquals(409, post(port, "d=60&p=0.5,0.5", token).status)
+        assertEquals(409, input(port, car, "d=60&p=0.5,0.5").status)
         hub.setPaused(null)
 
         phone.touchOn = false
-        assertEquals(409, post(port, "d=60&p=0.5,0.5", token).status)
+        assertEquals(409, input(port, car, "d=60&p=0.5,0.5").status)
         phone.touchOn = true
 
         phone.succeeds = false
-        assertEquals(409, post(port, "d=60&p=0.5,0.5", token).status)
+        assertEquals(409, input(port, car, "d=60&p=0.5,0.5").status)
         assertEquals(1, phone.performed.size, "only the last attempt should have reached the phone")
     }
 
@@ -514,20 +725,21 @@ class MirrorServerTest {
     fun `rejects malformed, oversized and unlengthed input`() {
         val phone = FakePhone()
         val port = startServer(control = phone)
-        val token = server!!.token
-        assertEquals(400, post(port, "d=60&p=2,2", token).status)
-        assertEquals(413, post(port, "d=60&p=" + "0.5,0.5;".repeat(1000), token).status)
+        val car = pairedCar()
+        assertEquals(400, input(port, car, "d=60&p=2,2").status)
+        assertEquals(413, input(port, car, "d=60&p=" + "0.5,0.5;".repeat(1000)).status)
         connect(port).use { socket ->
-            socket.getOutputStream().write("POST /input HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Car-Mirror-Token: $token\r\n\r\n".toByteArray())
+            socket.getOutputStream().write("POST /input HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Car-Mirror-Session: ${car.sessionId}\r\n\r\n".toByteArray())
             assertEquals(411, readResponse(BufferedInputStream(socket.getInputStream())).status)
         }
         assertTrue(phone.performed.isEmpty())
     }
 
     @Test
-    fun `without touch support the endpoint does not exist`() {
+    fun `without touch support there is nothing to tap`() {
         val port = startServer(control = null)
-        assertEquals(404, post(port, "d=60&p=0.5,0.5", server!!.token).status)
+        val car = pairedCar()
+        assertEquals(404, input(port, car, "d=60&p=0.5,0.5").status)
     }
 
     @Test
@@ -536,7 +748,7 @@ class MirrorServerTest {
         connect(port).use { socket ->
             send(socket, "/input", method = "OPTIONS",
                 extra = "Origin: http://evil.example\r\nAccess-Control-Request-Method: POST\r\n" +
-                    "Access-Control-Request-Headers: x-car-mirror-token\r\n")
+                    "Access-Control-Request-Headers: x-car-mirror-session\r\n")
             val response = readResponse(BufferedInputStream(socket.getInputStream()))
             assertEquals(405, response.status)
             assertTrue(response.headers.keys.none { it.startsWith("access-control-") }, "sent CORS headers")
@@ -544,72 +756,15 @@ class MirrorServerTest {
     }
 
     @Test
-    fun `status reports touch, quality and the session token`() {
+    fun `status is encrypted and reports touch, quality and pause`() {
         val port = startServer(control = FakePhone(), autoQuality = AutoQuality(max = 70))
-        val json = get(port, "/status").text
+        val car = pairedCar()
+        val response = get(port, "/status?${car.query()}")
+        assertFalse("touch" in response.text, "status crossed the network in the clear")
+        val json = String(car.open(Crypto.utf8("status"), response.body)!!)
         assertTrue("\"touch\":true" in json, json)
         assertTrue("\"jpegQuality\":70" in json, json)
-        assertTrue("\"token\":\"${server!!.token}\"" in json, json)
         assertTrue("\"paused\":null" in json, json)
-    }
-
-    // ---- Pause ----
-
-    @Test
-    fun `a paused viewer gets the pause, never the frame`() {
-        val port = startServer(longPollMs = 150)
-        hub.publish(byteArrayOf(1, 2, 3), 2, 2)
-        hub.setPaused("privacy")
-
-        val first = get(port, "/frame?after=0")
-        assertEquals(204, first.status)
-        assertEquals("privacy", first.headers["x-mirror-paused"])
-
-        // Knowing it is paused, the viewer waits the full poll and still gets nothing.
-        val started = System.nanoTime()
-        val waiting = get(port, "/frame?after=0&paused=privacy")
-        assertEquals(204, waiting.status)
-        assertTrue((System.nanoTime() - started) / 1_000_000 >= 100, "did not wait while paused")
-
-        hub.setPaused(null)
-        val resumed = get(port, "/frame?after=0&paused=privacy")
-        assertEquals(204, resumed.status)
-        assertEquals("", resumed.headers["x-mirror-paused"])
-
-        val live = get(port, "/frame?after=0")
-        assertEquals(200, live.status)
-        assertEquals("", live.headers["x-mirror-paused"])
-    }
-
-    @Test
-    fun `the MJPEG fallback goes black while paused`() {
-        val port = startServer()
-        hub.publish(byteArrayOf(9, 8, 7), 2, 2)
-        connect(port).use { socket ->
-            send(socket, "/stream.mjpeg")
-            val input = BufferedInputStream(socket.getInputStream())
-            val (_, headers) = readHead(input)
-            val boundary = headers["content-type"]!!.substringAfter("boundary=")
-            assertEquals("--$boundary", readLine(input))
-            assertContentEquals(byteArrayOf(9, 8, 7), readResponseBodyOfPart(input))
-
-            hub.setPaused("privacy")
-            readLine(input) // CRLF after the previous part
-            assertEquals("--$boundary", readLine(input))
-            val black = readResponseBodyOfPart(input)
-            assertEquals(0xFF.toByte(), black[0])
-            assertEquals(0xD8.toByte(), black[1], "not a JPEG")
-            assertTrue(black.size > 100, "too small to be the black frame")
-        }
-    }
-
-    @Test
-    fun `tells auto quality how many frames the car skipped`() {
-        val quality = AutoQuality(max = 70, min = 40, windowMs = 0)
-        val port = startServer(autoQuality = quality)
-        repeat(5) { hub.publish(byteArrayOf(it.toByte()), 1, 1) }
-        // The car drew frame 1 and now gets frame 5: it skipped 2, 3 and 4.
-        assertEquals("5", get(port, "/frame?after=1").headers["x-frame-seq"])
-        assertEquals(60, quality.current)
+        assertFalse("token" in json, json)
     }
 }

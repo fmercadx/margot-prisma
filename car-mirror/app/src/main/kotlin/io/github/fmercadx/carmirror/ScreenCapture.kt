@@ -17,6 +17,7 @@ import android.view.Display
 import io.github.fmercadx.carmirror.core.AutoQuality
 import io.github.fmercadx.carmirror.core.FrameHub
 import io.github.fmercadx.carmirror.core.Quality
+import io.github.fmercadx.carmirror.core.VideoHub
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 
@@ -31,6 +32,13 @@ import java.nio.ByteBuffer
  * paused, or while no car is watching, images are still copied (cheap) but not compressed
  * (the expensive part); the newest one is compressed as soon as someone wants it.
  *
+ * In video mode ([video] given), the display feeds the phone's hardware H.264 encoder instead
+ * ([VideoEncoder]), and nothing passes through the image reader. It feeds it only while live
+ * and watched; otherwise the encoder gets nothing at all. If the encoder can't start or
+ * breaks, or the car can't play the video, it falls back to JPEG for the rest of the session
+ * and tells [onVideoOff]. Android lets a projection make only one virtual display, which is
+ * why both modes live here and switch the display's surface.
+ *
  * Everything after [start] runs on one background thread, so none of the state below needs
  * locking.
  */
@@ -40,6 +48,8 @@ class ScreenCapture(
     private val hub: FrameHub,
     private val quality: Quality,
     private val autoQuality: AutoQuality,
+    private val video: VideoHub? = null,
+    private val onVideoOff: (VideoOff) -> Unit = {},
 ) {
     private val displayManager = context.service<DisplayManager>()
     private val thread = HandlerThread("screen-capture").apply { start() }
@@ -60,6 +70,11 @@ class ScreenCapture(
     /** [raw] with the padding cut off, when there is padding. */
     private var cropped: Bitmap? = null
     private var croppedCanvas: Canvas? = null
+
+    private var encoder: VideoEncoder? = null
+    private var videoOn = video != null    // false once fallen back to pictures
+    private var videoFeeding = false       // the display draws into the encoder right now
+    private var encoderGeneration = 0      // so a failure reported by a replaced encoder is ignored
 
     private var dirty = false
     private var paused = false
@@ -96,22 +111,125 @@ class ScreenCapture(
             imageReader.surface, null, handler,
         )
         displayManager.registerDisplayListener(displayListener, handler)
+        if (videoOn) handler.post { startVideo() }
         handler.postDelayed(viewerCheck, VIEWER_CHECK_MS)
     }
 
-    /** Compresses a frame held back while nobody was watching, once a car shows up. */
+    /**
+     * Compresses a frame held back while nobody was watching, once a car shows up. In video
+     * mode, starts and stops feeding the encoder as cars come and go.
+     */
     private val viewerCheck = object : Runnable {
         override fun run() {
-            scheduleEncode()
+            if (encoder != null) updateVideoFeed() else scheduleEncode()
             handler.postDelayed(this, VIEWER_CHECK_MS)
         }
     }
+
+    // ---- Video mode ----
+
+    /** (Re)starts the encoder at the current screen size and frame rate. */
+    private fun startVideo() {
+        val virtualDisplay = display ?: return
+        val hub = video ?: return
+        val (width, height, dpi) = targetSize()
+        val fps = currentFps
+        virtualDisplay.surface = null
+        encoder?.release()
+        encoder = null
+        videoFeeding = false
+        val generation = ++encoderGeneration
+        val next = VideoEncoder.create(width, height, fps, hub, handler) {
+            if (generation == encoderGeneration) videoOff(VideoOff.PHONE)
+        }
+        if (next == null) {
+            videoOff(VideoOff.PHONE)
+            return
+        }
+        encoder = next
+        captureWidth = width // the screen size this encoder was made for
+        captureHeight = height
+        virtualDisplay.resize(next.width, next.height, dpi)
+        updateVideoFeed()
+    }
+
+    /** Feeds the encoder while the picture is live and a car is watching; nothing otherwise. */
+    private fun updateVideoFeed() {
+        val current = encoder ?: return
+        val virtualDisplay = display ?: return
+        val feed = !paused && video?.hasViewers() == true
+        if (feed == videoFeeding) return
+        videoFeeding = feed
+        if (feed) {
+            current.setSuspended(false)
+            current.requestKeyframe(force = true) // a car joined, or the picture is back: start it clean
+            virtualDisplay.surface = current.inputSurface // a new surface gets a freshly drawn frame
+        } else {
+            virtualDisplay.surface = null
+            current.setSuspended(true)
+        }
+    }
+
+    /** Ends video mode for this session and goes back to JPEG pictures. */
+    private fun videoOff(reason: VideoOff) {
+        if (!videoOn) return
+        videoOn = false
+        val virtualDisplay = display
+        virtualDisplay?.surface = null
+        encoder?.release()
+        encoder = null
+        videoFeeding = false
+        video?.close() // the car's video streams end; it reconnects and gets pictures
+        onVideoOff(reason)
+        if (virtualDisplay == null) return
+        val (width, height, dpi) = targetSize()
+        val old = reader
+        val imageReader = newReader(width, height)
+        virtualDisplay.resize(width, height, dpi)
+        virtualDisplay.surface = imageReader.surface
+        reader = imageReader
+        captureWidth = width
+        captureHeight = height
+        old?.close()
+    }
+
+    /** The car's browser can't play the video. Safe to call from any thread. */
+    fun refuseVideo() {
+        handler.post { videoOff(VideoOff.CAR) }
+    }
+
+    /** A car needs a keyframe sooner than the encoder would make one. Safe to call from any thread. */
+    fun requestKeyframe() {
+        handler.post { encoder?.requestKeyframe() }
+    }
+
+    @Volatile private var maxFps: Int? = null
+    @Volatile private var maxJpegQuality: Int? = null
+
+    /**
+     * Caps the frame rate and JPEG quality below the user's setting, e.g. while the phone is
+     * hot. Null lifts a cap. Safe to call from any thread.
+     */
+    fun setLimits(fps: Int?, jpegQuality: Int?) {
+        maxFps = fps
+        maxJpegQuality = jpegQuality
+        handler.post {
+            // The encoder's rate is fixed when it starts (and its bitrate follows it), so a new
+            // cap means a new encoder. Thermal status changes rarely; the car barely notices.
+            val current = encoder
+            if (current != null && current.fps != currentFps) startVideo()
+        }
+    }
+
+    private val currentFps: Int get() = minOf(quality.fps, maxFps ?: quality.fps)
+
+    private val frameIntervalMs: Long get() = 1000L / currentFps
 
     /** Stops or resumes encoding. Safe to call from any thread. */
     fun setPaused(value: Boolean) {
         handler.post {
             paused = value
-            if (!paused) scheduleEncode()
+            if (encoder != null) updateVideoFeed() else if (!paused) scheduleEncode()
         }
     }
 
@@ -120,6 +238,10 @@ class ScreenCapture(
             displayManager.unregisterDisplayListener(displayListener)
             handler.removeCallbacks(encodeTask)
             handler.removeCallbacks(viewerCheck)
+            videoOn = false
+            display?.surface = null
+            encoder?.release()
+            encoder = null
             display?.release()
             display = null
             reader?.close()
@@ -151,6 +273,7 @@ class ScreenCapture(
         val virtualDisplay = display ?: return
         val (width, height, dpi) = targetSize()
         if (width == captureWidth && height == captureHeight) return
+        if (encoder != null) return startVideo() // a new encoder in the new shape; the car gets a new init
         val old = reader
         val imageReader = newReader(width, height)
         virtualDisplay.resize(width, height, dpi)
@@ -179,7 +302,7 @@ class ScreenCapture(
     private fun scheduleEncode() {
         if (paused || !dirty || encodeScheduled || !hub.hasViewers()) return
         encodeScheduled = true
-        val wait = (lastEncodeAt + quality.frameIntervalMs - SystemClock.uptimeMillis()).coerceAtLeast(0)
+        val wait = (lastEncodeAt + frameIntervalMs - SystemClock.uptimeMillis()).coerceAtLeast(0)
         handler.postDelayed(encodeTask, wait)
     }
 
@@ -231,7 +354,7 @@ class ScreenCapture(
             target
         }
         jpeg.reset()
-        frame.compress(Bitmap.CompressFormat.JPEG, autoQuality.current, jpeg)
+        frame.compress(Bitmap.CompressFormat.JPEG, minOf(autoQuality.current, maxJpegQuality ?: 100), jpeg)
         hub.publish(jpeg.toByteArray(), width, height)
     }
 

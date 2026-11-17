@@ -8,7 +8,7 @@
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   body { -webkit-user-select: none; user-select: none; touch-action: none; }
   #screen { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  #mjpeg { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; display: none; }
+  #video { position: fixed; left: 0; top: 0; width: 2px; height: 2px; opacity: 0; pointer-events: none; }
   #msg, #toast {
     position: fixed; left: 50%; transform: translate(-50%, -50%);
     max-width: 70vw; padding: 20px 28px; border-radius: 14px; pointer-events: none;
@@ -18,6 +18,10 @@
   #msg { top: 50%; }
   #toast { top: 82%; display: none; font-size: 22px; }
   #msg small { display: block; margin-top: 12px; color: #9a9a9a; font-size: 18px; font-weight: 400; }
+  #msg .code {
+    display: block; margin: 22px 0 8px; color: #fff; letter-spacing: .14em;
+    font: 700 72px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
   #info {
     position: fixed; left: 16px; bottom: 16px; display: none; pointer-events: none;
     padding: 8px 12px; border-radius: 8px; background: rgba(0, 0, 0, .7); color: #bdbdbd;
@@ -28,6 +32,20 @@
     background: rgba(255, 255, 255, .14); color: #e6e6e6; opacity: .45;
     font: 700 24px/46px system-ui, sans-serif; text-align: center; cursor: pointer;
   }
+  #nav {
+    position: fixed; right: 16px; top: 50%; transform: translateY(-50%); display: none;
+    flex-direction: column; gap: 18px; transition: opacity .4s;
+  }
+  #nav.idle { opacity: .3; }
+  #nav button {
+    width: 72px; height: 72px; padding: 0; border: 0; border-radius: 36px; cursor: pointer;
+    background: rgba(255, 255, 255, .16); color: #eee;
+  }
+  #nav button:active { background: rgba(255, 255, 255, .42); }
+  #nav svg {
+    display: block; width: 30px; height: 30px; margin: auto; fill: none; stroke: currentColor;
+    stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+  }
   .touch {
     position: fixed; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%;
     background: rgba(255, 255, 255, .45); pointer-events: none;
@@ -37,38 +55,178 @@
 </head>
 <body>
 <canvas id="screen"></canvas>
-<img id="mjpeg" alt="Phone screen">
+<video id="video" muted playsinline></video>
 <div id="msg">Connecting to your phone…</div>
 <div id="toast"></div>
 <div id="info"></div>
 <div id="menu" role="button" aria-label="Show details and go full screen">⋯</div>
+<div id="nav" aria-label="Phone buttons">
+  <button data-a="back" aria-label="Back"><svg viewBox="0 0 24 24"><path d="M15 5 8 12l7 7"/></svg></button>
+  <button data-a="home" aria-label="Home"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/></svg></button>
+  <button data-a="recents" aria-label="Recent apps"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+</div>
+<script src="crypto.js"></script>
 <script>
 (function () {
   'use strict';
 
   var canvas = document.getElementById('screen');
   var ctx = canvas.getContext('2d', { alpha: false });
-  var img = document.getElementById('mjpeg');
   var msg = document.getElementById('msg');
   var toast = document.getElementById('toast');
   var info = document.getElementById('info');
   var menu = document.getElementById('menu');
+  var nav = document.getElementById('nav');
+  var video = document.getElementById('video');
+
+  // ---- Language: what this page says, in the car's own language when there is a translation ----
+
+  var WORDS = {
+    "es": {
+      "This browser can’t play video mode. Showing pictures instead.": "Este navegador no puede reproducir el modo video. Se muestran imágenes en su lugar.",
+      "Connecting to your phone…": "Conectando con tu teléfono…",
+      "Lost the connection to your phone.": "Se perdió la conexión con tu teléfono.",
+      "Retrying… Check that mirroring is still on and the car is on the phone’s hotspot.": "Reintentando… Comprueba que la duplicación siga activa y que el auto esté en el hotspot del teléfono.",
+      "Pairing with your phone…": "Vinculando con tu teléfono…",
+      "Pair this screen with your phone": "Vincula esta pantalla con tu teléfono",
+      "Check that your phone shows the same code, then tap Allow there.": "Comprueba que tu teléfono muestre el mismo código y toca Permitir allí.",
+      "Paired.": "Vinculada.",
+      "Connecting…": "Conectando…",
+      "Paused while the car is moving.": "En pausa mientras el auto se mueve.",
+      "The picture comes back when you stop.": "La imagen vuelve cuando te detienes.",
+      "The phone is locked.": "El teléfono está bloqueado.",
+      "Unlock it to bring the picture back.": "Desbloquéalo para que vuelva la imagen.",
+      "The phone is too hot.": "El teléfono está demasiado caliente.",
+      "The picture comes back when it has cooled down.": "La imagen vuelve cuando se haya enfriado.",
+      "Paused on the phone.": "En pausa en el teléfono.",
+      "Tap Resume on the phone to continue.": "Toca Reanudar en el teléfono para continuar.",
+      "Resuming…": "Reanudando…",
+      "Connected.": "Conectado.",
+      "Waiting for the phone screen…": "Esperando la pantalla del teléfono…",
+      "Your phone said no.": "Tu teléfono dijo que no.",
+      "Reload this page to ask again.": "Vuelve a cargar esta página para pedirlo de nuevo.",
+      "Your phone didn’t answer in time.": "Tu teléfono no respondió a tiempo.",
+      "The phone isn’t taking pairing requests right now.": "El teléfono no acepta solicitudes de vinculación en este momento.",
+      "Trying again shortly…": "Se volverá a intentar en breve…",
+      "Touch control is off. Turn it on in Car Mirror on your phone.": "El control táctil está desactivado. Actívalo en Car Mirror en tu teléfono.",
+      "This browser can’t show your phone securely.": "Este navegador no puede mostrar tu teléfono de forma segura.",
+      "Open this address in the car’s own browser.": "Abre esta dirección en el navegador del propio auto.",
+      "Show details and go full screen": "Mostrar detalles y pantalla completa",
+      "Phone buttons": "Botones del teléfono",
+      "Back": "Atrás",
+      "Home": "Inicio",
+      "Recent apps": "Apps recientes"
+    },
+    "fr": {
+      "This browser can’t play video mode. Showing pictures instead.": "Ce navigateur ne peut pas lire le mode vidéo. Affichage en images à la place.",
+      "Connecting to your phone…": "Connexion au téléphone…",
+      "Lost the connection to your phone.": "Connexion au téléphone perdue.",
+      "Retrying… Check that mirroring is still on and the car is on the phone’s hotspot.": "Nouvel essai… Vérifiez que la recopie est toujours active et que la voiture est sur le point d’accès du téléphone.",
+      "Pairing with your phone…": "Association avec le téléphone…",
+      "Pair this screen with your phone": "Associez cet écran à votre téléphone",
+      "Check that your phone shows the same code, then tap Allow there.": "Vérifiez que le téléphone affiche le même code, puis appuyez sur Autoriser.",
+      "Paired.": "Associé.",
+      "Connecting…": "Connexion…",
+      "Paused while the car is moving.": "En pause pendant que la voiture roule.",
+      "The picture comes back when you stop.": "L’image revient à l’arrêt.",
+      "The phone is locked.": "Le téléphone est verrouillé.",
+      "Unlock it to bring the picture back.": "Déverrouillez-le pour rétablir l’image.",
+      "The phone is too hot.": "Le téléphone est trop chaud.",
+      "The picture comes back when it has cooled down.": "L’image revient quand il aura refroidi.",
+      "Paused on the phone.": "En pause sur le téléphone.",
+      "Tap Resume on the phone to continue.": "Appuyez sur Reprendre sur le téléphone pour continuer.",
+      "Resuming…": "Reprise…",
+      "Connected.": "Connecté.",
+      "Waiting for the phone screen…": "En attente de l’écran du téléphone…",
+      "Your phone said no.": "Le téléphone a refusé.",
+      "Reload this page to ask again.": "Rechargez cette page pour redemander.",
+      "Your phone didn’t answer in time.": "Le téléphone n’a pas répondu à temps.",
+      "The phone isn’t taking pairing requests right now.": "Le téléphone n’accepte pas de demandes d’association pour le moment.",
+      "Trying again shortly…": "Nouvel essai sous peu…",
+      "Touch control is off. Turn it on in Car Mirror on your phone.": "Le contrôle tactile est désactivé. Activez-le dans Car Mirror sur le téléphone.",
+      "This browser can’t show your phone securely.": "Ce navigateur ne peut pas afficher votre téléphone de façon sécurisée.",
+      "Open this address in the car’s own browser.": "Ouvrez cette adresse dans le navigateur de la voiture.",
+      "Show details and go full screen": "Afficher les détails et passer en plein écran",
+      "Phone buttons": "Boutons du téléphone",
+      "Back": "Retour",
+      "Home": "Accueil",
+      "Recent apps": "Applis récentes"
+    },
+    "de": {
+      "This browser can’t play video mode. Showing pictures instead.": "Dieser Browser kann den Videomodus nicht abspielen. Stattdessen werden Bilder gezeigt.",
+      "Connecting to your phone…": "Verbinde mit deinem Handy…",
+      "Lost the connection to your phone.": "Verbindung zum Handy verloren.",
+      "Retrying… Check that mirroring is still on and the car is on the phone’s hotspot.": "Neuer Versuch… Prüfe, ob das Spiegeln noch läuft und das Auto im Hotspot des Handys ist.",
+      "Pairing with your phone…": "Kopplung mit deinem Handy…",
+      "Pair this screen with your phone": "Kopple diesen Bildschirm mit deinem Handy",
+      "Check that your phone shows the same code, then tap Allow there.": "Prüfe, ob dein Handy denselben Code zeigt, und tippe dort auf Zulassen.",
+      "Paired.": "Gekoppelt.",
+      "Connecting…": "Verbinde…",
+      "Paused while the car is moving.": "Pausiert, solange das Auto fährt.",
+      "The picture comes back when you stop.": "Das Bild kommt zurück, wenn du anhältst.",
+      "The phone is locked.": "Das Handy ist gesperrt.",
+      "Unlock it to bring the picture back.": "Entsperre es, damit das Bild zurückkommt.",
+      "The phone is too hot.": "Das Handy ist zu heiß.",
+      "The picture comes back when it has cooled down.": "Das Bild kommt zurück, sobald es abgekühlt ist.",
+      "Paused on the phone.": "Auf dem Handy pausiert.",
+      "Tap Resume on the phone to continue.": "Tippe auf dem Handy auf Fortsetzen, um weiterzumachen.",
+      "Resuming…": "Wird fortgesetzt…",
+      "Connected.": "Verbunden.",
+      "Waiting for the phone screen…": "Warte auf den Handybildschirm…",
+      "Your phone said no.": "Dein Handy hat abgelehnt.",
+      "Reload this page to ask again.": "Lade diese Seite neu, um erneut zu fragen.",
+      "Your phone didn’t answer in time.": "Dein Handy hat nicht rechtzeitig geantwortet.",
+      "The phone isn’t taking pairing requests right now.": "Das Handy nimmt gerade keine Kopplungsanfragen an.",
+      "Trying again shortly…": "Neuer Versuch in Kürze…",
+      "Touch control is off. Turn it on in Car Mirror on your phone.": "Die Touch-Steuerung ist aus. Schalte sie in Car Mirror auf deinem Handy ein.",
+      "This browser can’t show your phone securely.": "Dieser Browser kann dein Handy nicht sicher anzeigen.",
+      "Open this address in the car’s own browser.": "Öffne diese Adresse im Browser des Autos.",
+      "Show details and go full screen": "Details zeigen und Vollbild",
+      "Phone buttons": "Handy-Tasten",
+      "Back": "Zurück",
+      "Home": "Startbildschirm",
+      "Recent apps": "Letzte Apps"
+    }
+  };
+  var words = WORDS[String(navigator.language || 'en').slice(0, 2).toLowerCase()] || {};
+  function t(text) { return (text && words[text]) || text; }
+  Array.prototype.forEach.call(document.querySelectorAll('[aria-label]'), function (el) {
+    el.setAttribute('aria-label', t(el.getAttribute('aria-label')));
+  });
+  msg.textContent = t(msg.textContent);
 
   var bitmap = null;        // last decoded frame, kept for redraws on resize
+  var videoMode = false;    // the phone sends H.264 (Video mode) instead of JPEG frames
+  var videoLoop = false;    // a video frame callback is pending
+  // A browser that can't play the phone's video asks for pictures, and the phone switches to
+  // them by itself: nobody has to find a setting while sitting in the car.
+  var noVideo = !(window.MediaSource && MediaSource.isTypeSupported('video/mp4; codecs="avc1.42e01f"'));
+
+  // The current picture, whichever kind it is: { image, width, height }, or null.
+  function picture() {
+    if (videoMode) return video.videoWidth ? { image: video, width: video.videoWidth, height: video.videoHeight } : null;
+    return bitmap ? { image: bitmap, width: bitmap.width, height: bitmap.height } : null;
+  }
   var drawn = null;         // where the last frame went: { rect (screen, CSS px), src (frame px), fw, fh }
   var paused = '';          // '' while live, otherwise why the phone is withholding the picture
   var failures = 0;
   var framesThisSecond = 0;
   var fps = 0;
-  var phone = { token: '', touch: false, quality: 0 };
+  var phone = { touch: false, quality: 0 };
   var forced = (location.search.match(/[?&]mode=(\w+)/) || [])[1] || '';
   var mode = forced === 'poll' ? 'poll' : 'stream';
 
-  function show(text, detail) {
-    msg.textContent = text || '';
+  function show(text, detail, code) {
+    msg.textContent = t(text) || '';
+    if (code) {
+      var digits = document.createElement('span');
+      digits.className = 'code';
+      digits.textContent = code;
+      msg.appendChild(digits);
+    }
     if (detail) {
       var small = document.createElement('small');
-      small.textContent = detail;
+      small.textContent = t(detail);
       msg.appendChild(small);
     }
     msg.style.display = text ? 'block' : 'none';
@@ -76,7 +234,7 @@
 
   var toastTimer = 0;
   function flash(text) {
-    toast.textContent = text;
+    toast.textContent = t(text);
     toast.style.display = 'block';
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { toast.style.display = 'none'; }, 3500);
@@ -85,6 +243,169 @@
   function lostConnection() {
     show('Lost the connection to your phone.',
       'Retrying… Check that mirroring is still on and the car is on the phone’s hotspot.');
+  }
+
+  // ---- Pairing and the encrypted session (Pairing.kt on the phone has the full story) ----
+  //
+  // The phone shows nothing to a screen it hasn't been told to trust. The first time, both
+  // show the same 6-digit code and the user taps Allow on the phone; this page then keeps a
+  // pair key in local storage. Each visit opens a session from it, and from then on frames,
+  // status and taps are encrypted (ChaCha20-Poly1305) with keys only this page and the phone
+  // have. crypto.js, served by the phone, provides the primitives: plain http pages get no
+  // crypto.subtle from the browser.
+
+  var C = window.CarCrypto;
+  var encoder = typeof TextEncoder === 'function' ? new TextEncoder() : null;
+  var PAIR_STORAGE = 'carMirrorPair';
+  var pair = null;        // { id, key }: this screen's pairing with the phone
+  var sess = null;        // { id, down, up, sent }: the open session
+  var connecting = null;  // the handshake in progress, so only one runs at a time
+
+  function utf8(text) { return encoder.encode(text); }
+
+  function concat() {
+    var n = 0, i, off = 0;
+    for (i = 0; i < arguments.length; i++) n += arguments[i].length;
+    var out = new Uint8Array(n);
+    for (i = 0; i < arguments.length; i++) { out.set(arguments[i], off); off += arguments[i].length; }
+    return out;
+  }
+
+  function b64(bytes) {
+    var s = '';
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+
+  function unb64(text) {
+    text = String(text).replace(/-/g, '+').replace(/_/g, '/');
+    while (text.length % 4) text += '=';
+    var s = atob(text), out = new Uint8Array(s.length);
+    for (var i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+    return out;
+  }
+
+  // Messages are an 8-byte big-endian counter, then ciphertext; the counter is the nonce.
+  function nonceFor(counter) { var n = new Uint8Array(12); n.set(counter, 4); return n; }
+
+  function counterOf(message) {
+    var v = new DataView(message.buffer, message.byteOffset, 8);
+    return v.getUint32(0) * 4294967296 + v.getUint32(4);
+  }
+
+  function counterBytes(n) {
+    var out = new Uint8Array(8), v = new DataView(out.buffer);
+    v.setUint32(0, Math.floor(n / 4294967296));
+    v.setUint32(4, n >>> 0);
+    return out;
+  }
+
+  // Throws if the message was altered or isn't from this session.
+  function openFromPhone(s, aad, message) {
+    return C.open(s.down, nonceFor(message.subarray(0, 8)), aad, message.subarray(8));
+  }
+
+  function sealForPhone(s, aad, plaintext) {
+    s.sent += 1;
+    var counter = counterBytes(s.sent);
+    return concat(counter, C.seal(s.up, nonceFor(counter), aad, plaintext));
+  }
+
+  function HttpError(status) { this.status = status; }
+  function PairingRefused(state) { this.state = state; }
+
+  function post(path, form) {
+    var body = Object.keys(form).map(function (k) { return k + '=' + form[k]; }).join('&');
+    return fetch(path, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' }, body: body })
+      .then(function (r) { if (!r.ok) throw new HttpError(r.status); return r.json(); });
+  }
+
+  function loadPair() {
+    try {
+      var v = JSON.parse(localStorage.getItem(PAIR_STORAGE) || 'null');
+      if (v && v.id && v.key) return { id: v.id, key: unb64(v.key) };
+    } catch (e) { /* no storage: pair for this visit only */ }
+    return null;
+  }
+
+  function savePair(p) {
+    try { localStorage.setItem(PAIR_STORAGE, JSON.stringify({ id: p.id, key: b64(p.key) })); } catch (e) {}
+  }
+
+  function forgetPair() {
+    pair = null;
+    try { localStorage.removeItem(PAIR_STORAGE); } catch (e) {}
+  }
+
+  // The 6 digits both screens show: from SHA-256 of both public keys, the phone's first.
+  function pairingCode(phoneKey, carKey) {
+    var h = C.sha256(concat(utf8('car-mirror code v1'), phoneKey, carKey));
+    var n = h[0] * 16777216 + (h[1] << 16) + (h[2] << 8) + h[3];
+    var digits = String(n % 1000000);
+    while (digits.length < 6) digits = '0' + digits;
+    return digits;
+  }
+
+  // Waits for the user's answer on the phone; the phone holds each request up to 25 s.
+  function answer(id, state) {
+    return fetch('pair/wait?id=' + id + '&state=' + state, { cache: 'no-store' })
+      .then(function (r) { if (!r.ok) throw new HttpError(r.status); return r.json(); })
+      .then(function (r) { return r.state === state ? answer(id, state) : r.state; }, function () {
+        return new Promise(function (ok) { setTimeout(ok, 1000); }).then(function () { return answer(id, state); });
+      });
+  }
+
+  // Commit to a key first, so a device in the middle can't pick keys that make the codes match.
+  function pairWithPhone() {
+    var mine = C.keyPair();
+    show('Pairing with your phone…');
+    var commitment = C.sha256(concat(utf8('car-mirror commit v1'), mine.publicKey));
+    return post('pair/start', { c: b64(commitment) }).then(function (started) {
+      var phoneKey = unb64(started.pub);
+      return post('pair/finish', { id: started.id, pub: b64(mine.publicKey) }).then(function () {
+        var digits = pairingCode(phoneKey, mine.publicKey);
+        show('Pair this screen with your phone',
+          'Check that your phone shows the same code, then tap Allow there.', digits.slice(0, 3) + ' ' + digits.slice(3));
+        return answer(started.id, 'waiting');
+      }).then(function (state) {
+        if (state !== 'approved') throw new PairingRefused(state);
+        var shared = C.sharedSecret(mine.secretKey, phoneKey);
+        pair = { id: started.id, key: C.hkdf(shared, concat(phoneKey, mine.publicKey), utf8('car-mirror pair key v1'), 32) };
+        savePair(pair);
+        show('Paired.', 'Connecting…');
+      });
+    });
+  }
+
+  function openSession() {
+    var mine = C.keyPair();
+    return post('session/start', { pair: pair.id, pub: b64(mine.publicKey) }).then(function (challenge) {
+      var phoneKey = unb64(challenge.pub), nonce = unb64(challenge.nonce);
+      var proof = C.hmac(pair.key, concat(utf8('car-mirror proof v1'), nonce, mine.publicKey, phoneKey));
+      return post('session/finish', { pair: pair.id, pub: b64(mine.publicKey), proof: b64(proof) }).then(function (opened) {
+        var shared = C.sharedSecret(mine.secretKey, phoneKey);
+        var keys = C.hkdf(concat(shared, pair.key), nonce, concat(utf8('car-mirror session v1'), mine.publicKey, phoneKey), 64);
+        sess = { id: opened.session, down: keys.slice(0, 32), up: keys.slice(32, 64), sent: 0 };
+      });
+    });
+  }
+
+  // Pairs if needed, then opens a session. If the phone no longer knows this screen (it was
+  // forgotten on the phone), pairing starts over.
+  function connect() {
+    if (sess) return Promise.resolve();
+    if (connecting) return connecting;
+    if (!pair) pair = loadPair();
+    var attempt = (pair ? Promise.resolve() : pairWithPhone()).then(openSession).catch(function (e) {
+      if (pair && e instanceof HttpError && (e.status === 404 || e.status === 403)) {
+        forgetPair();
+        return pairWithPhone().then(openSession);
+      }
+      throw e;
+    });
+    connecting = attempt.then(function () { connecting = null; refreshStatus(); },
+      function (e) { connecting = null; throw e; });
+    return connecting;
   }
 
   // ---- Drawing, with black bars around a video trimmed off ----
@@ -104,16 +425,17 @@
     var cw = canvas.width, ch = canvas.height;
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, cw, ch);
-    if (!bitmap) { drawn = null; return; }
-    var src = crop || { x: 0, y: 0, w: bitmap.width, h: bitmap.height };
+    var pic = picture();
+    if (!pic || paused) { drawn = null; return; }
+    var src = crop || { x: 0, y: 0, w: pic.width, h: pic.height };
     var scale = Math.min(cw / src.w, ch / src.h);
     var w = Math.round(src.w * scale), h = Math.round(src.h * scale);
     var x = Math.round((cw - w) / 2), y = Math.round((ch - h) / 2);
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(bitmap, src.x, src.y, src.w, src.h, x, y, w, h);
+    ctx.drawImage(pic.image, src.x, src.y, src.w, src.h, x, y, w, h);
     var ratio = cw / canvas.clientWidth || 1;
-    drawn = { rect: { x: x / ratio, y: y / ratio, w: w / ratio, h: h / ratio }, src: src, fw: bitmap.width, fh: bitmap.height };
+    drawn = { rect: { x: x / ratio, y: y / ratio, w: w / ratio, h: h / ratio }, src: src, fw: pic.width, fh: pic.height };
   }
 
   // A video played full screen on a phone is surrounded by black bars, because a phone is
@@ -133,7 +455,9 @@
       Math.abs(a.y - b.y) <= fh * 0.02 && Math.abs(a.h - b.h) <= fh * 0.02;
   }
 
-  function findBars(bmp) {
+  function findBars(pic) {
+    if (!pic) return;
+    var bmp = { width: pic.width, height: pic.height };
     var now = performance.now();
     var size = bmp.width + 'x' + bmp.height;
     if (size !== cropFor) { cropFor = size; crop = null; candidate = null; votes = 0; }
@@ -142,7 +466,7 @@
     var pw = 160, ph = Math.max(1, Math.round(pw * bmp.height / bmp.width));
     probe.width = pw;
     probe.height = ph;
-    probeCtx.drawImage(bmp, 0, 0, pw, ph);
+    probeCtx.drawImage(pic.image, 0, 0, pw, ph);
     var d = probeCtx.getImageData(0, 0, pw, ph).data;
     var top = -1, bottom = -1, left = pw, right = -1;
     for (var y = 0; y < ph; y++) {
@@ -180,10 +504,12 @@
 
   function updateInfo() {
     if (info.style.display !== 'block') return;
-    var parts = [bitmap ? bitmap.width + '×' + bitmap.height : 'no frame yet', fps + ' fps'];
+    var pic = picture();
+    var parts = [pic ? pic.width + '×' + pic.height : 'no frame yet', fps + ' fps'];
     if (phone.quality) parts.push('quality ' + phone.quality);
     parts.push(phone.touch ? 'touch on' : 'touch off');
-    parts.push(mode);
+    parts.push(videoMode ? 'video' : mode);
+    parts.push('encrypted');
     if (crop) parts.push('bars trimmed');
     parts.push(location.host);
     info.textContent = parts.join(' · ');
@@ -195,13 +521,19 @@
     updateInfo();
   }, 1000);
 
-  // ---- What the phone allows: touch, the session token, current quality ----
+  // ---- What the phone allows: touch, current quality ----
 
   function refreshStatus() {
-    if (typeof fetch !== 'function') return;
-    fetch('status', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (s) {
-      phone.token = s.token || '';
+    if (!sess) return;
+    var current = sess;
+    fetch('status?s=' + current.id, { cache: 'no-store' }).then(function (r) {
+      if (r.status === 401) { if (sess === current) sess = null; throw new Error('session ended'); }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.arrayBuffer();
+    }).then(function (buffer) {
+      var s = JSON.parse(decoder.decode(openFromPhone(current, utf8('status'), new Uint8Array(buffer))));
       phone.touch = !!s.touch;
+      updateNav();
       phone.quality = s.jpegQuality || 0;
       updateInfo();
     }).catch(function () {});
@@ -212,16 +544,20 @@
   function setPaused(reason) {
     if (reason === paused) return;
     paused = reason;
+    updateNav();
     if (paused) {
       // Drop the last picture: whatever the phone is hiding must not stay on the car's screen.
       if (bitmap && bitmap.close) bitmap.close();
       bitmap = null;
       pending = null;
+      stopPlayer(); // the video too: after the pause the phone starts again from a fresh keyframe
       draw();
       if (paused === 'driving') show('Paused while the car is moving.', 'The picture comes back when you stop.');
+      else if (paused === 'locked') show('The phone is locked.', 'Unlock it to bring the picture back.');
+      else if (paused === 'hot') show('The phone is too hot.', 'The picture comes back when it has cooled down.');
       else show('Paused on the phone.', 'Tap Resume on the phone to continue.');
     } else {
-      show(bitmap ? '' : 'Resuming…');
+      show(picture() ? '' : 'Resuming…');
     }
   }
 
@@ -238,7 +574,7 @@
       if (paused) { if (decoded.close) decoded.close(); return; }
       if (bitmap && bitmap.close) bitmap.close();
       bitmap = decoded;
-      findBars(bitmap);
+      findBars(picture());
       draw();
       framesThisSecond++;
       show('');
@@ -248,10 +584,107 @@
     });
   }
 
+  // ---- Video mode: H.264 as fragmented MP4, played through Media Source Extensions ----
+  //
+  // WebCodecs needs a secure context; MSE doesn't. The video element is hidden and the canvas
+  // draws its frames, so bar trimming, touch mapping and pause blanking work unchanged. Each
+  // init record (start, after a pause, after the phone rotates) starts a fresh MediaSource.
+
+  var player = null; // { source, buffer, queue }
+
+  function videoUnsupported() {
+    stopPlayer();
+    videoMode = false;
+    if (noVideo) return;
+    noVideo = true;
+    flash('This browser can’t play video mode. Showing pictures instead.');
+    if (streamAbort) streamAbort.abort(); // reconnect, asking for pictures
+  }
+
+  function startPlayer(codec, init) {
+    var type = 'video/mp4; codecs="' + codec + '"';
+    if (!window.MediaSource || !MediaSource.isTypeSupported(type)) { videoUnsupported(); return; }
+    stopPlayer();
+    var source = new MediaSource();
+    var p = { source: source, buffer: null, queue: [init] };
+    player = p;
+    video.src = URL.createObjectURL(source);
+    source.addEventListener('sourceopen', function () {
+      if (player !== p) return;
+      URL.revokeObjectURL(video.src);
+      try {
+        p.buffer = source.addSourceBuffer(type);
+      } catch (e) { videoUnsupported(); return; }
+      p.buffer.addEventListener('updateend', function () { trimPlayer(p); pumpPlayer(p); chaseLiveEdge(); });
+      pumpPlayer(p);
+    });
+    var playing = video.play();
+    if (playing && playing.catch) playing.catch(function () {});
+    videoMode = true;
+    if (!videoLoop) {
+      videoLoop = true;
+      nextVideoFrame();
+    }
+  }
+
+  function stopPlayer() {
+    if (!player) return;
+    player = null;
+    video.removeAttribute('src');
+    video.load();
+  }
+
+  function pumpPlayer(p) {
+    if (player !== p || !p.buffer || p.buffer.updating || !p.queue.length) return;
+    try {
+      p.buffer.appendBuffer(p.queue.shift());
+    } catch (e) {
+      p.queue.length = 0; // full or broken: the next init record starts over
+    }
+  }
+
+  // Keeps the last ten seconds, so the buffer never fills.
+  function trimPlayer(p) {
+    if (player !== p || !p.buffer || p.buffer.updating || video.currentTime < 30 || p.queue.length) return;
+    try { p.buffer.remove(0, video.currentTime - 10); } catch (e) {}
+  }
+
+  // Stay within a few frames of the newest one: this is a mirror, not a recording.
+  function chaseLiveEdge() {
+    if (!player || !video.buffered.length) return;
+    var end = video.buffered.end(video.buffered.length - 1);
+    if (end - video.currentTime > 0.3 || video.currentTime < video.buffered.start(0)) video.currentTime = Math.max(0, end - 0.05);
+    if (video.paused && !paused) {
+      var playing = video.play();
+      if (playing && playing.catch) playing.catch(function () {});
+    }
+  }
+
+  function nextVideoFrame() {
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(onVideoFrame);
+    else requestAnimationFrame(onVideoFrame);
+  }
+
+  var lastVideoTime = -1;
+  function onVideoFrame() {
+    if (!videoMode) { videoLoop = false; return; } // back to pictures
+    if (!paused && video.videoWidth && video.currentTime !== lastVideoTime) {
+      lastVideoTime = video.currentTime;
+      findBars(picture());
+      draw();
+      framesThisSecond++;
+      if (msg.style.display !== 'none') show(''); // a frame on screen: "Connected…", "Resuming…" are done
+    }
+    chaseLiveEdge();
+    nextVideoFrame();
+  }
+
   // ---- Frames, pushed by the phone over one long response ----
   //
-  // Records: a type byte, a 4-byte big-endian length, then the payload.
-  //   1 frame  (width u16, height u16, JPEG)   2 pause state (UTF-8)   3 ping (empty)
+  // Records: a type byte, a 4-byte big-endian length, then a message sealed for the session
+  // with the type byte as associated data. Decrypted:
+  //   1 frame  (seq u64, width u16, height u16, JPEG)   2 pause state (UTF-8)   3 ping (empty)
+  //   4 video init (codec length u8, codec, init segment)   5 video segment (keyframe u8, moof+mdat)
 
   function ByteQueue() { this.chunks = []; this.length = 0; }
   ByteQueue.prototype.push = function (chunk) { this.chunks.push(chunk); this.length += chunk.length; };
@@ -268,24 +701,42 @@
   };
 
   var decoder = typeof TextDecoder === 'function' ? new TextDecoder() : null;
+  var seq = 0;
 
-  function onRecord(type, payload) {
+  // Throws when a record doesn't decrypt: the connection is dropped and a new session opened.
+  function onRecord(s, type, sealed, order) {
+    if (order) {
+      var counter = counterOf(sealed);
+      if (counter <= order.last) throw new Error('out of order');   // a replayed record
+      order.last = counter;
+    }
+    var payload = openFromPhone(s, new Uint8Array([type]), sealed);
     if (type === 1) {
-      pending = new Blob([payload.subarray(4)], { type: 'image/jpeg' });
+      if (videoMode) { stopPlayer(); videoMode = false; } // the phone fell back to pictures
+      var v = new DataView(payload.buffer, payload.byteOffset, 12);
+      seq = v.getUint32(0) * 4294967296 + v.getUint32(4);
+      pending = new Blob([payload.subarray(12)], { type: 'image/jpeg' });
       decodeNewest();
     } else if (type === 2) {
-      setPaused(decoder ? decoder.decode(payload) : String.fromCharCode.apply(null, payload));
+      setPaused(decoder.decode(payload));
+    } else if (type === 4) {
+      var codecLength = payload[0];
+      startPlayer(decoder.decode(payload.subarray(1, 1 + codecLength)), payload.subarray(1 + codecLength));
+    } else if (type === 5 && player) {
+      player.queue.push(payload.subarray(1));
+      pumpPlayer(player);
     }
   }
 
   var streamAbort = null, lastData = 0;
 
   function streamLoop() {
-    var controller = new AbortController();
+    var controller = new AbortController(), current = sess, order = { last: 0 };
     streamAbort = controller;
     lastData = Date.now();
-    fetch('frames?paused=' + encodeURIComponent(paused), { cache: 'no-store', signal: controller.signal })
+    fetch('frames?s=' + current.id + '&paused=' + encodeURIComponent(paused) + (noVideo ? '&jpeg=1' : ''), { cache: 'no-store', signal: controller.signal })
       .then(function (response) {
+        if (response.status === 401) { if (sess === current) sess = null; throw new Error('session ended'); }
         if (!response.ok) throw new Error('HTTP ' + response.status);
         if (!response.body || !response.body.getReader) { mode = 'poll'; throw new Error('no streaming'); }
         var reader = response.body.getReader(), queue = new ByteQueue();
@@ -302,7 +753,13 @@
               var length = ((head[1] << 24) | (head[2] << 16) | (head[3] << 8) | head[4]) >>> 0;
               if (queue.length < 5 + length) break;
               queue.read(5);
-              onRecord(head[0], queue.read(length));
+              try {
+                onRecord(current, head[0], queue.read(length), order);
+              } catch (e) {
+                if (sess === current) sess = null;
+                controller.abort();
+                throw e;
+              }
             }
             return pump();
           });
@@ -311,10 +768,7 @@
       })
       .catch(function () {
         streamAbort = null;
-        if (mode === 'poll') { pollLoop(); return; }
-        failures++;
-        if (failures >= 3) lostConnection();
-        setTimeout(streamLoop, Math.min(3000, 250 * failures));
+        retry();
       });
   }
 
@@ -323,60 +777,67 @@
     if (streamAbort && Date.now() - lastData > 7000) streamAbort.abort();
   }, 2000);
 
-  // ---- Fallback: ask for one frame at a time (older browsers) ----
+  // ---- Fallback: ask for one frame at a time (browsers that can't read a stream) ----
 
-  var seq = 0;
   var POLL_TIMEOUT_MS = 15000; // the phone answers within 10 s; anything longer is a dead connection
 
-  // Plain promises rather than async/await, so an older browser can still parse this script
-  // and reach the MJPEG fallback below.
-  function fetchFrame() {
+  function pollOnce() {
+    var current = sess;
     var controller = typeof AbortController === 'function' ? new AbortController() : null;
     var timer = controller ? setTimeout(function () { controller.abort(); }, POLL_TIMEOUT_MS) : 0;
-    function done() { if (timer) clearTimeout(timer); }
-    return fetch('frame?after=' + seq + '&paused=' + encodeURIComponent(paused), {
+    return fetch('frame?s=' + current.id + '&after=' + seq + '&paused=' + encodeURIComponent(paused), {
       cache: 'no-store',
       signal: controller ? controller.signal : undefined
     }).then(function (response) {
+      if (response.status === 401) { if (sess === current) sess = null; throw new Error('session ended'); }
       if (!response.ok) throw new Error('HTTP ' + response.status);
-      setPaused(response.headers.get('X-Mirror-Paused') || '');
-      if (response.status === 204) return null;          // nothing new, or only the pause changed
-      var next = Number(response.headers.get('X-Frame-Seq')) || 0;
-      return response.blob().then(function (blob) { return { seq: next, blob: blob }; });
-    }).then(function (frame) { done(); return frame; }, function (err) { done(); throw err; });
-  }
-
-  function pollOnce() {
-    return fetchFrame().then(function (frame) {
+      return response.arrayBuffer();
+    }).then(function (buffer) {
+      if (timer) clearTimeout(timer);
+      var bytes = new Uint8Array(buffer);
+      var length = ((bytes[1] << 24) | (bytes[2] << 16) | (bytes[3] << 8) | bytes[4]) >>> 0;
       if (failures >= 3) refreshStatus();
       failures = 0;
-      if (!frame) {
-        if (!bitmap && !paused) show('Connected.', 'Waiting for the phone screen…');
-        return;
+      try {
+        onRecord(current, bytes[0], bytes.subarray(5, 5 + length), null);
+      } catch (e) {
+        if (sess === current) sess = null;
+        throw e;
       }
-      seq = frame.seq; // advance even if this one fails to decode, so a bad frame is skipped
-      pending = frame.blob;
-      decodeNewest();
+      if (bytes[0] !== 1 && !bitmap && !paused) show('Connected.', 'Waiting for the phone screen…');
+    }, function (err) {
+      if (timer) clearTimeout(timer);
+      throw err;
     });
   }
 
   function pollLoop() {
-    pollOnce().then(pollLoop, function () {
-      failures++;
-      if (failures >= 3) lostConnection();
-      setTimeout(pollLoop, Math.min(3000, 250 * failures));
-    });
+    pollOnce().then(pollLoop, retry);
   }
 
-  function startMjpeg() {
-    canvas.style.display = 'none';
-    img.style.display = 'block';
-    img.onload = function () { show(''); };
-    img.onerror = function () {
-      show('Lost the connection to your phone.', 'Retrying…');
-      setTimeout(function () { img.src = 'stream.mjpeg?t=' + Date.now(); }, 2000);
-    };
-    img.src = 'stream.mjpeg';
+  // After any failure: back off, reconnect (pairing or a new session if needed), resume.
+  function retry() {
+    failures++;
+    if (failures >= 3) lostConnection();
+    setTimeout(run, Math.min(3000, 250 * failures));
+  }
+
+  function run() {
+    connect().then(function () {
+      if (mode === 'poll') pollLoop(); else streamLoop();
+    }, function (e) {
+      if (e instanceof PairingRefused) {
+        if (e.state === 'denied') show('Your phone said no.', 'Reload this page to ask again.');
+        else show('Your phone didn’t answer in time.', 'Reload this page to ask again.');
+        return;
+      }
+      if (e instanceof HttpError && e.status === 429) {
+        show('The phone isn’t taking pairing requests right now.', 'Trying again shortly…');
+        setTimeout(run, 10000);
+        return;
+      }
+      retry();
+    });
   }
 
   // ---- Details and full screen ----
@@ -400,9 +861,9 @@
     toggleDetails();
   });
 
-  // ---- Touch: taps and swipes on the picture are performed on the phone ----
+  // ---- Touch: taps, swipes and two-finger gestures on the picture are performed on the phone ----
 
-  var stroke = null;
+  var fingers = null; // the fingers down right now: { start, order: [pointerId], strokes: { id: { points, last, up } } }
 
   // Where (clientX, clientY) falls on the phone's screen, as fractions of the whole screen
   // (trimmed bars included). Null when outside the picture, unless clamp is set: a swipe
@@ -430,68 +891,134 @@
     setTimeout(function () { dot.remove(); }, 400);
   }
 
-  // A finished stroke as the phone expects it: `d=<ms>&p=x,y;x,y;...`. Barely moving is a tap
-  // (or a long press if held); anything else is a swipe along the sampled points.
-  function gestureBody(points, ms) {
+  // How far a finger strayed from where it landed, in screen pixels.
+  function travel(points) {
     var pxX = drawn.fw * drawn.rect.w / drawn.src.w, pxY = drawn.fh * drawn.rect.h / drawn.src.h;
     var x0 = points[0][0], y0 = points[0][1], far = 0;
     for (var i = 1; i < points.length; i++) {
       far = Math.max(far, Math.hypot((points[i][0] - x0) * pxX, (points[i][1] - y0) * pxY));
     }
-    var list, duration;
-    if (far < 12) {
-      list = [points[0]];
-      duration = ms < 450 ? 60 : Math.min(ms, 1500);
-    } else {
-      var step = Math.ceil(points.length / 60);
-      list = points.filter(function (p, i) { return i % step === 0 || i === points.length - 1; });
-      duration = Math.max(100, Math.min(ms, 3000));
-    }
-    return 'd=' + Math.round(duration) + '&p=' +
-      list.map(function (p) { return p[0].toFixed(4) + ',' + p[1].toFixed(4); }).join(';');
+    return far;
   }
 
-  function sendGesture(body) {
-    fetch('input', {
-      method: 'POST',
-      cache: 'no-store',
-      headers: { 'Content-Type': 'text/plain', 'X-Car-Mirror-Token': phone.token },
-      body: body
-    }).then(function (r) {
-      if (r.status === 403 || r.status === 409) refreshStatus(); // new session, or touch was turned off
+  function sample(points, most) {
+    var step = Math.ceil(points.length / most);
+    return points.filter(function (p, i) { return i % step === 0 || i === points.length - 1; });
+  }
+
+  function path(points) {
+    return points.map(function (p) { return p[0].toFixed(4) + ',' + p[1].toFixed(4); }).join(';');
+  }
+
+  // Finished fingers as the phone expects them: `d=<ms>&p=x,y;x,y;...`, a second finger's
+  // path after a `|`. One finger barely moving is a tap (or a long press if held); anything
+  // else is a swipe, or with two fingers a pinch or two-finger scroll, along sampled points.
+  function gestureBody(strokes, ms) {
+    var still = strokes.every(function (points) { return travel(points) < 12; });
+    var duration, paths;
+    if (still) {
+      duration = strokes.length === 1 && ms >= 450 ? Math.min(ms, 1500) : 60;
+      paths = strokes.map(function (points) { return [points[0]]; });
+    } else {
+      duration = Math.max(100, Math.min(ms, 3000));
+      paths = strokes.map(function (points) { return sample(points, strokes.length === 1 ? 60 : 32); });
+    }
+    return 'd=' + Math.round(duration) + '&p=' + paths.map(path).join('|');
+  }
+
+  // One at a time, so each message's counter reaches the phone in order (it refuses any
+  // counter lower than the last it accepted).
+  var inputQueue = Promise.resolve();
+
+  function sendInput(text) {
+    var current = sess;
+    if (!current) return;
+    inputQueue = inputQueue.then(function () {
+      if (sess !== current) return;
+      return fetch('input', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/octet-stream', 'X-Car-Mirror-Session': current.id },
+        body: sealForPhone(current, utf8('input'), utf8(text))
+      }).then(function (r) {
+        if (r.status === 401) { if (sess === current) sess = null; }
+        else if (r.status === 403 || r.status === 409) refreshStatus(); // touch was turned off, or the like
+      });
     }).catch(function () {});
   }
+
+  // ---- Back, Home and Recent apps: shown while touch control works, dimmed when idle ----
+
+  var navIdle = 0;
+
+  function updateNav() {
+    nav.style.display = phone.touch && sess && !paused ? 'flex' : 'none';
+  }
+
+  function wakeNav() {
+    nav.classList.remove('idle');
+    clearTimeout(navIdle);
+    navIdle = setTimeout(function () { nav.classList.add('idle'); }, 5000);
+  }
+
+  nav.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+  nav.addEventListener('click', function (e) {
+    var button = e.target.closest('button');
+    if (!button) return;
+    e.stopPropagation();
+    wakeNav();
+    sendInput('a=' + button.getAttribute('data-a'));
+  });
 
   var askedFullScreen = false;
 
   canvas.addEventListener('pointerdown', function (e) {
     if (!askedFullScreen) { askedFullScreen = true; goFullScreen(); } // needs a tap; the first one will do
+    wakeNav();
+    if (fingers) {                                  // a second finger joining the first
+      if (fingers.order.length >= 2 || paused) return;
+      var q = onPicture(e.clientX, e.clientY, true);
+      if (!q) return;
+      e.preventDefault();
+      fingers.strokes[e.pointerId] = { points: [q], last: e.timeStamp, up: false };
+      fingers.order.push(e.pointerId);
+      if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
+      ripple(e.clientX, e.clientY);
+      return;
+    }
     var p = onPicture(e.clientX, e.clientY, false);
     if (!p) { toggleDetails(); return; }           // the black area around the picture
     if (paused) return;
-    if (!phone.touch || !phone.token) {
+    if (!phone.touch || !sess) {
       flash('Touch control is off. Turn it on in Car Mirror on your phone.');
       return;
     }
     e.preventDefault();
-    stroke = { id: e.pointerId, points: [p], start: e.timeStamp, last: e.timeStamp };
+    fingers = { start: e.timeStamp, order: [e.pointerId], strokes: {} };
+    fingers.strokes[e.pointerId] = { points: [p], last: e.timeStamp, up: false };
     if (canvas.setPointerCapture) canvas.setPointerCapture(e.pointerId);
     ripple(e.clientX, e.clientY);
   });
 
   canvas.addEventListener('pointermove', function (e) {
-    if (!stroke || e.pointerId !== stroke.id || e.timeStamp - stroke.last < 16) return;
-    stroke.points.push(onPicture(e.clientX, e.clientY, true));
-    stroke.last = e.timeStamp;
+    var s = fingers && fingers.strokes[e.pointerId];
+    if (!s || s.up || e.timeStamp - s.last < 16) return;
+    s.points.push(onPicture(e.clientX, e.clientY, true));
+    s.last = e.timeStamp;
   });
 
   function endStroke(e, cancelled) {
-    if (!stroke || e.pointerId !== stroke.id) return;
-    var s = stroke;
-    stroke = null;
-    if (cancelled || !drawn) return;
+    var s = fingers && fingers.strokes[e.pointerId];
+    if (!s || s.up) return;
+    if (cancelled || !drawn) { fingers = null; return; }
     s.points.push(onPicture(e.clientX, e.clientY, true));
-    sendGesture(gestureBody(s.points, e.timeStamp - s.start));
+    s.up = true;
+    var done = fingers.order.every(function (id) { return fingers.strokes[id].up; });
+    if (!done) return;                             // wait for the other finger
+    var finished = fingers;
+    fingers = null;
+    sendInput(gestureBody(finished.order.map(function (id) { return finished.strokes[id].points; }),
+      e.timeStamp - finished.start));
   }
 
   canvas.addEventListener('pointerup', function (e) { endStroke(e, false); });
@@ -499,15 +1026,14 @@
 
   // ---- Start ----
 
-  if (forced === 'mjpeg' || typeof fetch !== 'function' || typeof createImageBitmap !== 'function') {
-    mode = 'mjpeg';
-    startMjpeg(); // view only: no touch without fetch
+  if (typeof fetch !== 'function' || typeof createImageBitmap !== 'function' || !C || !encoder || !decoder) {
+    show('This browser can’t show your phone securely.', 'Open this address in the car’s own browser.');
   } else {
     window.addEventListener('resize', fitCanvas);
     fitCanvas();
-    refreshStatus();
     setInterval(refreshStatus, 5000);
-    if (mode === 'poll' || typeof AbortController !== 'function') { mode = 'poll'; pollLoop(); } else streamLoop();
+    if (typeof AbortController !== 'function') mode = 'poll';
+    run();
   }
 })();
 </script>

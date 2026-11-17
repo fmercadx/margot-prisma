@@ -94,9 +94,10 @@ async function render(browser, html, width, height, file) {
   console.log('wrote', path.relative(process.cwd(), file));
 }
 
-// The blocks of store/listing.md, by heading, so each can be pasted on its own.
-function listingText() {
-  const md = fs.readFileSync(path.join(store, 'listing.md'), 'utf8');
+// The blocks of a listing file (store/listing.md, or listing-<lang>.md), by heading, so each
+// can be pasted on its own.
+function listingText(file = 'listing.md') {
+  const md = fs.readFileSync(path.join(store, file), 'utf8');
   const sections = {};
   let current = null;
   for (const line of md.split('\n')) {
@@ -139,11 +140,19 @@ function check(text, file, max) {
   for (const shot of PHONE_SHOTS) fs.copyFileSync(path.join(shots, shot.file), path.join(out, 'screenshots/plain', shot.file));
   for (const art of ['icon-512.png', 'feature-graphic.png']) fs.copyFileSync(path.join(store, art), path.join(out, 'graphics', art));
 
-  const text = listingText();
-  check(text['app-name.txt'], 'app-name.txt', 30);
-  check(text['short-description.txt'], 'short-description.txt', 80);
-  check(text['full-description.txt'], 'full-description.txt', 4000);
-  for (const [file, body] of Object.entries(text)) fs.writeFileSync(path.join(out, 'text', file), body);
+  // English in text/, each translation in text/<language>/ (Play Console: Store listing →
+  // Manage translations; the Galaxy Store has a language list on its listing page too).
+  const languages = [''].concat(fs.readdirSync(store)
+    .map((f) => (f.match(/^listing-([a-z]{2}(?:-[A-Za-z]+)?)\.md$/) || [])[1]).filter(Boolean).sort());
+  for (const lang of languages) {
+    const text = listingText(lang ? `listing-${lang}.md` : 'listing.md');
+    const dir = path.join(out, 'text', lang);
+    fs.mkdirSync(dir, { recursive: true });
+    check(text['app-name.txt'], `${lang || 'en'} app-name.txt`, 30);
+    check(text['short-description.txt'], `${lang || 'en'} short-description.txt`, 80);
+    check(text['full-description.txt'], `${lang || 'en'} full-description.txt`, 4000);
+    for (const [file, body] of Object.entries(text)) fs.writeFileSync(path.join(dir, file), body);
+  }
   fs.writeFileSync(path.join(out, 'text', 'privacy-policy-url.txt'),
     'https://github.com/fmercadx/margot-prisma/blob/main/car-mirror/PRIVACY.md\n');
 
@@ -157,6 +166,7 @@ function check(text, file, max) {
     'screenshots/plain/    the same screens without captions, if a store wants those instead',
     'graphics/             icon-512.png (app icon) and feature-graphic.png (1024x500 banner)',
     'text/                 the listing text, one file per box in the store form',
+    'text/es, fr, de/      the same in Spanish, French and German, for the store\'s translations',
     'play-console-answers.md  what to answer in Play Console\'s App content forms',
     '',
   ].join('\n'));
