@@ -1,4 +1,5 @@
-import { Droplets, GlassWater, Minus, Plus, Zap } from '../icons';
+import { Annoyed, Droplets, Frown, GlassWater, Laugh, Meh, Minus, Plus, Smile, Zap, type LucideIcon } from '../icons';
+import { MOOD_WORDS } from '../lib/mood';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ENERGY_MAX, ENERGY_MIN, WATER_MAX } from '../lib/store';
@@ -14,6 +15,9 @@ type Props = {
   onAdjustWater: (delta: number) => void;
   onSetEnergy: (value: number) => void;
   onDragStateChange: (dragging: boolean) => void;
+  mood: number | null;
+  /** null clears the day's mood (tapping the chosen face again). */
+  onSetMood: (value: number | null) => void;
 };
 
 export function energyWord(v: number): string {
@@ -24,14 +28,15 @@ export function energyWord(v: number): string {
   return 'Unstoppable';
 }
 
-export function WaterEnergy({ water, goal, energy, onAdjustWater, onSetEnergy, onDragStateChange }: Props) {
+export function WaterEnergy(props: Props) {
+  const { water, goal, energy, onAdjustWater, onSetEnergy, onDragStateChange } = props;
   const over = Math.max(0, water - goal);
 
   return (
     <Card
       icon={Droplets}
       accent={colors.water}
-      title="Water & Energy"
+      title="Water, Energy & Mood"
       subtitle="Fuel check"
       testID="card-water"
     >
@@ -132,7 +137,53 @@ export function WaterEnergy({ water, goal, energy, onAdjustWater, onSetEnergy, o
           <Text style={styles.hint}>Fully charged</Text>
         </View>
       </View>
+
+      <View style={styles.rule} />
+
+      <MoodPicker value={props.mood} onChange={props.onSetMood} />
     </Card>
+  );
+}
+
+const FACES: LucideIcon[] = [Frown, Annoyed, Meh, Smile, Laugh];
+
+/** Five faces, one choice. Tapping the chosen face again clears it. */
+function MoodPicker({ value, onChange }: { value: number | null; onChange: (v: number | null) => void }) {
+  return (
+    <View style={styles.section}>
+      <View style={styles.rowBetween}>
+        <View style={styles.labelRow}>
+          <Smile size={16} color={colors.mood} />
+          <Text style={styles.label}>Mood</Text>
+        </View>
+        <Text style={styles.value} testID="mood-value">
+          {value === null ? <Text style={styles.valueSub}>Not logged</Text> : MOOD_WORDS[value - 1]}
+        </Text>
+      </View>
+      <View style={styles.faces} accessibilityRole="radiogroup" accessibilityLabel="Mood">
+        {FACES.map((Face, i) => {
+          const level = i + 1;
+          const chosen = value === level;
+          return (
+            <Pressable
+              key={level}
+              onPress={() => onChange(chosen ? null : level)}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: chosen }}
+              accessibilityLabel={`Mood: ${MOOD_WORDS[i]}`}
+              style={({ pressed }) => [
+                styles.face,
+                chosen && { backgroundColor: tint(colors.mood, 0.2), borderColor: colors.mood },
+                pressed && { opacity: 0.7 },
+              ]}
+              testID={`mood-${level}`}
+            >
+              <Face size={24} color={chosen ? colors.mood : colors.textSecondary} strokeWidth={chosen ? 2.5 : 2} />
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
   );
 }
 
@@ -158,4 +209,15 @@ const styles = StyleSheet.create({
   },
   addGlassText: { ...type.label, color: colors.background, fontWeight: '700' },
   rule: { height: StyleSheet.hairlineWidth, backgroundColor: colors.hairline },
+  faces: { flexDirection: 'row', gap: space.sm },
+  face: {
+    flex: 1,
+    minHeight: HIT + 4,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    backgroundColor: colors.cardRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

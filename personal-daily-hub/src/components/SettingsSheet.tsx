@@ -2,8 +2,9 @@ import type { ReactNode } from 'react';
 import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { FileDown, Minus, Plus, ShieldCheck, X } from '../icons';
+import { FileDown, FileUp, Minus, Plus, ShieldCheck, X } from '../icons';
 import { hourLabel } from '../lib/reminders';
+import type { MergeStats } from '../lib/store';
 import {
   REMINDER_HOUR_MAX,
   REMINDER_HOUR_MIN,
@@ -28,6 +29,13 @@ type Props = {
   onExport: () => void;
   encrypted: boolean;
   version: string;
+  hapticsSupported: boolean;
+  restoreBusy: boolean;
+  onRestore: () => void;
+  /** What a picked backup would add, waiting for the person to confirm. */
+  restorePreview: { stats: MergeStats; exportedAt: string | null } | null;
+  onConfirmRestore: () => void;
+  onCancelRestore: () => void;
 };
 
 export function SettingsSheet(p: Props) {
@@ -80,6 +88,18 @@ export function SettingsSheet(p: Props) {
                   testID="reminder-hour"
                 />
               </Row>
+              {p.hapticsSupported ? (
+                <Row title="Haptic feedback" subtitle="A light tap when you tick, step or save">
+                  <Switch
+                    value={s.haptics}
+                    onValueChange={(haptics) => p.onChange({ haptics })}
+                    trackColor={{ false: colors.hairline, true: colors.notes }}
+                    thumbColor={colors.text}
+                    accessibilityLabel="Haptic feedback"
+                    testID="haptics-switch"
+                  />
+                </Row>
+              ) : null}
             </Section>
 
             <Section title="Privacy & security">
@@ -127,6 +147,32 @@ export function SettingsSheet(p: Props) {
                 </Pressable>
               ) : null}
 
+              {p.restorePreview ? (
+                <RestorePreview {...p.restorePreview} onConfirm={p.onConfirmRestore} onCancel={p.onCancelRestore} />
+              ) : (
+                <Pressable
+                  onPress={p.onRestore}
+                  disabled={p.restoreBusy}
+                  accessibilityRole="button"
+                  accessibilityLabel="Restore from a backup"
+                  accessibilityHint="Adds what is in an exported file to this phone. Nothing here is replaced."
+                  style={({ pressed }) => [styles.exportRow, pressed && { opacity: 0.7 }]}
+                  testID="restore"
+                >
+                  <View style={styles.rowText}>
+                    <Text style={styles.rowTitle}>Restore from a backup</Text>
+                    <Text style={styles.rowSubtitle}>
+                      Adds what is in an exported file to this phone. Nothing already here is replaced.
+                    </Text>
+                  </View>
+                  {p.restoreBusy ? (
+                    <ActivityIndicator color={colors.textSecondary} />
+                  ) : (
+                    <FileUp size={20} color={colors.textSecondary} />
+                  )}
+                </Pressable>
+              )}
+
               <View style={styles.privacy}>
                 <ShieldCheck size={18} color={colors.habits} />
                 <Text style={styles.privacyText} testID="privacy-statement">
@@ -142,6 +188,54 @@ export function SettingsSheet(p: Props) {
         </View>
       </View>
     </Modal>
+  );
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** Exactly what restoring will add, before anything is written. */
+function RestorePreview(props: {
+  stats: MergeStats;
+  exportedAt: string | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const { stats } = props;
+  const parts = [
+    stats.daysAdded ? plural(stats.daysAdded, 'new day', 'new days') : '',
+    stats.daysMerged ? plural(stats.daysMerged, 'day combined', 'days combined') : '',
+    stats.notesAdded ? plural(stats.notesAdded, 'note', 'notes') : '',
+    stats.expensesAdded ? plural(stats.expensesAdded, 'expense', 'expenses') : '',
+    stats.habitsAdded ? plural(stats.habitsAdded, 'custom habit', 'custom habits') : '',
+  ].filter(Boolean);
+  const when = props.exportedAt ? new Date(props.exportedAt) : null;
+  return (
+    <View style={styles.preview} testID="restore-preview" accessibilityLiveRegion="polite">
+      <Text style={styles.rowTitle}>Restore this backup?</Text>
+      {when && !Number.isNaN(when.getTime()) ? (
+        <Text style={styles.rowSubtitle}>Exported {when.toDateString()}</Text>
+      ) : null}
+      <Text style={styles.previewText}>It will add {parts.join(', ')}. Nothing on this phone is replaced.</Text>
+      <View style={styles.previewButtons}>
+        <Pressable
+          onPress={props.onCancel}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel restore"
+          style={({ pressed }) => [styles.previewButton, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={styles.previewCancel}>Cancel</Text>
+        </Pressable>
+        <Pressable
+          onPress={props.onConfirm}
+          accessibilityRole="button"
+          accessibilityLabel="Restore"
+          style={({ pressed }) => [styles.previewButton, styles.previewConfirm, pressed && { opacity: 0.85 }]}
+          testID="restore-confirm"
+        >
+          <Text style={styles.previewConfirmText}>Restore</Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -244,6 +338,25 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.hairline,
   },
+  preview: {
+    gap: space.sm,
+    paddingVertical: space.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.hairline,
+  },
+  previewText: { ...type.label, fontWeight: '400', color: colors.text },
+  previewButtons: { flexDirection: 'row', gap: space.sm, marginTop: space.xs },
+  previewButton: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.card,
+  },
+  previewConfirm: { backgroundColor: colors.notes },
+  previewCancel: { ...type.label, color: colors.textSecondary, fontWeight: '700' },
+  previewConfirmText: { ...type.label, color: colors.background, fontWeight: '700' },
   privacy: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.md },
   privacyText: { ...type.caption, color: colors.textSecondary, flex: 1 },
   version: { ...type.caption, color: colors.textMuted, textAlign: 'center' },

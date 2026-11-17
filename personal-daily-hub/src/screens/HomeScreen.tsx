@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import appConfig from '../../app.json';
+import { DaySheet } from '../components/DaySheet';
 import { ExpenseLogger } from '../components/ExpenseLogger';
 import { HabitChecklist } from '../components/HabitChecklist';
 import { Header } from '../components/Header';
@@ -28,6 +29,9 @@ import { appLockSupported, authenticate, lockAvailability } from '../lib/appLock
 import { lastNDays } from '../lib/date';
 import { exportAvailable, removeOldExports, shareExport } from '../lib/exportData';
 import { buildExport } from '../lib/exportJson';
+import { haptic, setHapticsEnabled } from '../lib/haptics';
+import { pickBackupText } from '../lib/importData';
+import { parseBackup, type ParsedBackup } from '../lib/importJson';
 import { canAddCustomHabit, canAddNote, purchasePremiumMock, type PaywallReason } from '../lib/premium';
 import {
   disableDailyReminder,
@@ -42,9 +46,11 @@ import {
   getDay,
   HABIT_MAX_LENGTH,
   habitStreak,
+  mergeBackup,
   newId,
   totalCents,
   type Action,
+  type MergeStats,
   type Settings,
 } from '../lib/store';
 import { colors, radius, space, type } from '../theme';
@@ -60,6 +66,8 @@ export default function HomeScreen() {
 
   // Export files are plain JSON; don't leave yesterday's lying in the cache.
   useEffect(() => removeOldExports(), []);
+
+  useEffect(() => setHapticsEnabled(state.settings.haptics), [state.settings.haptics]);
 
   // ---- short messages under the header ------------------------------------
   const [message, setMessage] = useState<string | null>(null);
@@ -117,6 +125,12 @@ export default function HomeScreen() {
   const saveNote = (text: string, date: string) => {
     dispatch({ type: 'addNote', date, note: { id: newId('note'), text, createdAt: Date.now() } });
     setNoteDraft('');
+    haptic.success();
+  };
+
+  const editNote = (id: string, text: string) => {
+    dispatch({ type: 'editNote', date: today, id, text, now: Date.now() });
+    haptic.success();
   };
 
   const submitNote = () => {
@@ -134,6 +148,7 @@ export default function HomeScreen() {
     const note = day.notes.find((n) => n.id === id);
     if (!note) return;
     dispatch({ type: 'deleteNote', date: today, id });
+    haptic.remove();
     setUndo({ message: 'Note deleted', restore: { type: 'restoreNote', date: today, note } });
   };
 
@@ -164,6 +179,7 @@ export default function HomeScreen() {
     if (!habit || habit.core) return;
     const wasDone = day.habitsDone.includes(id);
     dispatch({ type: 'removeHabit', date: today, id });
+    haptic.remove();
     setUndo({
       message: `Removed “${habit.label}”`,
       restore: { type: 'restoreHabit', date: today, habit, index, wasDone },
@@ -181,6 +197,7 @@ export default function HomeScreen() {
     const expense = day.expenses.find((e) => e.id === id);
     if (!expense) return;
     dispatch({ type: 'deleteExpense', date: today, id });
+    haptic.remove();
     setUndo({ message: 'Expense deleted', restore: { type: 'restoreExpense', date: today, expense } });
   };
 
@@ -279,6 +296,53 @@ export default function HomeScreen() {
     }
   };
 
+  // ---- restore ------------------------------------------------------------
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [restorePending, setRestorePending] = useState<{ backup: ParsedBackup; stats: MergeStats } | null>(null);
+
+  const startRestore = async () => {
+    setRestoreBusy(true);
+    try {
+      const picked = await pickBackupText();
+      if (picked.kind === 'canceled') return;
+      const parsed = picked.kind === 'error' ? { ok: false as const, error: picked.message } : parseBackup(picked.text);
+      if (!parsed.ok) {
+        setSettingsOpen(false);
+        setMessage(parsed.error);
+        return;
+      }
+      const { stats } = mergeBackup(state, parsed.backup.habits, parsed.backup.days);
+      if (Object.values(stats).every((n) => n === 0)) {
+        setSettingsOpen(false);
+        setMessage('Everything in that backup is already on this phone.');
+        return;
+      }
+      setRestorePending({ backup: parsed.backup, stats });
+    } catch (err) {
+      console.warn('[restore] failed', err);
+      setSettingsOpen(false);
+      setMessage('Couldn’t restore that backup. Please try again.');
+    } finally {
+      setRestoreBusy(false);
+    }
+  };
+
+  const confirmRestore = () => {
+    if (!restorePending) return;
+    const { backup, stats } = restorePending;
+    dispatch({ type: 'importBackup', habits: backup.habits, days: backup.days });
+    setRestorePending(null);
+    setSettingsOpen(false);
+    haptic.success();
+    const days = stats.daysAdded + stats.daysMerged;
+    setMessage(`Restored ${days} ${days === 1 ? 'day' : 'days'} from your backup.`);
+  };
+
+  // ---- day details --------------------------------------------------------
+  const [openDay, setOpenDay] = useState<string | null>(null);
+  const loadedDates = useMemo(() => lastNDays(today, LOADED_DAYS), [today]);
+  const openIndex = openDay ? loadedDates.indexOf(openDay) : -1;
+
   // ---- layout -------------------------------------------------------------
   const [scrollEnabled, setScrollEnabled] = useState(true);
 
@@ -342,6 +406,7 @@ export default function HomeScreen() {
             onDraftChange={setNoteDraft}
             onSubmit={submitNote}
             onDelete={deleteNote}
+            onEdit={editNote}
           />
 
           <HabitChecklist
@@ -351,7 +416,10 @@ export default function HomeScreen() {
             streakCap={LOADED_DAYS}
             isPremium={isPremium}
             composerOpen={habitComposerOpen}
-            onToggle={(id) => dispatch({ type: 'toggleHabit', date: today, id })}
+            onToggle={(id) => {
+              dispatch({ type: 'toggleHabit', date: today, id });
+              haptic.tick();
+            }}
             onRemove={removeHabit}
             onRequestAdd={requestAddHabit}
             onCloseComposer={() => setHabitComposerOpen(false)}
@@ -362,29 +430,43 @@ export default function HomeScreen() {
             water={day.water}
             goal={state.settings.waterGoal}
             energy={day.energy}
-            onAdjustWater={(delta) => dispatch({ type: 'adjustWater', date: today, delta })}
-            onSetEnergy={(value) => dispatch({ type: 'setEnergy', date: today, value })}
+            onAdjustWater={(delta) => {
+              dispatch({ type: 'adjustWater', date: today, delta });
+              haptic.tick();
+            }}
+            onSetEnergy={(value) => {
+              dispatch({ type: 'setEnergy', date: today, value });
+              haptic.tick();
+            }}
             onDragStateChange={(dragging) => setScrollEnabled(!dragging)}
+            mood={day.mood}
+            onSetMood={(value) => {
+              dispatch({ type: 'setMood', date: today, value });
+              haptic.tick();
+            }}
           />
 
           <ExpenseLogger
             expenses={day.expenses}
             totalCents={totalCents(day)}
-            onAdd={(cents, label) =>
+            onAdd={(cents, label) => {
               dispatch({
                 type: 'addExpense',
                 date: today,
                 expense: { id: newId('exp'), cents, label, createdAt: Date.now() },
-              })
-            }
+              });
+              haptic.success();
+            }}
             onDelete={deleteExpense}
           />
 
           <HistoryCard
             isPremium={isPremium}
             waterGoal={state.settings.waterGoal}
+            habitIds={state.habits.map((h) => h.id)}
             days={history}
             onUnlock={() => openPaywall('history')}
+            onOpenDay={setOpenDay}
           />
         </View>
       </ScrollView>
@@ -395,7 +477,10 @@ export default function HomeScreen() {
 
       <SettingsSheet
         visible={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={() => {
+          setSettingsOpen(false);
+          setRestorePending(null);
+        }}
         settings={state.settings}
         onChange={changeSettings}
         reminderOn={reminderOn}
@@ -407,6 +492,27 @@ export default function HomeScreen() {
         onExport={runExport}
         encrypted={encrypted}
         version={appConfig.expo.version}
+        hapticsSupported={Platform.OS !== 'web'}
+        restoreBusy={restoreBusy}
+        onRestore={startRestore}
+        restorePreview={
+          restorePending ? { stats: restorePending.stats, exportedAt: restorePending.backup.exportedAt } : null
+        }
+        onConfirmRestore={confirmRestore}
+        onCancelRestore={() => setRestorePending(null)}
+      />
+
+      <DaySheet
+        date={openDay}
+        isToday={openDay === today}
+        log={openDay ? (state.days[openDay] ?? null) : null}
+        habits={state.habits}
+        waterGoal={state.settings.waterGoal}
+        canPrev={openIndex > 0}
+        canNext={openIndex >= 0 && openIndex < loadedDates.length - 1}
+        onPrev={() => openIndex > 0 && setOpenDay(loadedDates[openIndex - 1])}
+        onNext={() => openIndex < loadedDates.length - 1 && setOpenDay(loadedDates[openIndex + 1])}
+        onClose={() => setOpenDay(null)}
       />
     </KeyboardAvoidingView>
   );

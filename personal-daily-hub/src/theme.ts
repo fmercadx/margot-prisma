@@ -23,6 +23,7 @@ export const colors = {
   energy: '#FBBF24',
   expenses: '#FB7185',
   history: '#A78BFA',
+  mood: '#2DD4BF',
 
   premium: '#E8C468',
   onPremium: '#121212',

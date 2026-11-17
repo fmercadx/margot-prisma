@@ -1,5 +1,7 @@
-import { ArrowUp, Lock, NotebookPen, X } from '../icons';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+
+import { ArrowUp, Check, Lock, NotebookPen, X } from '../icons';
 
 import { clockTime } from '../lib/date';
 import { FREE_NOTES_PER_DAY } from '../lib/premium';
@@ -15,9 +17,18 @@ type Props = {
   onDraftChange: (text: string) => void;
   onSubmit: () => void;
   onDelete: (id: string) => void;
+  /** Saves new text for a note. Blank text is refused (delete it instead). */
+  onEdit: (id: string, text: string) => void;
 };
 
-export function QuickCapture({ notes, isPremium, draft, onDraftChange, onSubmit, onDelete }: Props) {
+export function QuickCapture({ notes, isPremium, draft, onDraftChange, onSubmit, onDelete, onEdit }: Props) {
+  // One note at a time is open for editing.
+  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
+  const saveEdit = () => {
+    if (!editing || !editing.text.trim()) return;
+    onEdit(editing.id, editing.text);
+    setEditing(null);
+  };
   const atLimit = !isPremium && notes.length >= FREE_NOTES_PER_DAY;
   const canSend = draft.trim().length > 0;
 
@@ -86,22 +97,57 @@ export function QuickCapture({ notes, isPremium, draft, onDraftChange, onSubmit,
           keyboardShouldPersistTaps="handled"
           testID="note-list"
         >
-          {notes.map((note, i) => (
-            <View key={note.id} style={[styles.note, i > 0 && styles.divider]}>
-              <View style={[styles.dot, { backgroundColor: colors.notes }]} />
-              <View style={styles.noteBody}>
-                <Text style={styles.noteText}>{note.text}</Text>
-                <Text style={styles.noteTime}>{clockTime(note.createdAt)}</Text>
+          {notes.map((note, i) =>
+            editing?.id === note.id ? (
+              <View key={note.id} style={[styles.note, styles.editRow, i > 0 && styles.divider]}>
+                <TextInput
+                  value={editing.text}
+                  onChangeText={(text) => setEditing({ id: note.id, text })}
+                  onSubmitEditing={saveEdit}
+                  {...inputColors}
+                  style={styles.editInput}
+                  maxLength={NOTE_MAX_LENGTH}
+                  autoFocus
+                  returnKeyType="done"
+                  submitBehavior="submit"
+                  accessibilityLabel="Edit note"
+                  testID="note-edit-input"
+                />
+                <IconButton
+                  icon={Check}
+                  size={18}
+                  label="Save changes"
+                  onPress={saveEdit}
+                  disabled={!editing.text.trim()}
+                  color={colors.notes}
+                />
+                <IconButton icon={X} size={18} label="Cancel editing" onPress={() => setEditing(null)} />
               </View>
-              <IconButton
-                icon={X}
-                size={16}
-                label={`Delete note: ${note.text}`}
-                onPress={() => onDelete(note.id)}
-                color={colors.textMuted}
-              />
-            </View>
-          ))}
+            ) : (
+              <View key={note.id} style={[styles.note, i > 0 && styles.divider]}>
+                <View style={[styles.dot, { backgroundColor: colors.notes }]} />
+                <Pressable
+                  onPress={() => setEditing({ id: note.id, text: note.text })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit note: ${note.text}`}
+                  style={({ pressed }) => [styles.noteBody, pressed && { opacity: 0.7 }]}
+                >
+                  <Text style={styles.noteText}>{note.text}</Text>
+                  <Text style={styles.noteTime}>
+                    {clockTime(note.createdAt)}
+                    {note.editedAt ? ' · edited' : ''}
+                  </Text>
+                </Pressable>
+                <IconButton
+                  icon={X}
+                  size={16}
+                  label={`Delete note: ${note.text}`}
+                  onPress={() => onDelete(note.id)}
+                  color={colors.textMuted}
+                />
+              </View>
+            ),
+          )}
         </ScrollView>
       )}
     </Card>
@@ -144,5 +190,15 @@ const styles = StyleSheet.create({
   dot: { width: 6, height: 6, borderRadius: 3, marginTop: 19 },
   noteBody: { flex: 1, paddingVertical: space.sm, gap: 2 },
   noteText: { ...type.body, color: colors.text },
+  editRow: { alignItems: 'center', paddingVertical: space.sm },
+  editInput: {
+    flex: 1,
+    minHeight: HIT,
+    backgroundColor: colors.cardRaised,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.md,
+    color: colors.text,
+    ...type.body,
+  },
   noteTime: { ...type.caption, color: colors.textMuted, fontVariant: ['tabular-nums'] },
 });

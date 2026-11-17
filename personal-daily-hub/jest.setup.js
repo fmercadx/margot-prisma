@@ -136,9 +136,18 @@ jest.mock('expo-screen-capture', () => ({
 jest.mock('expo-file-system', () => {
   const files = new Map();
   class File {
-    constructor(dir, name) {
-      this.name = name;
-      this.uri = `${dir.uri}/${name}`;
+    constructor(dirOrUri, name) {
+      if (typeof dirOrUri === 'string') {
+        this.uri = dirOrUri;
+        this.name = dirOrUri.split('/').pop();
+      } else {
+        this.name = name;
+        this.uri = `${dirOrUri.uri}/${name}`;
+      }
+    }
+    async text() {
+      if (!files.has(this.uri)) throw new Error('no such file');
+      return files.get(this.uri);
     }
     get exists() {
       return files.has(this.uri);
@@ -163,4 +172,21 @@ jest.mock('expo-file-system', () => {
 jest.mock('expo-sharing', () => ({
   isAvailableAsync: jest.fn(async () => true),
   shareAsync: jest.fn(async () => {}),
+}));
+
+// The system file chooser: tests set `__next` to what the person "picks".
+jest.mock('expo-document-picker', () => {
+  const picker = { next: { canceled: true, assets: null } };
+  return {
+    __picker: picker,
+    getDocumentAsync: jest.fn(async () => picker.next),
+  };
+});
+
+jest.mock('expo-haptics', () => ({
+  selectionAsync: jest.fn(async () => {}),
+  notificationAsync: jest.fn(async () => {}),
+  impactAsync: jest.fn(async () => {}),
+  NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
+  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
 }));
