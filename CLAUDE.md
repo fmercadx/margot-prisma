@@ -1,6 +1,6 @@
 # Working in this repo
 
-Four unrelated products share this repository:
+Five unrelated products share this repository:
 
 - **the salon site** — React + Vite + Tailwind, at the repo root, serving
   `fmercadx.github.io/margot-prisma/`
@@ -11,13 +11,18 @@ Four unrelated products share this repository:
 - **`car-mirror/`** — an Android app that mirrors the owner's phone screen to
   their Tesla's browser. Its own Gradle build; ships as an APK on GitHub
   Releases, not on Pages or Railway. Its README explains the design.
+- **`personal-daily-hub/`** — a React Native + Expo (SDK 58) daily dashboard
+  app; built for phones through EAS, not deployed from this repo
 
 They are independent. `deploy.yml` builds the first two into one `dist/`, and
-`credit-analyzer.yml`, `shepherds-whisper.yml` and `car-mirror.yml` are
-path-filtered so no product's changes run another's tests. `car-mirror.yml`
-alone also runs on branch pushes, because each build publishes a release; its
-`scope` job skips a branch that hasn't changed car-mirror since it left `main`,
-since GitHub runs path-filtered workflows on new branches and force-pushes anyway.
+`credit-analyzer.yml`, `shepherds-whisper.yml`, `car-mirror.yml` and the two
+`personal-daily-hub*` workflows are path-filtered so no product's changes run
+another's tests. `car-mirror.yml` alone also runs on branch pushes, because each
+build publishes a release; its `scope` job skips a branch that hasn't changed
+car-mirror since it left `main`, since GitHub runs path-filtered workflows on new
+branches and force-pushes anyway. `personal-daily-hub-android.yml` also builds
+on branch pushes, but only uploads artifacts (the APK, and screenshots from
+running it on an emulator); it publishes nothing.
 
 **`car-mirror/` network exposure is deliberate.** Its VPN covers only the app
 and routes a single link-local `/32` (link-local because Android 13+ drops
@@ -31,6 +36,21 @@ replay-checked counters, and the server never sends CORS headers. The page's
 crypto (`crypto.js`, noble) is vendored and served by the phone. Widening any of
 these would let whoever shares a network with the phone, or any page open in the
 car's browser, see the screen or tap on the phone.
+
+**`personal-daily-hub/` security is easy to undo by accident.** All of these
+are tested, but each looks like an implementation detail:
+
+- Every stored value goes through the codec in `src/lib/storage.ts`
+  (AES-256-GCM on phones). Never call AsyncStorage directly for app data,
+  and never log a decrypted value.
+- `src/lib/dataCodec.ts` creates the key only when none is stored. If reading
+  it throws, launch fails safe (saving off); minting a new key there would
+  orphan everything sealed with the old one.
+- The release APK has no INTERNET permission (`app.config.js`, set by the APK
+  workflow), and the emulator test asserts it. A network feature means
+  revisiting that, not quietly re-adding the permission.
+- `locked` in `src/hooks/useAppLock.ts` is derived during render. Moving it
+  into an effect draws the day for one frame before the lock screen.
 
 **Two Railway services, two configs.** The root `railway.json` and `Procfile`
 belong to the credit analyzer's Flask app. `shepherds-whisper/railway.json` and
@@ -146,6 +166,14 @@ cd car-mirror && NODE_PATH=$(npm root -g) node tools/video-smoke.cjs http://127.
 # Car mirror phone-screen previews: Robolectric renders the real screen in each state.
 # CI only (needs Google Maven); the PNGs are attached to each release as preview-*.png.
 cd car-mirror && ./gradlew :app:testDebugUnitTest
+
+# The daily hub app: types, Jest (every test runs as iOS and as Android),
+# then bundle every platform. `expo install`, `expo export` and
+# `expo prebuild` need EXPO_OFFLINE=1 here — see below. Gradle cannot run
+# here (Maven is not on the allowlist); personal-daily-hub-android.yml
+# builds the APK on GitHub instead.
+cd personal-daily-hub && npm ci && npm run typecheck && npm test
+EXPO_OFFLINE=1 npx expo export --platform android --platform ios --platform web --output-dir dist
 ```
 
 The smoke scripts take `--browser <path>` if Playwright's Chromium is not on
@@ -209,7 +237,10 @@ addresses only.** Everything else answers `403` to CONNECT — including
 `api.cloudflare.com`, `workers.dev`, Railway, and `fmercadx.github.io` itself.
 
 So deploys that need those hosts cannot be done from here, and the live Pages
-site cannot be fetched to verify. Check with
+site cannot be fetched to verify. The Expo CLI calls `api.expo.dev` to check
+versions and fails on the 403; `EXPO_OFFLINE=1` makes `npx expo install` use
+the SDK's bundled version map instead, and `docs.expo.dev` is unreachable, so
+read the installed packages' `.d.ts` files for current APIs. Check with
 `curl -sS "$HTTPS_PROXY/__agentproxy/status"` rather than assuming either way.
 
 Chromium for Playwright is at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`.
