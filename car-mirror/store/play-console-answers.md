@@ -16,8 +16,9 @@ reviewer won't have a car:
 > No account or login. To test without a car: turn on the phone's Wi-Fi hotspot, connect a
 > laptop or a second phone to it, open Car Mirror and tap Start mirroring, and allow the
 > prompts. Then open the address the app shows (for example 169-254-73-1.sslip.io:8080, or
-> the next one listed if that doesn't load) in the laptop's web browser. The phone's screen
-> appears there. Touch control is optional: tap "Turn on touch control" to try tapping on
+> the next one listed if that doesn't load) in the laptop's web browser. The laptop shows a
+> 6-digit code and the phone asks "Allow this screen?" with the same code: tap Allow. The
+> phone's screen then appears in the laptop's browser. Touch control is optional: tap "Turn on touch control" to try tapping on
 > the laptop's picture.
 
 ## Advertising ID
@@ -27,8 +28,9 @@ Does the app use an advertising ID? **No.**
 ## Data safety
 
 - Does the app collect or share any of the required user data types? **No.**
-- Is all user data encrypted in transit? Not applicable: nothing is collected or sent to the
-  developer. (The picture goes from the phone to the car over the phone's own hotspot.)
+- Is all user data encrypted in transit? **Yes.** Nothing is collected or sent to the
+  developer. The picture and taps go only between the phone and a screen the user paired
+  on the phone, end-to-end encrypted (X25519 key exchange, ChaCha20-Poly1305).
 - Location, used only by the driving pause (on by default, can be switched off), is
   processed on the device and never leaves it. Google's definitions don't count on-device-only processing as "collected".
 
@@ -109,6 +111,13 @@ Settings.
 Used only by the optional "Dim this phone while mirroring" to set screen brightness, restored
 when mirroring stops. No declaration form exists for it at the time of writing; mention it in
 the description if asked.
+
+## Nearby devices (BLUETOOTH_CONNECT)
+
+Used only by the optional "Start from your car's Bluetooth": it lists the phone's paired
+Bluetooth devices so the user can pick their car, and notices when the phone connects to it,
+to offer Start in a notification. No scanning, no location from Bluetooth; the chosen
+device stays on the phone. No declaration form exists for it; Data safety: not collected.
 
 ## News app, health, financial features, government
 

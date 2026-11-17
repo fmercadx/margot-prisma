@@ -19,7 +19,11 @@ hotspot, normally your car. The images are held in memory only long enough to se
 and are never saved to storage or sent to anyone else.
 
 Only devices connected to your phone's hotspot can open that address, and the app refuses
-requests that don't use one of the addresses it shows you. In test mode, which happens
+requests that don't use one of the addresses it shows you. Even then, a screen sees nothing
+until you allow it on your phone after checking that both show the same code. The picture
+and your taps are then encrypted between your phone and that screen. Each side keeps a key
+for the pairing: your phone in the app's private storage, the car in its browser. Neither is
+sent anywhere, and **Paired screens → Forget** in the app's settings deletes them. In test mode, which happens
 only if the VPN is declined or can't start, devices on the same Wi-Fi network as your
 phone can open it too; the app says so on screen when that applies.
 
@@ -64,6 +68,7 @@ sent anywhere. When mirroring stops, so does the GPS.
 | Keep screen on | A screen that turns off has nothing to mirror. |
 | Accessibility (optional) | Touch control, as described above. |
 | Location (optional) | Pause while the car is moving, as described above. |
+| Nearby devices (optional) | Start from your car's Bluetooth: to list your phone's paired Bluetooth devices so you can pick your car, and to notice when the phone connects to it. Only the device you pick is remembered, on your phone. |
 | Modify system settings (optional) | Dim this phone while mirroring: it changes screen brightness only, and puts yours back when mirroring stops. |
 
 ## Children

@@ -11,9 +11,11 @@ import android.util.DisplayMetrics
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import io.github.fmercadx.carmirror.core.Gesture
+import io.github.fmercadx.carmirror.core.GlobalAction
 
 /**
- * Touch control: performs taps and swipes from the car's screen on the phone.
+ * Touch control: performs taps, swipes, pinches and the Back, Home and Recent apps buttons
+ * from the car's screen on the phone.
  *
  * Android only lets an app inject touches through an Accessibility service, which the user
  * turns on in Settings. This one is configured (res/xml/touch_service.xml) to perform
@@ -42,7 +44,11 @@ class TouchService : AccessibilityService() {
 
     override fun onInterrupt() {}
 
-    /** Performs [gesture], whose points are fractions of the screen. Safe to call from any thread. */
+    /**
+     * Performs [gesture], whose points are fractions of the screen. Each finger becomes one
+     * stroke, all starting together, so two fingers moving apart are a pinch to zoom. Safe to
+     * call from any thread.
+     */
     fun perform(gesture: Gesture) {
         mainHandler.post {
             val metrics = DisplayMetrics()
@@ -50,22 +56,34 @@ class TouchService : AccessibilityService() {
             service<DisplayManager>().getDisplay(Display.DEFAULT_DISPLAY).getRealMetrics(metrics)
             val maxX = (metrics.widthPixels - 1).toFloat()
             val maxY = (metrics.heightPixels - 1).toFloat()
-            val path = Path()
-            gesture.points.forEachIndexed { i, p ->
-                if (i == 0) path.moveTo(p.x * maxX, p.y * maxY) else path.lineTo(p.x * maxX, p.y * maxY)
-            }
             // A path with one point is a tap, or a long press when the duration is long.
             val duration = gesture.durationMs.coerceIn(1L, GestureDescription.getMaxGestureDuration())
+            val builder = GestureDescription.Builder()
+            for (stroke in gesture.strokes.take(GestureDescription.getMaxStrokeCount())) {
+                val path = Path()
+                stroke.forEachIndexed { i, p ->
+                    if (i == 0) path.moveTo(p.x * maxX, p.y * maxY) else path.lineTo(p.x * maxX, p.y * maxY)
+                }
+                builder.addStroke(GestureDescription.StrokeDescription(path, 0, duration))
+            }
             try {
-                dispatchGesture(
-                    GestureDescription.Builder()
-                        .addStroke(GestureDescription.StrokeDescription(path, 0, duration))
-                        .build(),
-                    null, null,
-                )
+                dispatchGesture(builder.build(), null, null)
             } catch (_: IllegalArgumentException) {
                 // A gesture Android won't accept; dropping one touch is better than crashing.
             }
+        }
+    }
+
+    /** Presses Back, Home or Recent apps. Needs no permission beyond the service itself. */
+    fun perform(action: GlobalAction) {
+        mainHandler.post {
+            performGlobalAction(
+                when (action) {
+                    GlobalAction.BACK -> GLOBAL_ACTION_BACK
+                    GlobalAction.HOME -> GLOBAL_ACTION_HOME
+                    GlobalAction.RECENTS -> GLOBAL_ACTION_RECENTS
+                },
+            )
         }
     }
 

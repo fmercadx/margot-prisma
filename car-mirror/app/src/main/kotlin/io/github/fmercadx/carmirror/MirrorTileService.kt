@@ -40,9 +40,9 @@ class MirrorTileService : TileService() {
         val tile = qsTile ?: return
         tile.state = if (MirrorState.running) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
         tile.subtitle = when {
-            !MirrorState.running -> "Off"
-            MirrorState.paused != null -> "Paused"
-            else -> "On"
+            !MirrorState.running -> getString(R.string.tile_off)
+            MirrorState.paused != null -> getString(R.string.paused)
+            else -> getString(R.string.tile_on)
         }
         tile.updateTile()
     }

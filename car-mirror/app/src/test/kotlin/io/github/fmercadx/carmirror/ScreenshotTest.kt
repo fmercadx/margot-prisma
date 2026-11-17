@@ -12,6 +12,7 @@ import android.widget.TextView
 import io.github.fmercadx.carmirror.core.CarUrls
 import io.github.fmercadx.carmirror.core.FrameHub
 import io.github.fmercadx.carmirror.core.MirrorServer
+import io.github.fmercadx.carmirror.core.Pairing
 import org.junit.After
 import org.junit.Before
 import org.junit.Assert.assertEquals
@@ -75,6 +76,8 @@ class ScreenshotTest {
             assertVisible(page, "Stop")
             assertVisible(page, "Turn on touch control") // offered while mirroring, since it's off
             assertVisible(page, "Dim this phone while mirroring")
+            assertVisible(page, "Start from your car's Bluetooth")
+            assertVisible(page, "Paired screens")
             assertHidden(page, "Start mirroring")
             assertHidden(page, "Before you start")
         }
@@ -104,6 +107,47 @@ class ScreenshotTest {
             assertVisible(page, "Resume")
             assertVisible(page, "Paused")
             assertHidden(page, "Pause")
+        }
+    }
+
+    @Test
+    fun tooHotLight() {
+        mirroring()
+        MirrorState.paused = "hot"
+        shoot("9-too-hot-light") { page ->
+            assertVisible(page, "Paused to cool down")
+            assertHidden(page, "Resume") // the phone resumes by itself once it has cooled
+        }
+    }
+
+    @Test
+    fun pairingRequestLight() {
+        mirroring()
+        MirrorState.pairingRequests = listOf(Pairing.Request("request", "431868", "192.168.43.2"))
+        shoot("10-pairing-request-light") { page ->
+            assertVisible(page, "Allow this screen?")
+            assertVisible(page, "431 868")
+            assertVisible(page, "Allow")
+            assertVisible(page, "Deny")
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "+es")
+    fun readySpanish() = shoot("11-ready-spanish") { page ->
+        assertVisible(page, "Iniciar duplicación")
+        assertVisible(page, "Antes de empezar")
+        assertVisible(page, "Pausar al conducir")
+    }
+
+    @Test
+    @Config(qualifiers = "+de")
+    fun waitingGerman() {
+        mirroring()
+        shoot("12-waiting-german") { page ->
+            assertVisible(page, "Warte auf dein Auto")
+            assertVisible(page, "Stoppen")
+            assertVisible(page, "Gekoppelte Bildschirme")
         }
     }
 

@@ -10,8 +10,10 @@ import android.view.ViewGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import io.github.fmercadx.carmirror.core.CarUrls
+import io.github.fmercadx.carmirror.core.Crypto
 import io.github.fmercadx.carmirror.core.FrameHub
 import io.github.fmercadx.carmirror.core.MirrorServer
+import io.github.fmercadx.carmirror.core.Pairing
 import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -59,14 +61,15 @@ class StoreScreenshotTest {
 
     @Test
     fun connected() {
-        // A real server and a real request from "the car", so the screen shows what it would.
+        // A real server and a real request from a paired "car", so the screen shows what it would.
         val hub = FrameHub()
         val httpServer = MirrorServer(hub).also { server = it }
         val port = httpServer.start(0, InetAddress.getLoopbackAddress())
         MirrorState.started(tunnelUp = true, port = CarUrls.DEFAULT_PORT, server = httpServer, problem = null)
         MirrorState.watchingMotion = true
+        val session = pairedSession(httpServer)
         car = Socket(InetAddress.getLoopbackAddress(), port).apply {
-            getOutputStream().write("GET /frame?after=0 HTTP/1.1\r\nHost: 169-254-73-1.sslip.io:8080\r\n\r\n".toByteArray())
+            getOutputStream().write("GET /frame?s=$session&after=0 HTTP/1.1\r\nHost: 169-254-73-1.sslip.io:8080\r\n\r\n".toByteArray())
             getOutputStream().flush()
         }
         val deadline = System.currentTimeMillis() + 3_000
@@ -91,6 +94,21 @@ class StoreScreenshotTest {
             assertTrue("Pause while driving should be on by default",
                 (findText(page) { it == "Pause while driving" } as android.widget.Switch).isChecked)
         }
+    }
+
+    /** Pairs a stand-in car with [server] and opens a session, the way the car's page does. */
+    private fun pairedSession(server: MirrorServer): String {
+        val pairing = server.pairing
+        val car = Crypto.keyPair()
+        val started = pairing.start(Crypto.sha256(Pairing.COMMIT, car.publicKey), "127.0.0.1") as Pairing.Start.Started
+        pairing.finish(started.id, car.publicKey, "127.0.0.1")
+        pairing.approve(started.id)
+        val shared = Crypto.sharedSecret(car.secretKey, started.phoneKey)!!
+        val pairKey = Crypto.hkdf(shared, started.phoneKey + car.publicKey, Pairing.PAIR_KEY_INFO, 32)
+        val visit = Crypto.keyPair()
+        val challenge = pairing.challenge(started.id, visit.publicKey)!!
+        val proof = Crypto.hmac(pairKey, Pairing.PROOF, challenge.nonce, visit.publicKey, challenge.phoneKey)
+        return pairing.open(started.id, visit.publicKey, proof)!!.id
     }
 
     private fun mirroring() {
