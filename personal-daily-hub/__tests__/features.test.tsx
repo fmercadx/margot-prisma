@@ -6,6 +6,13 @@ import { dateKey, lastNDays } from '../src/lib/date';
 import { dayStorageKey, loadSettings } from '../src/lib/storage';
 import HomeScreen from '../src/screens/HomeScreen';
 
+// These tests render the whole app. On a fresh CI runner Jest has no
+// transform cache, so the first test in this file also pays for compiling
+// and loading every module the screen imports (2.7-4 s here, past 5 s on
+// GitHub's runners). The budget covers that one-off cost; a real hang
+// still fails, at 30 s. Unit-test files keep Jest's default 5 s.
+jest.setTimeout(30_000);
+
 jest.mock('../src/lib/premium', () => ({
   ...jest.requireActual('../src/lib/premium'),
   purchasePremiumMock: jest.fn(async () => true),

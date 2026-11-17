@@ -4,6 +4,13 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { dayStorageKey, loadDays } from '../src/lib/storage';
 import HomeScreen from '../src/screens/HomeScreen';
 
+// These tests render the whole app. On a fresh CI runner Jest has no
+// transform cache, so the first test in this file also pays for compiling
+// and loading every module the screen imports (2.7-4 s here, past 5 s on
+// GitHub's runners). The budget covers that one-off cost; a real hang
+// still fails, at 30 s. Unit-test files keep Jest's default 5 s.
+jest.setTimeout(30_000);
+
 beforeEach(async () => {
   await AsyncStorage.clear();
   jest.useFakeTimers({ now: new Date(2026, 10, 8, 23, 59, 0) });
