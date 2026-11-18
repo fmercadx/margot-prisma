@@ -2,12 +2,14 @@ import type { ReactNode } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Check, ChevronLeft, ChevronRight, X } from '../icons';
+import { Check, ChevronLeft, ChevronRight, Target, X } from '../icons';
+import { CATEGORY_LABELS } from '../lib/categories';
 import { clockTime, longDate, parseDateKey, weekdayName } from '../lib/date';
 import { formatCents } from '../lib/money';
 import { moodWord } from '../lib/mood';
-import { ENERGY_MAX, EMPTY_DAY, totalCents, type DayLog, type Habit } from '../lib/store';
+import { ENERGY_MAX, EMPTY_DAY, expenseName, totalCents, type DayLog, type Habit } from '../lib/store';
 import { colors, radius, space, type } from '../theme';
+import { CATEGORY_ICONS } from './categoryIcons';
 import { IconButton } from './IconButton';
 
 type Props = {
@@ -33,6 +35,7 @@ export function DaySheet(p: Props) {
   const date = p.date ? parseDateKey(p.date) : null;
   const done = p.habits.filter((h) => day.habitsDone.includes(h.id));
   const nothing =
+    !day.focus &&
     day.notes.length === 0 &&
     day.expenses.length === 0 &&
     done.length === 0 &&
@@ -74,6 +77,13 @@ export function DaySheet(p: Props) {
 
             {nothing ? <Text style={styles.empty}>Nothing was logged on this day.</Text> : null}
 
+            {day.focus ? (
+              <View style={styles.focus} accessible accessibilityLabel={`Focus: ${day.focus}`}>
+                <Target size={16} color={colors.focus} strokeWidth={2.25} />
+                <Text style={styles.focusText}>{day.focus}</Text>
+              </View>
+            ) : null}
+
             {done.length > 0 ? (
               <Section title={`Habits · ${done.length}/${p.habits.length}`}>
                 {done.map((h) => (
@@ -101,15 +111,21 @@ export function DaySheet(p: Props) {
 
             {day.expenses.length > 0 ? (
               <Section title={`Expenses · ${formatCents(totalCents(day))}`}>
-                {day.expenses.map((e) => (
-                  <View key={e.id} style={[styles.line, styles.spread]}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.lineText}>{e.label || 'Expense'}</Text>
-                      <Text style={styles.meta}>{clockTime(e.createdAt)}</Text>
+                {day.expenses.map((e) => {
+                  const Icon = CATEGORY_ICONS[e.category];
+                  return (
+                    <View key={e.id} style={[styles.line, styles.spread]}>
+                      <Icon size={16} color={colors.textSecondary} strokeWidth={2.25} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.lineText}>{expenseName(e)}</Text>
+                        <Text style={styles.meta}>
+                          {clockTime(e.createdAt)} · {CATEGORY_LABELS[e.category]}
+                        </Text>
+                      </View>
+                      <Text style={styles.amount}>{formatCents(e.cents)}</Text>
                     </View>
-                    <Text style={styles.amount}>{formatCents(e.cents)}</Text>
-                  </View>
-                ))}
+                  );
+                })}
               </Section>
             ) : null}
           </ScrollView>
@@ -163,6 +179,15 @@ const styles = StyleSheet.create({
   statLabel: { ...type.caption, color: colors.textSecondary },
   statValue: { ...type.body, fontWeight: '700', color: colors.text },
   empty: { ...type.body, color: colors.textMuted, textAlign: 'center', paddingVertical: space.lg },
+  focus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    backgroundColor: colors.cardRaised,
+    borderRadius: radius.md,
+    padding: space.md,
+  },
+  focusText: { ...type.body, fontWeight: '600', color: colors.text, flex: 1 },
   section: { gap: space.sm },
   sectionTitle: { ...type.label, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 },
   group: { backgroundColor: colors.cardRaised, borderRadius: radius.md, paddingHorizontal: space.lg, paddingVertical: space.sm },

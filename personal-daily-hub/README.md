@@ -6,12 +6,13 @@ A one-screen, dark-mode daily dashboard built with React Native and Expo
 | Module | What it does |
 | --- | --- |
 | Header | Day, date and time, kept current to the minute; greeting; daily-reminder toggle; Settings |
-| Quick Capture | Timestamped notes in a list that scrolls inside its card; tap a note to edit it |
+| Today's focus | One line for the thing that matters most today; tap to change or clear it |
+| Quick Capture | Timestamped notes in a list that scrolls inside its card; tap a note to edit it; search every note, focus and expense label from any day |
 | Habits | Four core habits with cross-out on completion and day streaks; custom habits (Premium) |
 | Water, Energy & Mood | Glass-by-glass progress bar toward your goal; 1–10 energy slider; five-face mood check-in |
-| Expenses | Amount + optional label, running total for the day |
-| Last 7 days | Weekly summary (water, energy, spending, habits done), water / energy / mood / spending charts, and every past day in full (Premium) |
-| Settings | Water goal, reminder time, haptic feedback, app lock, export and restore your data |
+| Expenses | Amount, optional label and a category (food, transport, shopping, bills, fun, other); running total, what's left of an optional daily budget, and where the money went |
+| History | Weekly summary (water, energy, mood, habits done, spending, where most went), water / energy / mood / spending charts, a month calendar shaded by habits done, and every past day in full (Premium) |
+| Settings | Water goal, reminder time, daily budget, haptic feedback, app lock, export and restore your data, erase everything |
 
 Deleting a note, an expense or a custom habit shows **Undo** for five
 seconds.
@@ -28,6 +29,7 @@ What protects what, and why each is there:
 | No network | The release APK has **no INTERNET permission**, so Android itself refuses any connection. The app makes none anyway. | `app.config.js` |
 | No cloud backup | `allowBackup` is off, so the data never lands in a Google backup. Export is the explicit way to take a copy. | `app.json` |
 | Fewest permissions | Push, launcher-badge, storage and photo (`READ_MEDIA_IMAGES`) permissions are stripped; CI fails if one comes back. | `app.json`, APK workflow |
+| Erase everything | Settings → Erase all data, after a confirmation (and the owner's fingerprint, face or PIN when app lock is on). Every stored value is removed, quarantined copies included, and then the encryption key is deleted from the Keystore / Keychain, so a copy of the database taken earlier can't be decrypted. A new key is made for whatever comes next. The daily reminder is cancelled and old export files are deleted too. | `erase` in `src/hooks/useDailyHub.ts` |
 | Restore treats the file as hostile | A picked backup is size-capped (5 MB), must name this app and a format it knows, and passes the same sanitizers as stored data, with length caps on every string, per-day caps on notes and expenses, real non-future dates only, and at most ten years. Restoring only adds: nothing on the phone is overwritten, and the picker's plain-JSON copy is deleted from the cache once read. | `src/lib/importJson.ts`, `mergeBackup` in `store.ts` |
 
 Limits worth knowing:
@@ -49,6 +51,16 @@ Limits worth knowing:
 - Development builds (Expo Go, `expo run`) keep the INTERNET permission,
   because Metro serves the JavaScript over the network. Only the release
   build drops it (`PDH_RELEASE_OFFLINE=1`, set by the APK workflow).
+
+Erasing goes in a fixed order. Writes still queued are dropped, and a
+write already under way is waited out, so nothing sealed with the old key
+can land afterwards. Then the data is removed, and only then the key: had
+deleting the key failed, no data would be left for it to open. If any step
+fails, saving is switched off for the session rather than continuing with a
+key that may be gone.
+
+Search runs on the phone: it decrypts the stored days, looks through them in
+memory, and keeps nothing afterwards.
 
 If the key is ever lost (secure storage reset), values that will not
 decrypt are copied to `pdh:v1:corrupt:*` keys, not deleted, and the app
@@ -149,7 +161,7 @@ earlier days stay saved:
 {
   habits: [{ id, label, core }],                 // definitions carry across days
   days: {
-    '2026-11-08': { notes, habitsDone, water, energy, expenses },
+    '2026-11-08': { focus, notes, habitsDone, water, energy, mood, expenses },
   },
 }
 ```
@@ -176,16 +188,22 @@ What keeps it safe (`src/hooks/useDailyHub.ts`, `src/lib/storage.ts`):
   an evening's entries under tomorrow in the Americas). Money is integer
   cents, so the running total cannot drift.
 - If the app is left open past midnight it rolls over to the new day.
-- Sixty days are kept in memory: seven for the charts, the rest so habit
-  streaks can count back. Export reads everything else from storage.
+- Sixty days are kept in memory: seven for the charts, the rest for habit
+  streaks and the month calendar. Export and search read everything else
+  from storage.
+- Fields added later read back with a default when older data lacks them:
+  an expense saved before 1.3 is filed under "other", and a day has no focus.
+  A 1.2 backup restores the same way.
 
 ## Premium (mock)
 
 `isPremium` starts `false` on every launch. Free users get three Quick
 Capture notes per day; the fourth opens a bottom-sheet paywall listing
 the three benefits — unlimited entries, historical graphs, custom habits —
-with an **Unlock Premium for $4.99** button. Custom habits and the 7-day
-charts are gated too, since the paywall advertises them.
+with an **Unlock Premium for $4.99** button. Custom habits and History
+(charts, summary, month calendar, past days) are gated too, since the
+paywall advertises them. Search, categories, the budget and the focus line
+are free.
 
 The paywall is dismissible ("Not now", the backdrop, Android back) and keeps
 whatever was being typed; unlocking finishes the blocked action (the fourth
@@ -217,7 +235,8 @@ Before release, replace that one function:
 App.tsx                     providers + status bar
 src/screens/HomeScreen.tsx  composes the modules; owns premium, undo, settings
 src/components/             one file per module, plus Card, IconButton, StepSlider,
-                            SettingsSheet, LockScreen, Toast, PaywallModal, DaySheet
+                            SettingsSheet, LockScreen, Toast, PaywallModal, DaySheet,
+                            TodayFocus, SearchSheet, MonthCalendar
 src/hooks/useDailyHub.ts    reducer + key, migration, load/save
 src/hooks/useAppLock.ts     when the lock screen shows
 src/hooks/useClock.ts       minute clock and today's date key
@@ -230,6 +249,8 @@ src/lib/exportJson.ts       the export file's contents (pure)
 src/lib/importJson.ts       reading a backup back in, as untrusted input (pure)
 src/lib/importData.ts       the system file chooser (.web.ts: the browser's)
 src/lib/summary.ts          the week at a glance (pure)
+src/lib/categories.ts       expense categories and budget steps (pure)
+src/lib/search.ts           accent- and case-insensitive search with match positions (pure)
 src/lib/haptics.ts          feedback taps, switchable, silent on web
 src/lib/mood.ts             the five mood words
 src/lib/reminders.ts        daily local reminder (reminders.web.ts stubs it)
@@ -243,4 +264,10 @@ src/theme.ts                colours, spacing, type
 
 `src/icons.ts` imports each icon from its own file because Metro does not
 tree-shake: importing from the `lucide-react-native` root put all ~1,600
-icons in the bundle (3.2 MB web bundle vs. ~570 KB now).
+icons in the bundle (3.2 MB web bundle vs. ~670 KB now).
+
+Expense categories are told apart by icon and name, not by colour: six hues
+side by side cannot all be distinguished by colour-blind readers. So "Where
+it went" is a list of single-colour bars, each row labelled, rather than a
+stacked bar in six colours. The calendar uses one hue, stepping from the
+card surface toward full green.

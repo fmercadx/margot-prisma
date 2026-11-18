@@ -2,6 +2,7 @@
 // clock — the date and timestamps arrive in the actions — so it is tested
 // directly.
 
+import { CATEGORY_LABELS, DEFAULT_CATEGORY, isBudget, isCategory, type ExpenseCategory } from './categories';
 import { lastNDays } from './date';
 //
 // Daily data is keyed by local date string, so "today" starts empty each
@@ -10,16 +11,17 @@ import { lastNDays } from './date';
 //   {
 //     habits: [ { id, label, core } ],            // definitions, carried across days
 //     days: {
-//       '2026-11-07': { notes, habitsDone, water, energy, expenses },
+//       '2026-11-07': { focus, notes, habitsDone, water, energy, mood, expenses },
 //       '2026-11-08': { ... },                     // today
 //     },
 //   }
 
 export type Note = { id: string; text: string; createdAt: number; editedAt?: number };
-export type Expense = { id: string; cents: number; label: string; createdAt: number };
+export type Expense = { id: string; cents: number; label: string; category: ExpenseCategory; createdAt: number };
 export type Habit = { id: string; label: string; core: boolean };
 
 export type DayLog = {
+  focus: string; // the one thing that matters today; '' until set
   notes: Note[]; // newest first
   habitsDone: string[]; // ids of habits ticked that day
   water: number; // glasses
@@ -33,6 +35,7 @@ export type Settings = {
   reminderHour: number; // local hour of the daily reminder, 24h
   lockEnabled: boolean; // require fingerprint / face / PIN to open
   haptics: boolean; // a light tap of feedback on ticks, steps and saves
+  dailyBudgetCents: number | null; // spending limit for a day; null = no budget
 };
 
 export type HubState = {
@@ -50,6 +53,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   reminderHour: 20,
   lockEnabled: false,
   haptics: true,
+  dailyBudgetCents: null,
 });
 
 export const WATER_MAX = 20;
@@ -58,6 +62,7 @@ export const ENERGY_MAX = 10;
 export const MOOD_MIN = 1;
 export const MOOD_MAX = 5;
 export const NOTE_MAX_LENGTH = 500;
+export const FOCUS_MAX_LENGTH = 120;
 export const HABIT_MAX_LENGTH = 60;
 export const EXPENSE_LABEL_MAX_LENGTH = 40;
 export const CUSTOM_HABITS_MAX = 20;
@@ -70,6 +75,7 @@ export const CORE_HABITS: readonly Habit[] = [
 ];
 
 export const EMPTY_DAY: DayLog = Object.freeze({
+  focus: '',
   notes: [],
   habitsDone: [],
   water: 0,
@@ -95,6 +101,7 @@ export type Action =
   | { type: 'adjustWater'; date: string; delta: number }
   | { type: 'setEnergy'; date: string; value: number }
   | { type: 'setMood'; date: string; value: number | null }
+  | { type: 'setFocus'; date: string; text: string }
   | { type: 'editNote'; date: string; id: string; text: string; now: number }
   | { type: 'importBackup'; habits: Habit[]; days: Record<string, DayLog> }
   | { type: 'addExpense'; date: string; expense: Expense }
@@ -129,12 +136,19 @@ export function reducer(state: HubState, action: Action): HubState {
             : clamp(Math.round(p.reminderHour), REMINDER_HOUR_MIN, REMINDER_HOUR_MAX),
         lockEnabled: p.lockEnabled === undefined ? cur.lockEnabled : p.lockEnabled === true,
         haptics: p.haptics === undefined ? cur.haptics : p.haptics === true,
+        dailyBudgetCents:
+          p.dailyBudgetCents === undefined
+            ? cur.dailyBudgetCents
+            : isBudget(p.dailyBudgetCents)
+              ? p.dailyBudgetCents
+              : null,
       };
       const same =
         next.waterGoal === cur.waterGoal &&
         next.reminderHour === cur.reminderHour &&
         next.lockEnabled === cur.lockEnabled &&
-        next.haptics === cur.haptics;
+        next.haptics === cur.haptics &&
+        next.dailyBudgetCents === cur.dailyBudgetCents;
       return same ? state : { ...state, settings: next };
     }
 
@@ -245,6 +259,11 @@ export function reducer(state: HubState, action: Action): HubState {
         return mood === d.mood ? d : { ...d, mood };
       });
 
+    case 'setFocus': {
+      const focus = cleanFocus(action.text);
+      return updateDay(state, action.date, (d) => (focus === d.focus ? d : { ...d, focus }));
+    }
+
     case 'importBackup':
       return mergeBackup(state, action.habits, action.days).state;
 
@@ -252,9 +271,10 @@ export function reducer(state: HubState, action: Action): HubState {
       const { cents } = action.expense;
       if (!Number.isInteger(cents) || cents <= 0) return state;
       const label = action.expense.label.trim().slice(0, EXPENSE_LABEL_MAX_LENGTH);
+      const category = isCategory(action.expense.category) ? action.expense.category : DEFAULT_CATEGORY;
       return updateDay(state, action.date, (d) => ({
         ...d,
-        expenses: [{ ...action.expense, label }, ...d.expenses],
+        expenses: [{ ...action.expense, label, category }, ...d.expenses],
       }));
     }
 
@@ -322,6 +342,7 @@ export function mergeBackup(
       const expenses = unionById(mine.expenses, theirs.expenses);
       const habitsDone = [...new Set([...mine.habitsDone, ...theirs.habitsDone])];
       const candidate: DayLog = {
+        focus: mine.focus || theirs.focus,
         notes: notes.list,
         expenses: expenses.list,
         habitsDone: habitsDone.length === mine.habitsDone.length ? mine.habitsDone : habitsDone,
@@ -330,6 +351,7 @@ export function mergeBackup(
         mood: mine.mood ?? theirs.mood,
       };
       const changed =
+        candidate.focus !== mine.focus ||
         candidate.notes !== mine.notes ||
         candidate.expenses !== mine.expenses ||
         candidate.habitsDone !== mine.habitsDone ||
@@ -348,6 +370,11 @@ export function mergeBackup(
 
   const unchanged = nextHabits === state.habits && nextDays === state.days;
   return { state: unchanged ? state : { ...state, habits: nextHabits, days: nextDays }, stats };
+}
+
+/** One line, trimmed, capped. Clearing the text clears the focus. */
+export function cleanFocus(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().slice(0, FOCUS_MAX_LENGTH);
 }
 
 function insertByTime<T extends { createdAt: number }>(list: T[], item: T): T[] {
@@ -375,6 +402,11 @@ export function habitStreak(state: HubState, habitId: string, today: string, max
   return streak;
 }
 
+/** What an expense is called: its label, else its category ("Expense" for other). */
+export function expenseName(e: Expense): string {
+  return e.label || (e.category === DEFAULT_CATEGORY ? 'Expense' : CATEGORY_LABELS[e.category]);
+}
+
 export function totalCents(day: DayLog): number {
   return day.expenses.reduce((sum, e) => sum + e.cents, 0);
 }
@@ -386,6 +418,7 @@ export function habitsDoneCount(state: HubState, day: DayLog): number {
 
 export function hasAnyData(day: DayLog): boolean {
   return (
+    day.focus !== '' ||
     day.notes.length > 0 ||
     day.habitsDone.length > 0 ||
     day.water > 0 ||

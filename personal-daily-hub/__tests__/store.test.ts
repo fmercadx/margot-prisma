@@ -87,7 +87,7 @@ test('water and energy are clamped to their ranges', () => {
 });
 
 test('expenses keep a running total and reject bad amounts', () => {
-  const exp = (id: string, cents: number) => ({ id, cents, label: '', createdAt: 1 });
+  const exp = (id: string, cents: number) => ({ id, cents, label: '', category: 'other' as const, createdAt: 1 });
   let s = run(
     { type: 'addExpense', date: TODAY, expense: exp('a', 475) },
     { type: 'addExpense', date: TODAY, expense: exp('b', 3820) },
@@ -112,7 +112,7 @@ test('mergeDays never lets older stored data replace what is in memory', () => {
 describe('settings', () => {
   test('are clamped to their ranges, and an unchanged value is a no-op', () => {
     let s = reducer(initialState, { type: 'updateSettings', patch: { waterGoal: 99, reminderHour: 2 } });
-    expect(s.settings).toEqual({ waterGoal: 16, reminderHour: 6, lockEnabled: false, haptics: true });
+    expect(s.settings).toEqual({ waterGoal: 16, reminderHour: 6, lockEnabled: false, haptics: true, dailyBudgetCents: null });
     expect(reducer(s, { type: 'updateSettings', patch: { waterGoal: 16 } })).toBe(s);
     s = reducer(s, { type: 'updateSettings', patch: { lockEnabled: true } });
     expect(s.settings.lockEnabled).toBe(true);
@@ -176,7 +176,7 @@ describe('buildExport', () => {
         '2026-11-05': EMPTY_DAY,
       },
       [...CORE_HABITS],
-      { waterGoal: 8, reminderHour: 20, lockEnabled: true, haptics: true },
+      { waterGoal: 8, reminderHour: 20, lockEnabled: true, haptics: true, dailyBudgetCents: 4000 },
       new Date(2026, 10, 8, 12),
     );
     const file = JSON.parse(json);

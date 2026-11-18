@@ -6,3 +6,6 @@ import { plainCodec, type Codec } from './codec';
 export async function createDataCodec(): Promise<Codec> {
   return plainCodec;
 }
+
+/** No key on web: erasing the stored data is all there is to do. */
+export async function destroyDataKey(): Promise<void> {}

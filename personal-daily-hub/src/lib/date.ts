@@ -64,6 +64,11 @@ export function longDate(d: Date): string {
   return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
 }
 
+/** "November 2026" */
+export function monthTitle(d: Date): string {
+  return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 /** "8:05 PM" */
 export function clockTime(d: Date | number): string {
   const date = typeof d === 'number' ? new Date(d) : d;

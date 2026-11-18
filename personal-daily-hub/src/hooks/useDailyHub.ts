@@ -1,12 +1,13 @@
-import { useEffect, useReducer, useRef, useState, type Dispatch } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState, type Dispatch } from 'react';
 import { AppState } from 'react-native';
 
-import { createDataCodec } from '../lib/dataCodec';
+import { createDataCodec, destroyDataKey } from '../lib/dataCodec';
 import { lastNDays } from '../lib/date';
 import {
   createPersister,
   dayStorageKey,
   ensureSealed,
+  eraseStoredData,
   HABITS_KEY,
   habitsForStorage,
   isEncrypted,
@@ -18,6 +19,8 @@ import {
   type Persister,
 } from '../lib/storage';
 import {
+  CORE_HABITS,
+  DEFAULT_SETTINGS,
   initialState,
   reducer,
   type Action,
@@ -42,6 +45,12 @@ export type DailyHub = {
   saveFailed: boolean;
   /** Stored data is encrypted on this device (true on phones, false on web). */
   encrypted: boolean;
+  /**
+   * Deletes everything the app has stored and destroys the encryption key,
+   * then starts fresh. Rejects if any step fails; saving is then switched
+   * off for the session, since the old key may already be gone.
+   */
+  erase: () => Promise<void>;
 };
 
 /**
@@ -69,6 +78,7 @@ export function useDailyHub(today: string): DailyHub {
     days: {},
   });
   const loadedFor = useRef<string | null>(null);
+  const erasing = useRef(false);
 
   const persister = useRef<Persister | null>(null);
   if (persister.current === null) {
@@ -138,7 +148,7 @@ export function useDailyHub(today: string): DailyHub {
 
   // Save whatever changed.
   useEffect(() => {
-    if (!ready || loadFailed) return;
+    if (!ready || loadFailed || erasing.current) return;
     const p = persister.current!;
     if (state.habits !== queued.current.habits) {
       p.schedule(HABITS_KEY, habitsForStorage(state.habits));
@@ -167,5 +177,39 @@ export function useDailyHub(today: string): DailyHub {
     };
   }, []);
 
-  return { state, dispatch, ready, loadFailed, saveFailed, encrypted: ready && !loadFailed && isEncrypted() };
+  // Order matters. Queued writes are dropped and any write in flight is
+  // waited out, so nothing sealed with the old key lands afterwards. The
+  // data goes before the key: if deleting the key failed, nothing readable
+  // would be left behind for it to open. Only then is a new key made.
+  const erase = useCallback(async () => {
+    erasing.current = true;
+    try {
+      await persister.current!.discard();
+      await eraseStoredData();
+      await destroyDataKey();
+      setCodec(await createDataCodec());
+    } catch (err) {
+      setLoadFailed(true);
+      throw err;
+    } finally {
+      erasing.current = false;
+    }
+    // Fresh state, marked as already saved, so erasing writes nothing back.
+    const fresh = { habits: [...CORE_HABITS], days: {}, settings: DEFAULT_SETTINGS };
+    queued.current = { habits: fresh.habits, settings: fresh.settings, days: {} };
+    loadedFor.current = today;
+    dispatch({ type: 'hydrate', ...fresh });
+    setLoadFailed(false);
+    setSaveFailed(false);
+  }, [today]);
+
+  return {
+    state,
+    dispatch,
+    ready,
+    loadFailed,
+    saveFailed,
+    encrypted: ready && !loadFailed && isEncrypted(),
+    erase,
+  };
 }

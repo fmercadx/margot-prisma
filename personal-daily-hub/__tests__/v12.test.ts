@@ -171,7 +171,7 @@ describe('weekSummary', () => {
   test('averages only what was logged, counts every day for habits, and totals spending', () => {
     const days = [
       { log: day({ water: 4, energy: 6, habitsDone: ['core-read'] }) },
-      { log: day({ water: 8, mood: 4, expenses: [{ id: 'e', cents: 1250, label: '', createdAt: 1 }] }) },
+      { log: day({ water: 8, mood: 4, expenses: [{ id: 'e', cents: 1250, label: '', category: 'food', createdAt: 1 }] }) },
       { log: null },
       { log: day({ habitsDone: ['core-read', 'core-move', 'gone'] }) },
     ];
@@ -185,6 +185,6 @@ describe('weekSummary', () => {
 
   test('nothing logged gives nulls, not zeros', () => {
     const s = weekSummary([{ log: null }, { log: null }], ['core-read']);
-    expect(s).toEqual({ avgWater: null, avgEnergy: null, avgMood: null, spentCents: 0, habitRate: 0 });
+    expect(s).toEqual({ avgWater: null, avgEnergy: null, avgMood: null, spentCents: 0, habitRate: 0, topCategory: null });
   });
 });

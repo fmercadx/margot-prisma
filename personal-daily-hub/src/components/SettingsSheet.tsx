@@ -2,7 +2,9 @@ import type { ReactNode } from 'react';
 import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { FileDown, FileUp, Minus, Plus, ShieldCheck, X } from '../icons';
+import { FileDown, FileUp, Minus, Plus, ShieldCheck, Trash2, X } from '../icons';
+import { stepBudget } from '../lib/categories';
+import { formatCents } from '../lib/money';
 import { hourLabel } from '../lib/reminders';
 import type { MergeStats } from '../lib/store';
 import {
@@ -36,6 +38,12 @@ type Props = {
   restorePreview: { stats: MergeStats; exportedAt: string | null } | null;
   onConfirmRestore: () => void;
   onCancelRestore: () => void;
+  /** Showing the "are you sure" step for erasing everything. */
+  eraseConfirming: boolean;
+  eraseBusy: boolean;
+  onRequestErase: () => void;
+  onConfirmErase: () => void;
+  onCancelErase: () => void;
 };
 
 export function SettingsSheet(p: Props) {
@@ -86,6 +94,20 @@ export function SettingsSheet(p: Props) {
                   canDown={s.reminderHour > REMINDER_HOUR_MIN}
                   canUp={s.reminderHour < REMINDER_HOUR_MAX}
                   testID="reminder-hour"
+                />
+              </Row>
+              <Row
+                title="Daily budget"
+                subtitle={s.dailyBudgetCents === null ? 'Off' : 'Shows what’s left in Expenses'}
+              >
+                <Stepper
+                  value={s.dailyBudgetCents === null ? 'Off' : formatCents(s.dailyBudgetCents).replace(/\.00$/, '')}
+                  label="daily budget"
+                  onDown={() => p.onChange({ dailyBudgetCents: stepBudget(s.dailyBudgetCents, -1) })}
+                  onUp={() => p.onChange({ dailyBudgetCents: stepBudget(s.dailyBudgetCents, 1) })}
+                  canDown={s.dailyBudgetCents !== null}
+                  canUp={stepBudget(s.dailyBudgetCents, 1) !== s.dailyBudgetCents}
+                  testID="daily-budget"
                 />
               </Row>
               {p.hapticsSupported ? (
@@ -170,6 +192,60 @@ export function SettingsSheet(p: Props) {
                   ) : (
                     <FileUp size={20} color={colors.textSecondary} />
                   )}
+                </Pressable>
+              )}
+
+              {p.eraseConfirming ? (
+                <View style={styles.preview} testID="erase-confirm-panel" accessibilityLiveRegion="polite">
+                  <Text style={styles.rowTitle}>Erase everything?</Text>
+                  <Text style={styles.previewText}>
+                    {p.encrypted
+                      ? 'Every day, habit and setting on this phone is deleted, and the encryption key is destroyed, so not even an old copy of the app’s data could be read again. This can’t be undone.'
+                      : 'Every day, habit and setting stored here is deleted. This can’t be undone.'}
+                  </Text>
+                  {p.exportSupported ? (
+                    <Text style={styles.rowSubtitle}>Export first if you want to keep a copy.</Text>
+                  ) : null}
+                  <View style={styles.previewButtons}>
+                    <Pressable
+                      onPress={p.onCancelErase}
+                      disabled={p.eraseBusy}
+                      accessibilityRole="button"
+                      accessibilityLabel="Keep my data"
+                      style={({ pressed }) => [styles.previewButton, pressed && { opacity: 0.7 }]}
+                    >
+                      <Text style={styles.previewCancel}>Keep my data</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={p.onConfirmErase}
+                      disabled={p.eraseBusy}
+                      accessibilityRole="button"
+                      accessibilityLabel="Erase everything"
+                      style={({ pressed }) => [styles.previewButton, styles.eraseButton, pressed && { opacity: 0.85 }]}
+                      testID="erase-confirm"
+                    >
+                      {p.eraseBusy ? (
+                        <ActivityIndicator color={colors.background} />
+                      ) : (
+                        <Text style={styles.previewConfirmText}>Erase everything</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                <Pressable
+                  onPress={p.onRequestErase}
+                  accessibilityRole="button"
+                  accessibilityLabel="Erase all data"
+                  accessibilityHint="Asks you to confirm before anything is deleted."
+                  style={({ pressed }) => [styles.exportRow, pressed && { opacity: 0.7 }]}
+                  testID="erase"
+                >
+                  <View style={styles.rowText}>
+                    <Text style={[styles.rowTitle, styles.danger]}>Erase all data</Text>
+                    <Text style={styles.rowSubtitle}>Delete everything on this phone and start fresh.</Text>
+                  </View>
+                  <Trash2 size={20} color={colors.danger} />
                 </Pressable>
               )}
 
@@ -357,6 +433,8 @@ const styles = StyleSheet.create({
   previewConfirm: { backgroundColor: colors.notes },
   previewCancel: { ...type.label, color: colors.textSecondary, fontWeight: '700' },
   previewConfirmText: { ...type.label, color: colors.background, fontWeight: '700' },
+  eraseButton: { backgroundColor: colors.danger },
+  danger: { color: colors.danger },
   privacy: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.md },
   privacyText: { ...type.caption, color: colors.textSecondary, flex: 1 },
   version: { ...type.caption, color: colors.textMuted, textAlign: 'center' },
