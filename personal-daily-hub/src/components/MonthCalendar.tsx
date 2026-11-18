@@ -3,8 +3,11 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ChevronLeft, ChevronRight } from '../icons';
 import { dateKey, longDate, monthTitle, parseDateKey } from '../lib/date';
+import { formatCents } from '../lib/money';
 import { hasAnyData, type DayLog } from '../lib/store';
+import { monthSummary } from '../lib/summary';
 import { colors, radius, space, tint, type } from '../theme';
+import { CategoryBars } from './CategoryBars';
 import { IconButton } from './IconButton';
 
 type Props = {
@@ -57,6 +60,12 @@ export function MonthCalendar({ days, habitIds, today, firstLoaded, onOpenDay }:
     ),
   ];
   while (cells.length % 7) cells.push(null);
+
+  // The month's figures cover the days already begun that are in memory.
+  const counted = cells.filter((k): k is string => k !== null && k <= today && k >= firstLoaded);
+  const summary = monthSummary(days, counted, habitIds);
+  const monthName = monthTitle(first).split(' ')[0];
+  const partial = counted.length > 0 && counted[0] > dateKey(first);
   const weeks = Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
 
   return (
@@ -131,6 +140,27 @@ export function MonthCalendar({ days, habitIds, today, firstLoaded, onOpenDay }:
           <Text style={styles.legendText}>All</Text>
         </View>
       </View>
+
+      <View style={styles.stats} testID="month-summary">
+        {[
+          { label: 'Habits done', value: summary.habitRate === null ? '—' : `${Math.round(summary.habitRate * 100)}%` },
+          { label: 'Spent', value: formatCents(summary.spentCents) },
+          { label: 'Sleep a night', value: summary.avgSleep === null ? '—' : `${summary.avgSleep.toFixed(1)} h` },
+        ].map((t) => (
+          <View key={t.label} style={styles.stat} accessible accessibilityLabel={`${monthName}, ${t.label}: ${t.value}`}>
+            <Text style={styles.statLabel}>{t.label}</Text>
+            <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>
+              {t.value}
+            </Text>
+          </View>
+        ))}
+      </View>
+      {partial ? (
+        <Text style={styles.note} testID="month-partial">
+          From {longDate(parseDateKey(counted[0]))}, the oldest day the app keeps loaded.
+        </Text>
+      ) : null}
+      <CategoryBars title={`Where it went in ${monthName}`} rows={summary.categories} testID="month-categories" />
     </View>
   );
 }
@@ -149,4 +179,9 @@ const styles = StyleSheet.create({
   legendText: { ...type.caption, color: colors.textSecondary },
   scale: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   swatch: { width: 12, height: 12, borderRadius: 3 },
+  stats: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
+  stat: { flex: 1, backgroundColor: colors.cardRaised, borderRadius: radius.md, padding: space.md, gap: 2 },
+  statLabel: { ...type.caption, color: colors.textSecondary },
+  statValue: { fontSize: 17, fontWeight: '700', color: colors.text, fontVariant: ['tabular-nums'] },
+  note: { ...type.caption, color: colors.textMuted },
 });

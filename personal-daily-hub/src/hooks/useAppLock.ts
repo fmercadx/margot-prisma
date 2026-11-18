@@ -15,7 +15,8 @@ export type AppLock = {
 
 /**
  * Locks the app at launch, and again after it has been in the background
- * for RELOCK_AFTER_MS, whenever the lock is turned on.
+ * for `relockAfterMs` (30 s unless the person chose otherwise), whenever
+ * the lock is turned on.
  *
  * `locked` is worked out during render, never in an effect: an effect runs
  * after the first frame, which would draw the day for one frame before the
@@ -26,8 +27,10 @@ export type AppLock = {
  * prompt and a quick glance at another app all send this one briefly to
  * the background, and re-locking for those would ask again mid-task.
  */
-export function useAppLock(enabled: boolean): AppLock {
+export function useAppLock(enabled: boolean, relockAfterMs: number = RELOCK_AFTER_MS): AppLock {
   const active = enabled && appLockSupported;
+  const relockAfter = useRef(relockAfterMs);
+  relockAfter.current = relockAfterMs;
   const [unlocked, setUnlocked] = useState(false);
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
@@ -44,7 +47,7 @@ export function useAppLock(enabled: boolean): AppLock {
       } else if (s === 'active') {
         const since = backgroundAt.current;
         backgroundAt.current = null;
-        if (since !== null && Date.now() - since >= RELOCK_AFTER_MS) setUnlocked(false);
+        if (since !== null && Date.now() - since >= relockAfter.current) setUnlocked(false);
       }
     });
     return () => sub.remove();

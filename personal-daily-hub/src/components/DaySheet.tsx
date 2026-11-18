@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Check, ChevronLeft, ChevronRight, Target, X } from '../icons';
+import { Check, ChevronLeft, ChevronRight, Circle, CircleCheck, Forward, Target, X } from '../icons';
 import { CATEGORY_LABELS } from '../lib/categories';
 import { clockTime, longDate, parseDateKey, weekdayName } from '../lib/date';
 import { formatCents } from '../lib/money';
@@ -11,6 +11,7 @@ import { ENERGY_MAX, EMPTY_DAY, expenseName, totalCents, type DayLog, type Habit
 import { colors, radius, space, type } from '../theme';
 import { CATEGORY_ICONS } from './categoryIcons';
 import { IconButton } from './IconButton';
+import { sleepLabel } from './WaterEnergy';
 
 type Props = {
   date: string | null; // null = closed
@@ -41,7 +42,8 @@ export function DaySheet(p: Props) {
     done.length === 0 &&
     day.water === 0 &&
     day.energy === null &&
-    day.mood === null;
+    day.mood === null &&
+    day.sleep === null;
 
   return (
     <Modal
@@ -70,6 +72,7 @@ export function DaySheet(p: Props) {
           <ScrollView style={styles.scroll} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
             <View style={styles.stats}>
               <Stat label="Water" value={day.water > 0 ? `${day.water}/${p.waterGoal}` : '—'} />
+              <Stat label="Sleep" value={day.sleep === null ? '—' : sleepLabel(day.sleep)} />
               <Stat label="Energy" value={day.energy === null ? '—' : `${day.energy}/${ENERGY_MAX}`} />
               <Stat label="Mood" value={day.mood === null ? '—' : moodWord(day.mood)} />
               <Stat label="Spent" value={day.expenses.length ? formatCents(totalCents(day)) : '—'} />
@@ -97,15 +100,41 @@ export function DaySheet(p: Props) {
 
             {day.notes.length > 0 ? (
               <Section title={`Notes · ${day.notes.length}`}>
-                {day.notes.map((n) => (
-                  <View key={n.id} style={styles.item}>
-                    <Text style={styles.lineText}>{n.text}</Text>
-                    <Text style={styles.meta}>
-                      {clockTime(n.createdAt)}
-                      {n.editedAt ? ' · edited' : ''}
-                    </Text>
-                  </View>
-                ))}
+                {day.notes.map((n) => {
+                  const state = !n.task ? null : n.carriedTo ? 'moved' : n.doneAt !== undefined ? 'done' : 'open';
+                  return (
+                    <View
+                      key={n.id}
+                      style={[styles.item, state && styles.taskItem]}
+                      accessible={state !== null}
+                      accessibilityLabel={
+                        state === 'done'
+                          ? `To-do, done: ${n.text}`
+                          : state === 'moved'
+                            ? `To-do, brought over to the next day: ${n.text}`
+                            : state === 'open'
+                              ? `To-do, not done: ${n.text}`
+                              : undefined
+                      }
+                    >
+                      {state === 'done' ? (
+                        <CircleCheck size={16} color={colors.notes} strokeWidth={2.25} />
+                      ) : state === 'moved' ? (
+                        <Forward size={16} color={colors.textMuted} strokeWidth={2.25} />
+                      ) : state === 'open' ? (
+                        <Circle size={16} color={colors.textSecondary} strokeWidth={2} />
+                      ) : null}
+                      <View style={styles.itemText}>
+                        <Text style={[styles.lineText, state === 'done' && styles.done]}>{n.text}</Text>
+                        <Text style={styles.meta}>
+                          {clockTime(n.createdAt)}
+                          {n.editedAt ? ' · edited' : ''}
+                          {state === 'moved' ? ' · brought over to the next day' : ''}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
               </Section>
             ) : null}
 
@@ -174,8 +203,8 @@ const styles = StyleSheet.create({
   subtitle: { ...type.caption, color: colors.textSecondary },
   scroll: { flexGrow: 0 },
   body: { paddingHorizontal: space.xl, paddingBottom: space.sm, gap: space.lg },
-  stats: { flexDirection: 'row', gap: space.sm },
-  stat: { flex: 1, backgroundColor: colors.cardRaised, borderRadius: radius.md, padding: space.md, gap: 2 },
+  stats: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  stat: { flexGrow: 1, flexBasis: '30%', backgroundColor: colors.cardRaised, borderRadius: radius.md, padding: space.md, gap: 2 },
   statLabel: { ...type.caption, color: colors.textSecondary },
   statValue: { ...type.body, fontWeight: '700', color: colors.text },
   empty: { ...type.body, color: colors.textMuted, textAlign: 'center', paddingVertical: space.lg },
@@ -194,6 +223,9 @@ const styles = StyleSheet.create({
   line: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.sm },
   spread: { justifyContent: 'space-between' },
   item: { paddingVertical: space.sm, gap: 2 },
+  taskItem: { flexDirection: 'row', alignItems: 'flex-start', gap: space.sm },
+  itemText: { flex: 1, gap: 2 },
+  done: { color: colors.textMuted, textDecorationLine: 'line-through' },
   lineText: { ...type.body, color: colors.text, flexShrink: 1 },
   meta: { ...type.caption, color: colors.textMuted, fontVariant: ['tabular-nums'] },
   amount: { ...type.body, color: colors.text, fontWeight: '600', fontVariant: ['tabular-nums'] },

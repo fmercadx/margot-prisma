@@ -7,12 +7,12 @@ A one-screen, dark-mode daily dashboard built with React Native and Expo
 | --- | --- |
 | Header | Day, date and time, kept current to the minute; greeting; daily-reminder toggle; Settings |
 | Today's focus | One line for the thing that matters most today; tap to change or clear it |
-| Quick Capture | Timestamped notes in a list that scrolls inside its card; tap a note to edit it; search every note, focus and expense label from any day |
-| Habits | Four core habits with cross-out on completion and day streaks; custom habits (Premium) |
-| Water, Energy & Mood | Glass-by-glass progress bar toward your goal; 1–10 energy slider; five-face mood check-in |
+| Quick Capture | Timestamped notes and to-dos in a list that scrolls inside its card; tap to edit, tick a to-do off; unfinished to-dos from the past week can be brought over to today; search every note, focus and expense label from any day |
+| Habits | Four core habits with cross-out on completion and day streaks, with a word of congratulations at 3, 7, 14, 30 and 60 days; custom habits (Premium) |
+| Wellbeing | Glass-by-glass progress bar toward your water goal; last night's sleep in half hours; 1–10 energy slider; five-face mood check-in |
 | Expenses | Amount, optional label and a category (food, transport, shopping, bills, fun, other); running total, what's left of an optional daily budget, and where the money went |
-| History | Weekly summary (water, energy, mood, habits done, spending, where most went), water / energy / mood / spending charts, a month calendar shaded by habits done, and every past day in full (Premium) |
-| Settings | Water goal, reminder time, daily budget, haptic feedback, app lock, export and restore your data, erase everything |
+| History | Weekly summary (water, sleep, energy, mood, habits done, spending, where most went), water / sleep / energy / mood / spending charts, a month calendar shaded by habits done with the month's totals and where its money went, and every past day in full (Premium) |
+| Settings | Water goal, reminder time, daily budget, haptic feedback, app lock and how soon it locks again, export and restore your data, erase everything |
 
 Deleting a note, an expense or a custom habit shows **Undo** for five
 seconds.
@@ -25,7 +25,7 @@ What protects what, and why each is there:
 | --- | --- | --- |
 | Encryption at rest | Every stored value is AES-256-GCM ciphertext. The key is made on first launch and held by the Android Keystore / iOS Keychain (`THIS_DEVICE_ONLY`), never in the database beside the data. | `src/lib/dataCodec.ts` |
 | Tamper and swap detection | Each value's storage key (e.g. `pdh:v1:day:2026-11-08`) is bound in as authenticated data, so editing a byte or moving one day's record onto another fails to decrypt. | `dataCodec.ts` |
-| App lock (optional) | Fingerprint, face or phone PIN at launch and after 30 s in the background. While on, Android shows a blank preview in recent apps and blocks screenshots (FLAG_SECURE); iOS blurs the app switcher. | `src/lib/appLock.ts`, `src/hooks/useAppLock.ts` |
+| App lock (optional) | Fingerprint, face or phone PIN at launch and after time in the background: 30 s by default, or at once, 1 min or 5 min. While on, Android shows a blank preview in recent apps and blocks screenshots (FLAG_SECURE); iOS blurs the app switcher. | `src/lib/appLock.ts`, `src/hooks/useAppLock.ts` |
 | No network | The release APK has **no INTERNET permission**, so Android itself refuses any connection. The app makes none anyway. | `app.config.js` |
 | No cloud backup | `allowBackup` is off, so the data never lands in a Google backup. Export is the explicit way to take a copy. | `app.json` |
 | Fewest permissions | Push, launcher-badge, storage and photo (`READ_MEDIA_IMAGES`) permissions are stripped; CI fails if one comes back. | `app.json`, APK workflow |
@@ -37,6 +37,9 @@ Limits worth knowing:
 - The lock keeps people out of the app on an unlocked phone; it does not
   add to the encryption. The key opens without a fingerprint, so a lock
   change or a new fingerprint can never make the data unreadable.
+- "Lock again after: at once" also locks after the share sheet or the file
+  chooser, which briefly send the app to the background. The default 30 s
+  grace period exists so export and restore don't ask twice.
 - Restore merges rather than replaces. Where the backup and the phone
   both have a value, the phone's wins; notes and expenses are combined by
   id; water takes the larger count. Restoring the same file twice adds
@@ -161,7 +164,7 @@ earlier days stay saved:
 {
   habits: [{ id, label, core }],                 // definitions carry across days
   days: {
-    '2026-11-08': { focus, notes, habitsDone, water, energy, mood, expenses },
+    '2026-11-08': { focus, notes, habitsDone, water, sleep, energy, mood, expenses },
   },
 }
 ```
@@ -192,8 +195,12 @@ What keeps it safe (`src/hooks/useDailyHub.ts`, `src/lib/storage.ts`):
   streaks and the month calendar. Export and search read everything else
   from storage.
 - Fields added later read back with a default when older data lacks them:
-  an expense saved before 1.3 is filed under "other", and a day has no focus.
-  A 1.2 backup restores the same way.
+  an expense saved before 1.3 is filed under "other", a day has no focus
+  or sleep, and a note is a plain note rather than a to-do. Older backups
+  restore the same way.
+- A to-do brought over to today is a copy with a new id; the original stays
+  on its day, marked as brought over, so it is offered only once and the
+  earlier day still shows what was planned.
 
 ## Premium (mock)
 
@@ -202,8 +209,9 @@ Capture notes per day; the fourth opens a bottom-sheet paywall listing
 the three benefits — unlimited entries, historical graphs, custom habits —
 with an **Unlock Premium for $4.99** button. Custom habits and History
 (charts, summary, month calendar, past days) are gated too, since the
-paywall advertises them. Search, categories, the budget and the focus line
-are free.
+paywall advertises them. Search, to-dos, sleep, categories, the budget and
+the focus line are free. To-dos brought over to today count toward the three
+free entries, like any other.
 
 The paywall is dismissible ("Not now", the backdrop, Android back) and keeps
 whatever was being typed; unlocking finishes the blocked action (the fourth
@@ -250,6 +258,7 @@ src/lib/importJson.ts       reading a backup back in, as untrusted input (pure)
 src/lib/importData.ts       the system file chooser (.web.ts: the browser's)
 src/lib/summary.ts          the week at a glance (pure)
 src/lib/categories.ts       expense categories and budget steps (pure)
+src/components/CategoryBars.tsx  "where it went" bars, for a day and a month
 src/lib/search.ts           accent- and case-insensitive search with match positions (pure)
 src/lib/haptics.ts          feedback taps, switchable, silent on web
 src/lib/mood.ts             the five mood words

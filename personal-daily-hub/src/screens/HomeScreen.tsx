@@ -28,13 +28,19 @@ import { useAppLock } from '../hooks/useAppLock';
 import { useToday } from '../hooks/useClock';
 import { HISTORY_DAYS, LOADED_DAYS, useDailyHub } from '../hooks/useDailyHub';
 import { appLockSupported, authenticate, lockAvailability } from '../lib/appLock';
-import { lastNDays } from '../lib/date';
+import { lastNDays, parseDateKey, weekdayName } from '../lib/date';
 import { exportAvailable, removeOldExports, shareExport } from '../lib/exportData';
 import { buildExport } from '../lib/exportJson';
 import { haptic, setHapticsEnabled } from '../lib/haptics';
 import { pickBackupText } from '../lib/importData';
 import { parseBackup, type ParsedBackup } from '../lib/importJson';
-import { canAddCustomHabit, canAddNote, purchasePremiumMock, type PaywallReason } from '../lib/premium';
+import {
+  canAddCustomHabit,
+  canAddNote,
+  FREE_NOTES_PER_DAY,
+  purchasePremiumMock,
+  type PaywallReason,
+} from '../lib/premium';
 import {
   disableDailyReminder,
   enableDailyReminder,
@@ -52,6 +58,8 @@ import {
   habitStreak,
   mergeBackup,
   newId,
+  openTasksBefore,
+  STREAK_MILESTONES,
   totalCents,
   type Action,
   type MergeStats,
@@ -65,7 +73,7 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const today = useToday();
   const { state, dispatch, ready, loadFailed, saveFailed, encrypted, erase } = useDailyHub(today);
-  const lock = useAppLock(state.settings.lockEnabled);
+  const lock = useAppLock(state.settings.lockEnabled, state.settings.relockAfterSec * 1000);
   const day = getDay(state, today);
 
   // Export files are plain JSON; don't leave yesterday's lying in the cache.
@@ -125,11 +133,51 @@ export default function HomeScreen() {
 
   // ---- quick capture ------------------------------------------------------
   const [noteDraft, setNoteDraft] = useState('');
+  const [taskMode, setTaskMode] = useState(false);
 
-  const saveNote = (text: string, date: string) => {
-    dispatch({ type: 'addNote', date, note: { id: newId('note'), text, createdAt: Date.now() } });
+  const saveNote = (text: string, date: string, task: boolean) => {
+    const note = { id: newId('note'), text, createdAt: Date.now(), ...(task ? { task: true as const } : {}) };
+    dispatch({ type: 'addNote', date, note });
     setNoteDraft('');
     haptic.success();
+  };
+
+  const toggleTask = (id: string) => {
+    dispatch({ type: 'toggleTask', date: today, id, now: Date.now() });
+    haptic.tick();
+  };
+
+  // ---- unfinished to-dos from earlier days ---------------------------------
+  const openTasks = useMemo(() => openTasksBefore(state, today), [state, today]);
+  const [carryDismissedOn, setCarryDismissedOn] = useState<string | null>(null);
+  const yesterday = lastNDays(today, 2)[0];
+  const carryFrom = (() => {
+    const froms = [...new Set(openTasks.map((t) => t.from))];
+    if (froms.length !== 1) return 'the last few days';
+    return froms[0] === yesterday ? 'yesterday' : weekdayName(parseDateKey(froms[0]));
+  })();
+
+  const doCarry = () => {
+    const now = Date.now();
+    dispatch({
+      type: 'carryOver',
+      to: today,
+      // Newest first, like the rest of the list.
+      items: openTasks.map(({ from, note }, i) => ({ from, id: note.id, copy: { id: newId('note'), createdAt: now - i } })),
+    });
+    haptic.success();
+    const n = openTasks.length;
+    setMessage(`Brought ${n} ${n === 1 ? 'to-do' : 'to-dos'} over to today.`);
+  };
+
+  const carryOver = () => {
+    if (openTasks.length === 0) return;
+    // Brought-over to-dos are today's notes, so they count toward the free three.
+    if (!isPremium && day.notes.length + openTasks.length > FREE_NOTES_PER_DAY) {
+      openPaywall('notes', doCarry);
+      return;
+    }
+    doCarry();
   };
 
   const editNote = (id: string, text: string) => {
@@ -140,12 +188,13 @@ export default function HomeScreen() {
   const submitNote = () => {
     const text = noteDraft.trim();
     if (!text) return;
+    const task = taskMode;
     if (!canAddNote(day.notes.length, isPremium)) {
       // The draft stays in the box; unlocking saves it.
-      openPaywall('notes', () => saveNote(text, today));
+      openPaywall('notes', () => saveNote(text, today, task));
       return;
     }
-    saveNote(text, today);
+    saveNote(text, today, task);
   };
 
   const deleteNote = (id: string) => {
@@ -471,6 +520,12 @@ export default function HomeScreen() {
             onDelete={deleteNote}
             onEdit={editNote}
             onSearch={openSearch}
+            taskMode={taskMode}
+            onTaskModeChange={setTaskMode}
+            onToggleTask={toggleTask}
+            carry={openTasks.length > 0 && carryDismissedOn !== today ? { count: openTasks.length, from: carryFrom } : null}
+            onCarry={carryOver}
+            onDismissCarry={() => setCarryDismissedOn(today)}
           />
 
           <HabitChecklist
@@ -481,8 +536,17 @@ export default function HomeScreen() {
             isPremium={isPremium}
             composerOpen={habitComposerOpen}
             onToggle={(id) => {
+              const ticking = !day.habitsDone.includes(id);
               dispatch({ type: 'toggleHabit', date: today, id });
-              haptic.tick();
+              // Not ticked yet today, the streak counts up to yesterday; this tick adds today.
+              const reached = (streaks[id] ?? 0) + 1;
+              const habit = state.habits.find((h) => h.id === id);
+              if (ticking && habit && STREAK_MILESTONES.includes(reached)) {
+                haptic.success();
+                setMessage(`${reached}-day streak on “${habit.label}”. Keep it going!`);
+              } else {
+                haptic.tick();
+              }
             }}
             onRemove={removeHabit}
             onRequestAdd={requestAddHabit}
@@ -506,6 +570,11 @@ export default function HomeScreen() {
             mood={day.mood}
             onSetMood={(value) => {
               dispatch({ type: 'setMood', date: today, value });
+              haptic.tick();
+            }}
+            sleep={day.sleep}
+            onSetSleep={(value) => {
+              dispatch({ type: 'setSleep', date: today, value });
               haptic.tick();
             }}
           />

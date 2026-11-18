@@ -11,6 +11,7 @@ import { weekSummary } from '../lib/summary';
 import { colors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
 import { MonthCalendar } from './MonthCalendar';
+import { sleepLabel } from './WaterEnergy';
 
 type Props = {
   isPremium: boolean;
@@ -57,6 +58,17 @@ export function HistoryCard({ isPremium, waterGoal, habitIds, days, allDays, fir
               scaleMax={(vals) => Math.max(waterGoal, ...vals)}
               format={(v) => `${v} ${v === 1 ? 'glass' : 'glasses'}`}
               short={(v) => String(v)}
+            />
+            <MiniColumns
+              title="Sleep"
+              color={colors.sleep}
+              days={days}
+              selected={selected}
+              onSelect={setSelected}
+              value={(d) => d?.sleep ?? null}
+              scaleMax={(vals) => Math.max(9, ...vals)}
+              format={sleepLabel}
+              short={(v) => sleepLabel(v).replace(' h', '')}
             />
             <MiniColumns
               title="Energy"
@@ -139,6 +151,7 @@ function Summary({ days, habitIds }: { days: Props['days']; habitIds: string[] }
   const s = weekSummary(days, habitIds);
   const tiles: { label: string; value: string; detail?: string }[] = [
     { label: 'Water a day', value: s.avgWater === null ? '—' : s.avgWater.toFixed(1) },
+    { label: 'Sleep a night', value: s.avgSleep === null ? '—' : `${s.avgSleep.toFixed(1)} h` },
     { label: 'Energy', value: s.avgEnergy === null ? '—' : s.avgEnergy.toFixed(1) },
     { label: 'Mood', value: s.avgMood === null ? '—' : moodWord(Math.round(s.avgMood)) },
     { label: 'Habits done', value: s.habitRate === null ? '—' : `${Math.round(s.habitRate * 100)}%` },

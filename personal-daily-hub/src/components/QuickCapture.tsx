@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { ArrowUp, Check, Lock, NotebookPen, Search, X } from '../icons';
+import { ArrowUp, Check, Circle, CircleCheck, Forward, ListTodo, Lock, NotebookPen, Search, X } from '../icons';
 
-import { clockTime } from '../lib/date';
+import { clockTime, parseDateKey, weekdayName } from '../lib/date';
 import { FREE_NOTES_PER_DAY } from '../lib/premium';
 import { NOTE_MAX_LENGTH, type Note } from '../lib/store';
 import { colors, inputColors, HIT, radius, space, tint, type } from '../theme';
@@ -21,9 +21,18 @@ type Props = {
   onEdit: (id: string, text: string) => void;
   /** Opens search across every day. */
   onSearch: () => void;
+  /** The next capture is a to-do rather than a note. */
+  taskMode: boolean;
+  onTaskModeChange: (on: boolean) => void;
+  onToggleTask: (id: string) => void;
+  /** Unfinished to-dos from earlier days, offered to bring over to today. */
+  carry: { count: number; from: string } | null;
+  onCarry: () => void;
+  onDismissCarry: () => void;
 };
 
-export function QuickCapture({ notes, isPremium, draft, onDraftChange, onSubmit, onDelete, onEdit, onSearch }: Props) {
+export function QuickCapture(p: Props) {
+  const { notes, isPremium, draft, onDraftChange, onSubmit, onDelete, onEdit, onSearch } = p;
   // One note at a time is open for editing.
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const saveEdit = () => {
@@ -62,12 +71,41 @@ export function QuickCapture({ notes, isPremium, draft, onDraftChange, onSubmit,
       }
       testID="card-notes"
     >
+      {p.carry ? (
+        <View style={styles.carry} testID="carry-banner" accessibilityLiveRegion="polite">
+          <Forward size={16} color={colors.notes} />
+          <Text style={styles.carryText}>
+            {p.carry.count === 1 ? '1 unfinished to-do' : `${p.carry.count} unfinished to-dos`} from {p.carry.from}
+          </Text>
+          <Pressable
+            onPress={p.onCarry}
+            accessibilityRole="button"
+            accessibilityLabel={p.carry.count === 1 ? 'Bring it over to today' : 'Bring them over to today'}
+            style={({ pressed }) => [styles.carryButton, pressed && { opacity: 0.8 }]}
+            testID="carry-over"
+          >
+            <Text style={styles.carryButtonText}>Bring over</Text>
+          </Pressable>
+          <IconButton icon={X} size={16} label="Not now" onPress={p.onDismissCarry} color={colors.textMuted} />
+        </View>
+      ) : null}
+
       <View style={styles.inputRow}>
+        <Pressable
+          onPress={() => p.onTaskModeChange(!p.taskMode)}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: p.taskMode }}
+          accessibilityLabel="Add as a to-do"
+          style={({ pressed }) => [styles.mode, p.taskMode && styles.modeOn, pressed && { opacity: 0.75 }]}
+          testID="task-mode"
+        >
+          <ListTodo size={20} color={p.taskMode ? colors.notes : colors.textMuted} strokeWidth={2.25} />
+        </Pressable>
         <TextInput
           value={draft}
           onChangeText={onDraftChange}
           onSubmitEditing={() => canSend && onSubmit()}
-          placeholder="A thought, a task, an idea…"
+          placeholder={p.taskMode ? 'A to-do for today…' : 'A thought, a task, an idea…'}
           {...inputColors}
           style={styles.input}
           maxLength={NOTE_MAX_LENGTH}
@@ -80,7 +118,7 @@ export function QuickCapture({ notes, isPremium, draft, onDraftChange, onSubmit,
           onPress={onSubmit}
           disabled={!canSend}
           accessibilityRole="button"
-          accessibilityLabel="Save note"
+          accessibilityLabel={p.taskMode ? 'Save to-do' : 'Save note'}
           accessibilityState={{ disabled: !canSend }}
           style={({ pressed }) => [
             styles.send,
@@ -132,23 +170,42 @@ export function QuickCapture({ notes, isPremium, draft, onDraftChange, onSubmit,
               </View>
             ) : (
               <View key={note.id} style={[styles.note, i > 0 && styles.divider]}>
-                <View style={[styles.dot, { backgroundColor: colors.notes }]} />
+                {note.task ? (
+                  <Pressable
+                    onPress={() => p.onToggleTask(note.id)}
+                    hitSlop={10}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: note.doneAt !== undefined }}
+                    accessibilityLabel={`Done: ${note.text}`}
+                    style={styles.check}
+                    testID="task-check"
+                  >
+                    {note.doneAt !== undefined ? (
+                      <CircleCheck size={20} color={colors.notes} strokeWidth={2.25} />
+                    ) : (
+                      <Circle size={20} color={colors.textSecondary} strokeWidth={2} />
+                    )}
+                  </Pressable>
+                ) : (
+                  <View style={[styles.dot, { backgroundColor: colors.notes }]} />
+                )}
                 <Pressable
                   onPress={() => setEditing({ id: note.id, text: note.text })}
                   accessibilityRole="button"
-                  accessibilityLabel={`Edit note: ${note.text}`}
+                  accessibilityLabel={`Edit ${note.task ? 'to-do' : 'note'}: ${note.text}`}
                   style={({ pressed }) => [styles.noteBody, pressed && { opacity: 0.7 }]}
                 >
-                  <Text style={styles.noteText}>{note.text}</Text>
+                  <Text style={[styles.noteText, note.doneAt !== undefined && styles.doneText]}>{note.text}</Text>
                   <Text style={styles.noteTime}>
                     {clockTime(note.createdAt)}
                     {note.editedAt ? ' · edited' : ''}
+                    {note.carriedFrom ? ` · from ${weekdayName(parseDateKey(note.carriedFrom))}` : ''}
                   </Text>
                 </Pressable>
                 <IconButton
                   icon={X}
                   size={16}
-                  label={`Delete note: ${note.text}`}
+                  label={`Delete ${note.task ? 'to-do' : 'note'}: ${note.text}`}
                   onPress={() => onDelete(note.id)}
                   color={colors.textMuted}
                 />
@@ -175,8 +232,41 @@ const styles = StyleSheet.create({
   },
   pillText: { ...type.caption, color: colors.textSecondary, fontWeight: '600', fontVariant: ['tabular-nums'] },
   inputRow: { flexDirection: 'row', gap: space.sm, alignItems: 'center' },
+  mode: {
+    width: HIT,
+    height: HIT + 4,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.cardRaised,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  modeOn: { backgroundColor: tint(colors.notes, 0.16), borderColor: colors.notes },
+  carry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    backgroundColor: tint(colors.notes, 0.1),
+    borderRadius: radius.md,
+    paddingLeft: space.md,
+    paddingVertical: space.xs,
+  },
+  carryText: { ...type.label, color: colors.text, flex: 1 },
+  carryButton: {
+    minHeight: 36,
+    paddingHorizontal: space.md,
+    borderRadius: radius.pill,
+    backgroundColor: colors.notes,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  carryButtonText: { ...type.label, color: colors.background, fontWeight: '700' },
+  check: { width: 24, height: 24, marginTop: 12, alignItems: 'center', justifyContent: 'center' },
+  doneText: { color: colors.textMuted, textDecorationLine: 'line-through' },
   input: {
     flex: 1,
+    minWidth: 0, // let it shrink: a web <input> otherwise keeps its default width and pushes the send button out
     minHeight: HIT + 4,
     backgroundColor: colors.cardRaised,
     borderRadius: radius.md,

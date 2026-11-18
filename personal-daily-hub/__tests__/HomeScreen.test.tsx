@@ -38,7 +38,7 @@ test('renders every module', async () => {
   await render(<HomeScreen />);
   expect(await screen.findByText('Quick Capture')).toBeOnTheScreen();
   expect(screen.getByText('Habits')).toBeOnTheScreen();
-  expect(screen.getByText('Water, Energy & Mood')).toBeOnTheScreen();
+  expect(screen.getByText('Wellbeing')).toBeOnTheScreen();
   expect(screen.getByText('Expenses')).toBeOnTheScreen();
   expect(screen.getByText('History')).toBeOnTheScreen();
   expect(screen.getAllByRole('checkbox')).toHaveLength(4);

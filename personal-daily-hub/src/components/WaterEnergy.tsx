@@ -1,8 +1,8 @@
-import { Annoyed, Droplets, Frown, GlassWater, Laugh, Meh, Minus, Plus, Smile, Zap, type LucideIcon } from '../icons';
+import { Annoyed, Droplets, Frown, GlassWater, Laugh, Meh, Minus, Moon, Plus, Smile, X, Zap, type LucideIcon } from '../icons';
 import { MOOD_WORDS } from '../lib/mood';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { ENERGY_MAX, ENERGY_MIN, WATER_MAX } from '../lib/store';
+import { ENERGY_MAX, ENERGY_MIN, SLEEP_MAX, SLEEP_START, SLEEP_STEP, WATER_MAX } from '../lib/store';
 import { colors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
 import { IconButton } from './IconButton';
@@ -18,7 +18,16 @@ type Props = {
   mood: number | null;
   /** null clears the day's mood (tapping the chosen face again). */
   onSetMood: (value: number | null) => void;
+  /** Hours slept last night, or null. */
+  sleep: number | null;
+  onSetSleep: (value: number | null) => void;
 };
+
+/** 7.5 -> "7½ h" */
+export function sleepLabel(hours: number): string {
+  const whole = Math.floor(hours);
+  return `${whole}${hours - whole >= 0.5 ? '½' : ''} h`;
+}
 
 export function energyWord(v: number): string {
   if (v <= 2) return 'Drained';
@@ -36,8 +45,8 @@ export function WaterEnergy(props: Props) {
     <Card
       icon={Droplets}
       accent={colors.water}
-      title="Water, Energy & Mood"
-      subtitle="Fuel check"
+      title="Wellbeing"
+      subtitle="Water, sleep, energy and mood"
       testID="card-water"
     >
       {/* Water: one segment per glass, so progress reads at a glance. */}
@@ -102,6 +111,10 @@ export function WaterEnergy(props: Props) {
 
       <View style={styles.rule} />
 
+      <SleepRow value={props.sleep} onChange={props.onSetSleep} />
+
+      <View style={styles.rule} />
+
       <View style={styles.section}>
         <View style={styles.rowBetween}>
           <View style={styles.labelRow}>
@@ -142,6 +155,49 @@ export function WaterEnergy(props: Props) {
 
       <MoodPicker value={props.mood} onChange={props.onSetMood} />
     </Card>
+  );
+}
+
+/** Last night's sleep in half-hour steps. The first press starts at 7 hours. */
+function SleepRow({ value, onChange }: { value: number | null; onChange: (v: number | null) => void }) {
+  const step = (dir: 1 | -1) => onChange(value === null ? SLEEP_START : value + dir * SLEEP_STEP);
+  return (
+    <View style={styles.section}>
+      <View style={styles.rowBetween}>
+        <View style={styles.labelRow}>
+          <Moon size={16} color={colors.sleep} />
+          <Text style={styles.label}>Sleep</Text>
+        </View>
+        <Text style={styles.value} testID="sleep-value">
+          {value === null ? <Text style={styles.valueSub}>Not logged</Text> : sleepLabel(value)}
+        </Text>
+      </View>
+      <View style={styles.rowBetween}>
+        <Text style={styles.hint}>Last night</Text>
+        <View style={styles.stepper}>
+          {value !== null ? (
+            <IconButton icon={X} size={16} label="Clear sleep" onPress={() => onChange(null)} color={colors.textMuted} />
+          ) : null}
+          <IconButton
+            icon={Minus}
+            label="Half an hour less sleep"
+            onPress={() => step(-1)}
+            disabled={value === null || value <= 0}
+            filled
+            testID="sleep-minus"
+          />
+          <IconButton
+            icon={Plus}
+            label={value === null ? 'Log sleep' : 'Half an hour more sleep'}
+            onPress={() => step(1)}
+            disabled={value !== null && value >= SLEEP_MAX}
+            color={colors.sleep}
+            filled
+            testID="sleep-plus"
+          />
+        </View>
+      </View>
+    </View>
   );
 }
 

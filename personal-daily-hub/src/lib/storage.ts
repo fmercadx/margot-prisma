@@ -32,8 +32,11 @@ import {
   MOOD_MAX,
   MOOD_MIN,
   NOTE_MAX_LENGTH,
+  RELOCK_CHOICES_SEC,
   REMINDER_HOUR_MAX,
   REMINDER_HOUR_MIN,
+  roundSleep,
+  SLEEP_MAX,
   WATER_GOAL_MAX,
   WATER_GOAL_MIN,
   WATER_MAX,
@@ -76,6 +79,12 @@ function sanitizeNote(v: unknown): Note | null {
   if (!text.trim()) return null;
   const note: Note = { id: v.id, text, createdAt: v.createdAt };
   if (isTime(v.editedAt)) note.editedAt = v.editedAt;
+  if (v.task === true) {
+    note.task = true;
+    if (isTime(v.doneAt)) note.doneAt = v.doneAt;
+    if (isDateKey(v.carriedFrom)) note.carriedFrom = v.carriedFrom;
+    if (isDateKey(v.carriedTo)) note.carriedTo = v.carriedTo;
+  }
   return note;
 }
 
@@ -121,6 +130,7 @@ export function sanitizeDay(v: unknown): DayLog {
     water,
     energy: inRange(o.energy, ENERGY_MIN, ENERGY_MAX),
     mood: inRange(o.mood, MOOD_MIN, MOOD_MAX),
+    sleep: isNum(o.sleep) && o.sleep >= 0 && o.sleep <= SLEEP_MAX ? roundSleep(o.sleep) : null,
     expenses: list(o.expenses, sanitizeExpense),
   };
 }
@@ -135,6 +145,10 @@ export function sanitizeSettings(v: unknown): Settings {
     lockEnabled: o.lockEnabled === true,
     haptics: o.haptics !== false, // on unless switched off
     dailyBudgetCents: isBudget(o.dailyBudgetCents) ? o.dailyBudgetCents : null,
+    relockAfterSec:
+      isNum(o.relockAfterSec) && RELOCK_CHOICES_SEC.includes(o.relockAfterSec)
+        ? o.relockAfterSec
+        : DEFAULT_SETTINGS.relockAfterSec,
   };
 }
 

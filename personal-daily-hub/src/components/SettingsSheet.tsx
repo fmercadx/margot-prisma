@@ -8,6 +8,7 @@ import { formatCents } from '../lib/money';
 import { hourLabel } from '../lib/reminders';
 import type { MergeStats } from '../lib/store';
 import {
+  RELOCK_CHOICES_SEC,
   REMINDER_HOUR_MAX,
   REMINDER_HOUR_MIN,
   WATER_GOAL_MAX,
@@ -145,6 +146,27 @@ export function SettingsSheet(p: Props) {
                 </Row>
               ) : null}
 
+              {p.lockSupported && s.lockEnabled ? (
+                <Row
+                  title="Lock again after"
+                  subtitle={
+                    s.relockAfterSec === 0
+                      ? 'Every time you leave the app, even for the share sheet'
+                      : 'Time away from the app before it asks again'
+                  }
+                >
+                  <Stepper
+                    value={relockLabel(s.relockAfterSec)}
+                    label="time before locking again"
+                    onDown={() => p.onChange({ relockAfterSec: stepRelock(s.relockAfterSec, -1) })}
+                    onUp={() => p.onChange({ relockAfterSec: stepRelock(s.relockAfterSec, 1) })}
+                    canDown={stepRelock(s.relockAfterSec, -1) !== s.relockAfterSec}
+                    canUp={stepRelock(s.relockAfterSec, 1) !== s.relockAfterSec}
+                    testID="relock"
+                  />
+                </Row>
+              ) : null}
+
               {p.exportSupported ? (
                 <Pressable
                   onPress={p.onExport}
@@ -268,6 +290,17 @@ export function SettingsSheet(p: Props) {
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+export function relockLabel(sec: number): string {
+  if (sec === 0) return 'At once';
+  return sec < 60 ? `${sec} s` : `${sec / 60} min`;
+}
+
+function stepRelock(current: number, dir: 1 | -1): number {
+  const i = RELOCK_CHOICES_SEC.indexOf(current);
+  const at = i === -1 ? RELOCK_CHOICES_SEC.indexOf(30) : i;
+  return RELOCK_CHOICES_SEC[Math.min(RELOCK_CHOICES_SEC.length - 1, Math.max(0, at + dir))];
+}
 
 /** Exactly what restoring will add, before anything is written. */
 function RestorePreview(props: {

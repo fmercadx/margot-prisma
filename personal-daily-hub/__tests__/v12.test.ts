@@ -185,6 +185,6 @@ describe('weekSummary', () => {
 
   test('nothing logged gives nulls, not zeros', () => {
     const s = weekSummary([{ log: null }, { log: null }], ['core-read']);
-    expect(s).toEqual({ avgWater: null, avgEnergy: null, avgMood: null, spentCents: 0, habitRate: 0, topCategory: null });
+    expect(s).toEqual({ avgWater: null, avgEnergy: null, avgMood: null, avgSleep: null, spentCents: 0, habitRate: 0, topCategory: null });
   });
 });
