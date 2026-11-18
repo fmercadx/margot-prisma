@@ -14,6 +14,7 @@ import { formatCents, parseAmountToCents } from '../lib/money';
 import { expenseName, EXPENSE_LABEL_MAX_LENGTH, type Expense } from '../lib/store';
 import { colors, inputColors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
+import { CategoryBars } from './CategoryBars';
 import { CATEGORY_ICONS } from './categoryIcons';
 import { IconButton } from './IconButton';
 
@@ -162,7 +163,10 @@ export function ExpenseLogger({ expenses, totalCents, budgetCents, onAdd, onDele
         </ScrollView>
       ) : null}
 
-      <Breakdown expenses={expenses} total={totalCents} />
+      {/* Once there is more than one category to compare. */}
+      {categoryTotals(expenses).length > 1 ? (
+        <CategoryBars title="Where it went" rows={categoryTotals(expenses)} testID="expense-breakdown" />
+      ) : null}
     </Card>
   );
 }
@@ -190,43 +194,6 @@ function Budget({ spent, budget }: { spent: number; budget: number }) {
           {text}
         </Text>
       </View>
-    </View>
-  );
-}
-
-/**
- * Where the day's money went, one row per category, largest first. A bar
- * list rather than a stacked bar: each row carries its own name, icon and
- * amount, so a single colour does and no category depends on telling hues apart.
- * Shown once there is more than one category to compare.
- */
-function Breakdown({ expenses, total }: { expenses: Expense[]; total: number }) {
-  const rows = categoryTotals(expenses);
-  if (rows.length < 2 || total <= 0) return null;
-  const max = rows[0].cents;
-  return (
-    <View style={styles.breakdown} testID="expense-breakdown">
-      <Text style={styles.breakdownTitle}>Where it went</Text>
-      {rows.map(({ category, cents }) => {
-        const Icon = CATEGORY_ICONS[category];
-        return (
-          <View
-            key={category}
-            style={styles.bRow}
-            accessible
-            accessibilityLabel={`${CATEGORY_LABELS[category]}: ${formatCents(cents)}, ${Math.round((cents / total) * 100)}%`}
-          >
-            <Icon size={14} color={colors.textSecondary} strokeWidth={2.25} />
-            <Text style={styles.bName} numberOfLines={1}>
-              {CATEGORY_LABELS[category]}
-            </Text>
-            <View style={styles.bTrack}>
-              <View style={[styles.bBar, { width: `${Math.max(2, (cents / max) * 100)}%` }]} />
-            </View>
-            <Text style={styles.bAmount}>{formatCents(cents)}</Text>
-          </View>
-        );
-      })}
     </View>
   );
 }
@@ -271,13 +238,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  breakdown: { gap: space.sm, paddingTop: space.xs },
-  breakdownTitle: { ...type.label, color: colors.textSecondary },
-  bRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 24 },
-  bName: { ...type.label, color: colors.text, width: 76 },
-  bTrack: { flex: 1, height: 8 },
-  bBar: { height: 8, borderTopRightRadius: 4, borderBottomRightRadius: 4, backgroundColor: colors.expenses },
-  bAmount: { ...type.label, color: colors.text, fontVariant: ['tabular-nums'], minWidth: 64, textAlign: 'right' },
   // Proportional figures: a lone large number looks loose in tabular digits.
   total: { fontSize: 32, fontWeight: '700', letterSpacing: -0.5, color: colors.text },
   form: { flexDirection: 'row', gap: space.sm, alignItems: 'center' },

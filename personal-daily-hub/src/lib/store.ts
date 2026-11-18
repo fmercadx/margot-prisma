@@ -16,7 +16,20 @@ import { lastNDays } from './date';
 //     },
 //   }
 
-export type Note = { id: string; text: string; createdAt: number; editedAt?: number };
+export type Note = {
+  id: string;
+  text: string;
+  createdAt: number;
+  editedAt?: number;
+  /** A to-do rather than a plain note: it can be ticked off. */
+  task?: true;
+  /** When the to-do was ticked off. */
+  doneAt?: number;
+  /** The day this to-do was brought over from. */
+  carriedFrom?: string;
+  /** The day an unfinished to-do was brought over to; it then lives there. */
+  carriedTo?: string;
+};
 export type Expense = { id: string; cents: number; label: string; category: ExpenseCategory; createdAt: number };
 export type Habit = { id: string; label: string; core: boolean };
 
@@ -27,6 +40,7 @@ export type DayLog = {
   water: number; // glasses
   energy: number | null; // 1–10, null until logged
   mood: number | null; // 1–5, null until logged
+  sleep: number | null; // hours slept the night before, in half hours; null until logged
   expenses: Expense[]; // newest first
 };
 
@@ -36,6 +50,7 @@ export type Settings = {
   lockEnabled: boolean; // require fingerprint / face / PIN to open
   haptics: boolean; // a light tap of feedback on ticks, steps and saves
   dailyBudgetCents: number | null; // spending limit for a day; null = no budget
+  relockAfterSec: number; // with app lock on: time in the background before it locks again
 };
 
 export type HubState = {
@@ -54,13 +69,25 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   lockEnabled: false,
   haptics: true,
   dailyBudgetCents: null,
+  relockAfterSec: 30,
 });
+
+/** The choices for how long the app may sit in the background before locking again. */
+export const RELOCK_CHOICES_SEC: readonly number[] = [0, 30, 60, 300];
 
 export const WATER_MAX = 20;
 export const ENERGY_MIN = 1;
 export const ENERGY_MAX = 10;
 export const MOOD_MIN = 1;
 export const MOOD_MAX = 5;
+export const SLEEP_MAX = 14;
+export const SLEEP_STEP = 0.5;
+/** Where the sleep stepper starts the first time it is pressed. */
+export const SLEEP_START = 7;
+/** Streak lengths worth a word of congratulations. */
+export const STREAK_MILESTONES: readonly number[] = [3, 7, 14, 30, 60];
+/** How far back unfinished to-dos are offered to bring over to today. */
+export const CARRY_LOOKBACK_DAYS = 7;
 export const NOTE_MAX_LENGTH = 500;
 export const FOCUS_MAX_LENGTH = 120;
 export const HABIT_MAX_LENGTH = 60;
@@ -81,6 +108,7 @@ export const EMPTY_DAY: DayLog = Object.freeze({
   water: 0,
   energy: null,
   mood: null,
+  sleep: null,
   expenses: [],
 }) as DayLog;
 
@@ -102,6 +130,9 @@ export type Action =
   | { type: 'setEnergy'; date: string; value: number }
   | { type: 'setMood'; date: string; value: number | null }
   | { type: 'setFocus'; date: string; text: string }
+  | { type: 'setSleep'; date: string; value: number | null }
+  | { type: 'toggleTask'; date: string; id: string; now: number }
+  | { type: 'carryOver'; to: string; items: { from: string; id: string; copy: { id: string; createdAt: number } }[] }
   | { type: 'editNote'; date: string; id: string; text: string; now: number }
   | { type: 'importBackup'; habits: Habit[]; days: Record<string, DayLog> }
   | { type: 'addExpense'; date: string; expense: Expense }
@@ -142,13 +173,18 @@ export function reducer(state: HubState, action: Action): HubState {
             : isBudget(p.dailyBudgetCents)
               ? p.dailyBudgetCents
               : null,
+        relockAfterSec:
+          p.relockAfterSec !== undefined && RELOCK_CHOICES_SEC.includes(p.relockAfterSec)
+            ? p.relockAfterSec
+            : cur.relockAfterSec,
       };
       const same =
         next.waterGoal === cur.waterGoal &&
         next.reminderHour === cur.reminderHour &&
         next.lockEnabled === cur.lockEnabled &&
         next.haptics === cur.haptics &&
-        next.dailyBudgetCents === cur.dailyBudgetCents;
+        next.dailyBudgetCents === cur.dailyBudgetCents &&
+        next.relockAfterSec === cur.relockAfterSec;
       return same ? state : { ...state, settings: next };
     }
 
@@ -264,6 +300,44 @@ export function reducer(state: HubState, action: Action): HubState {
       return updateDay(state, action.date, (d) => (focus === d.focus ? d : { ...d, focus }));
     }
 
+    case 'setSleep':
+      return updateDay(state, action.date, (d) => {
+        const sleep = action.value === null ? null : roundSleep(action.value);
+        return sleep === d.sleep ? d : { ...d, sleep };
+      });
+
+    case 'toggleTask':
+      return updateDay(state, action.date, (d) => {
+        const i = d.notes.findIndex((n) => n.id === action.id);
+        if (i === -1 || !d.notes[i].task || d.notes[i].carriedTo) return d;
+        const notes = [...d.notes];
+        const { doneAt, ...rest } = notes[i];
+        notes[i] = doneAt === undefined ? { ...rest, doneAt: action.now } : rest;
+        return { ...d, notes };
+      });
+
+    // Unfinished to-dos from earlier days move to today: each original is
+    // marked as brought over (so it is offered only once), and a copy with
+    // a new id, the caller's, is added to today.
+    case 'carryOver': {
+      let next = state;
+      const added: Note[] = [];
+      for (const { from, id, copy } of action.items) {
+        if (from >= action.to) continue;
+        const i = getDay(next, from).notes.findIndex((n) => n.id === id);
+        const original = i === -1 ? null : getDay(next, from).notes[i];
+        if (!original || !isOpenTask(original)) continue;
+        next = updateDay(next, from, (d) => {
+          const notes = [...d.notes];
+          notes[i] = { ...original, carriedTo: action.to };
+          return { ...d, notes };
+        });
+        added.push({ id: copy.id, text: original.text, createdAt: copy.createdAt, task: true, carriedFrom: from });
+      }
+      if (added.length === 0) return state;
+      return updateDay(next, action.to, (d) => ({ ...d, notes: [...added, ...d.notes] }));
+    }
+
     case 'importBackup':
       return mergeBackup(state, action.habits, action.days).state;
 
@@ -349,6 +423,7 @@ export function mergeBackup(
         water: Math.max(mine.water, theirs.water),
         energy: mine.energy ?? theirs.energy,
         mood: mine.mood ?? theirs.mood,
+        sleep: mine.sleep ?? theirs.sleep,
       };
       const changed =
         candidate.focus !== mine.focus ||
@@ -357,7 +432,8 @@ export function mergeBackup(
         candidate.habitsDone !== mine.habitsDone ||
         candidate.water !== mine.water ||
         candidate.energy !== mine.energy ||
-        candidate.mood !== mine.mood;
+        candidate.mood !== mine.mood ||
+        candidate.sleep !== mine.sleep;
       if (!changed) continue;
       merged = candidate;
       stats.daysMerged++;
@@ -370,6 +446,29 @@ export function mergeBackup(
 
   const unchanged = nextHabits === state.habits && nextDays === state.days;
   return { state: unchanged ? state : { ...state, habits: nextHabits, days: nextDays }, stats };
+}
+
+/** Half-hour steps between 0 and SLEEP_MAX. */
+export function roundSleep(hours: number): number {
+  return clamp(Math.round(hours / SLEEP_STEP) * SLEEP_STEP, 0, SLEEP_MAX);
+}
+
+/** A to-do that still needs doing: not ticked off, not brought over to another day. */
+export function isOpenTask(n: Note): boolean {
+  return n.task === true && n.doneAt === undefined && !n.carriedTo;
+}
+
+/**
+ * Unfinished to-dos from the days before `today`, newest day first, looking
+ * back `lookback` days.
+ */
+export function openTasksBefore(
+  state: HubState,
+  today: string,
+  lookback = CARRY_LOOKBACK_DAYS,
+): { from: string; note: Note }[] {
+  const days = lastNDays(today, lookback + 1).slice(0, -1).reverse();
+  return days.flatMap((from) => (state.days[from]?.notes ?? []).filter(isOpenTask).map((note) => ({ from, note })));
 }
 
 /** One line, trimmed, capped. Clearing the text clears the focus. */
@@ -424,6 +523,7 @@ export function hasAnyData(day: DayLog): boolean {
     day.water > 0 ||
     day.energy !== null ||
     day.mood !== null ||
+    day.sleep !== null ||
     day.expenses.length > 0
   );
 }

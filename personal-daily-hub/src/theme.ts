@@ -25,6 +25,7 @@ export const colors = {
   history: '#A78BFA',
   mood: '#2DD4BF',
   focus: '#FB923C',
+  sleep: '#818CF8',
 
   premium: '#E8C468',
   onPremium: '#121212',
