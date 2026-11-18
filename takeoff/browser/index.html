@@ -130,6 +130,16 @@
   .detail dt{color:var(--ink3)}
   .detail dd{margin:0;overflow-wrap:anywhere}
   .notes{font-size:.82rem;color:var(--brass);background:var(--brassS);border-radius:6px;padding:.5rem .6rem;margin-top:.6rem}
+  .notes p{margin:.15rem 0}
+  .allow{display:grid;gap:.25rem;font-size:.84rem;color:var(--ink2);margin:.4rem 0}
+  .allow input{width:4.2rem;border:1px solid var(--line2);border-radius:5px;padding:.15rem .3rem;background:var(--paper)}
+  .check{display:flex;gap:.4rem;align-items:center;font-size:.84rem;color:var(--ink2)}
+  .sub-panel{margin-top:.5rem;padding:.55rem;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
+  table.res tr.pick{cursor:pointer}
+  table.res tr.pick:hover td{background:var(--card2)}
+  table.res tr.sel td{background:var(--pineS)}
+  .feet{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .items input.cond{width:3rem;border:1px solid var(--line2);border-radius:5px;padding:.1rem .25rem;background:var(--paper)}
   footer{border-top:1px solid var(--line);padding:.55rem 1rem;font-size:.78rem;color:var(--ink3);
     display:flex;gap:1rem;flex-wrap:wrap;justify-content:space-between;background:var(--card)}
 
@@ -148,7 +158,7 @@
 <header class="bar">
   <div class="brand">Takeoff counter<span>Count symbols from one example</span></div>
   <div class="row">
-    <span class="draft" title="Every count is a candidate for an estimator to confirm">Draft counts</span>
+    <span class="draft" title="Every count and length is a candidate for an estimator to confirm">Draft</span>
     <span class="rt loading" id="rt" role="status" aria-live="polite"><span class="dot"></span><span id="rtText">Starting</span></span>
   </div>
 </header>
@@ -156,7 +166,8 @@
 <section class="intro" id="intro">
   <h1>Click one symbol. Count every copy.</h1>
   <p class="lede">Open an electrical drawing set exported from CAD, click one outlet of each kind,
-    and get a count for every sheet, with each copy marked on the drawing.</p>
+    and get a count for every sheet, with each copy marked on the drawing, and feet of conduit
+    and wire for every circuit.</p>
   <div class="drop" id="drop">
     <label class="btn primary" for="picker">Open a drawing set (PDF)</label>
     <input type="file" id="picker" accept="application/pdf,.pdf" class="hide">
@@ -166,7 +177,9 @@
     <li>Pick a sheet, type a name like <em>Duplex receptacle</em>, and click one on the drawing.</li>
     <li>Add one example of each kind you want counted.</li>
     <li>Press <strong>Count</strong>. Green, blue and other colours are counted; orange needs your eye.</li>
-    <li>Click any box to count or drop it, then download the spreadsheet.</li>
+    <li>Click any box to count or drop it. Circuits are measured from the counted devices, at the
+      scale printed on the sheet; trace or follow any other run.</li>
+    <li>Download the spreadsheet: counts, circuits, and feet of conduit and wire.</li>
   </ol>
   <p class="note">The drawing is read here, in your browser. It is never uploaded anywhere.
     The first visit downloads about 30&nbsp;MB of tools; after that it starts quickly.
@@ -218,15 +231,68 @@
       <div class="notes hide" id="notes"></div>
       <div class="row" style="margin-top:.7rem">
         <button class="btn small" id="nextReview">Next to check</button>
-        <button class="btn small primary" id="download">Download spreadsheet</button>
       </div>
       <div class="detail hide" id="detail"></div>
+    </div>
+
+    <div id="circuitsBox" class="hide">
+      <h2>Circuits</h2>
+      <p class="msg" id="circSummary"></p>
+      <div class="allow">
+        <label>Conduit runs at <input type="number" id="aHeight" value="10" step="0.5" min="0"> ft</label>
+        <label>Devices at <input type="number" id="aDevice" value="1.5" step="0.25" min="0"> ft unless marked</label>
+        <label>Make-up <input type="number" id="aMakeup" value="1" step="0.5" min="0"> ft of wire per box</label>
+        <label>Waste <input type="number" id="aWaste" value="10" step="1" min="0"> %</label>
+      </div>
+      <label class="check"><input type="checkbox" id="showCirc" checked> Show circuit runs on the drawing</label>
+      <div class="notes hide" id="circNotes"></div>
+      <div class="row" id="circActions" style="margin-top:.5rem">
+        <button class="btn small hide" id="circUpdate">Update circuits</button>
+        <button class="btn small" id="wirePick" title="If this plan draws its wiring and the circuits look wrong, click one drawn wire">Use a drawn wire</button>
+        <button class="btn small" id="useLabels" title="Group devices by the circuit label beside each one">Use labels</button>
+      </div>
+      <div id="panelList"></div>
+      <table class="res" id="circTable"></table>
+    </div>
+
+    <h2>Lengths</h2>
+    <p class="msg" id="scaleLine">Open a sheet to read its scale.</p>
+    <div class="row">
+      <button class="btn small" id="scaleChange" aria-expanded="false">Change scale</button>
+    </div>
+    <div id="scaleEdit" class="sub-panel hide">
+      <div class="row">
+        <input class="field" id="scaleText" placeholder="e.g. 1/8&quot; = 1'-0&quot;" aria-label="Scale as printed">
+        <button class="btn small" id="scaleSet">Set</button>
+      </div>
+      <div class="row" style="margin-top:.35rem">
+        <button class="btn small" id="scalePts">Click two points a known distance apart</button>
+        <button class="btn small" id="scaleClear">Use the printed scale</button>
+      </div>
+      <div class="row hide" id="scaleFeetRow" style="margin-top:.35rem">
+        <input class="field" type="number" id="scaleFeet" min="0" step="any" placeholder="Feet between them" aria-label="Feet between the two points">
+        <button class="btn small" id="scaleFeetSet">Set</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:.6rem">
+      <input class="field" id="runName" placeholder="Name, e.g. Homerun to panel A" aria-label="Run name">
+    </div>
+    <div class="row" style="margin-top:.4rem">
+      <button class="btn small" id="trace">Trace a run</button>
+      <button class="btn small" id="follow">Follow a line</button>
+      <button class="btn small hide" id="traceDone">Finish</button>
+    </div>
+    <p class="msg" id="runMsg"></p>
+    <ul class="items" id="runs"></ul>
+
+    <div class="row hide" id="dlBox" style="margin-top:1.2rem">
+      <button class="btn primary" id="download">Download spreadsheet</button>
     </div>
   </aside>
 </div>
 
 <footer>
-  <span>Counts are candidates. Check every item before you bid.</span>
+  <span>Counts and lengths are candidates. Check every item before you bid.</span>
   <span>Your drawing never leaves this computer.</span>
 </footer>
 

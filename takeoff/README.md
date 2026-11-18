@@ -2,7 +2,9 @@
 
 A test of one idea: **click one symbol on an electrical drawing, count every
 copy of it on every sheet**, with no machine learning. It is the counting step
-of an electrical takeoff, the part an estimator does by hand with a highlighter.
+of an electrical takeoff, the part an estimator does by hand with a highlighter,
+and, from the devices it counts, the measuring step: feet of conduit and wire
+for every branch circuit, at the scale printed on the sheet.
 
 ```bash
 pip install -r requirements.txt
@@ -15,7 +17,24 @@ python takeoff.py plans.pdf \
 Each `--item` is a name and one click: `PAGE:X,Y` in PDF points from the
 page's top-left corner, on any stroke of one example symbol. `PAGE:X0,TOP,X1,BOTTOM`
 gives the box by hand instead. The output is `out/takeoff.xlsx` (totals, counts
-per sheet, every location) and `out/markup.pdf` (each hit boxed and numbered).
+per sheet, every location, circuits and runs in feet) and `out/markup.pdf` (each
+hit boxed and numbered, each circuit's runs drawn).
+
+Lengths come with the count. Add runs to measure by hand, or settle what the
+sheet leaves open:
+
+```bash
+python takeoff.py plans.pdf --item "Duplex receptacle=9:453,672" \
+    --trace "Homerun R1A=9:1210,1080;1210,1150;1300,1150" \
+    --follow "Feeder=9:1500,556" \
+    --panel "R1A=9:1630,1180" \
+    --conduit-height 12 --waste 5 --out out/
+```
+
+`--trace` measures a route through the points given; `--follow` measures the
+drawn line through one point; `--panel` says where a panel the sheet doesn't
+name is; `--scale "9=1/4\" = 1'-0\""` overrides a page's scale; `--wires 9:X,Y`
+names the pen a sheet draws its wiring in. `--help` lists the allowances.
 
 ## The click screen
 
@@ -28,7 +47,10 @@ by GitHub Pages at `fmercadx.github.io/margot-prisma/takeoff/`:
    all sheets).
 3. Each kind's copies are boxed in its own colour; orange needs a look. Click
    any box to count or drop it. **Next to check** walks the orange ones.
-4. Download the spreadsheet, with your calls applied.
+4. The circuits are measured from the counted devices and drawn in teal. Set
+   the allowances (conduit height, device height, make-up, waste), place any
+   panel the drawing doesn't name, and trace or follow any other run.
+5. Download the spreadsheet, with your calls applied.
 
 It runs entirely in the browser: PDF.js draws the sheets, and the counting runs
 these same Python modules in Pyodide (CPython compiled to WebAssembly) in a web
@@ -41,6 +63,71 @@ synthetic set.
 npm ci && npm run build:takeoff          # from the repo root
 python3 takeoff/browser/smoke.py --dist dist/takeoff
 ```
+
+## Lengths
+
+An estimator prices conduit and wire by the foot, so `measure.py` turns the
+sheet into feet:
+
+- **The scale** is read from the label under each drawing (`1/8" = 1'-0"`,
+  `3/32 = 1'-0"`, `1" = 20'`, `1:100`). A sheet with several drawings at
+  different scales uses, for each length, the scale printed below it. A row of
+  scales along the sheet's edge is a printed ruler and is ignored. The scale can
+  be set by hand, or from two points a known distance apart.
+- **Circuits.** Most power plans draw no wire at all: each receptacle carries
+  its circuit (R1A-8), so devices with the same label share a circuit. Plans
+  that do draw their wiring draw arcs that say which devices share a circuit,
+  not where the conduit goes, and name each circuit at its homerun arrow. Either
+  way a circuit is measured the way an estimator measures one: device to device,
+  along the building's axes, plus a drop from the conduit to each device (at the
+  height printed beside it, or the default), plus the homerun when the panel is
+  named on the same drawing. A label reached from a device by a leader or arrow
+  counts before one merely nearby; equipment tags written like circuits (1-V-5,
+  EWH-2) are told apart because a panel's circuits recur and tags don't.
+- **Runs** are traced point by point or followed along a drawn line from one
+  click: every stroke of the same pen joined end to end, across a dashed line's
+  gaps, stopping at symbols, each stroke counted once.
+
+Wire is conduit length times conductors (a hot and a neutral per circuit, one
+ground), plus make-up at each box. The spreadsheet keeps the allowances in cells
+and every total as a formula over them. Circuits use counted devices only, as
+the totals do: a device still to review joins its circuit when counted.
+
+### How well it measures
+
+The scale was read right on all seven sheets: door swings measured 3'-0" at the
+scale read on six of them, and a door leaf on the seventh. For circuits,
+independent checkers read every receptacle's circuit off each sheet, from its
+label or by tracing the drawn wiring, and the tool's circuits were scored
+against them after an estimator's pass over the devices to review:
+
+| Sheet | The plan | Receptacles | Right circuit | Wrong circuit | No circuit |
+|---|---|---|---|---|---|
+| University renovation (E2.1) | labels each device | 125 | 117 | 5 | 3 |
+| Lawrence Perry & Associates (E-301) | labels each device | 110 | 88 | 12 | 10 |
+| Czarnecki Engineering (E201) | labels each device | 84 | 75 | 1 | 8 |
+| MODUS Engineering (E-101.3) | draws its wiring | 73 | 59 | 12 named wrong | 2 |
+| DCL Engineering (E202) | draws its wiring | 93 | 71 | 19 grouped or named differently | 3 |
+| Allen & Shariff (E-301) | draws new wiring only | 35 new | 35 | 0 | 0 |
+
+On the Allen & Shariff sheet the 81 existing devices with no wiring drawn were
+rightly left out. Most of DCL's grouping differences are receptacles joined through
+junction boxes, which the tool puts on one circuit and the checker counted
+separately. What goes wrong:
+
+- **Crowded labels.** A label between two devices, or a leader that crosses
+  another, can go to the wrong device or none (one firm's dental lab).
+- **Equipment labels near receptacles** on a wired plan can add a second name
+  to a circuit (an FCU's circuit beside a receptacle's homerun).
+- **Wires broken at crossings.** A drafter who breaks a wire where it crosses
+  another splits one circuit in two.
+- **Bare circuit numbers.** A sheet that prints only `9` or `20,22` beside each
+  device, with the panel named in a note, gets no circuits (the MEP&T sheet);
+  trace those by hand.
+
+Feet are geometry at the printed scale: right when the grouping is right. The
+route a circuit takes on site is the installer's choice, which is why the
+allowances are editable and the totals say DRAFT.
 
 ## Never commit a drawing set
 
@@ -161,4 +248,5 @@ What is left, and why:
 - **Reading the legend.** A legend's drawing of a symbol isn't always stroke
   for stroke the one on the plan (the tail length or bar spacing differed on
   two test sets), so the examples come from the plan.
-- **Linear runs** (conduit, wire, cable tray), panel schedules and pricing.
+- **Panel schedules and pricing.** Lengths stop at feet of conduit and wire;
+  wire sizes, conduit sizes and the price per foot are the estimator's.

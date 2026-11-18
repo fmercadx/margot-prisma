@@ -1,7 +1,8 @@
 // The click screen. PDF.js draws the sheet; an SVG laid over it, in the same
 // coordinates the matcher uses (PDF points from the top-left of the page as
-// displayed), takes the clicks and shows the boxes. The counting itself runs
-// in worker.js, in Python, with the same modules as the command line.
+// displayed), takes the clicks and shows the boxes, circuit runs and measured
+// lengths. The counting and measuring run in worker.js, in Python, with the
+// same modules as the command line.
 
 import * as pdfjsLib from "./pdfjs/pdf.min.mjs";
 
@@ -13,12 +14,15 @@ const SVG = "http://www.w3.org/2000/svg";
 // One colour per item for counted copies; orange is kept for "check this".
 const COLOURS = ["#009646", "#1e5adc", "#9628aa", "#008c96", "#c8006e", "#785014", "#14286e", "#6e7800"];
 const REVIEW = "#eb7800";
+const CIRCUIT = "#00828c", RUN = "#be0096";
 const MAX_PIXELS = 36e6, MAX_SIDE = 8000;
 
 const S = {
   doc: null, name: "", geom: [], info: {}, page: 1, zoom: 0, scale: 1,
   items: [], nextColour: 0, hits: [], legend: [], notes: [], counted: [],
   decisions: {}, selected: null, mode: null, stale: false,
+  scales: {}, runs: [], circuits: [], circNotes: [], circStale: false, selCircuit: null,
+  trace: [], scalePts: [], panelFor: null,
 };
 
 // ---------------------------------------------------------------- worker ---
@@ -95,10 +99,14 @@ async function openFile(file) {
     if (!runtimeReady) $("veilText").textContent = "Starting the counting tools (first visit only takes a while)…";
     S.geom = JSON.parse(await call("open_pdf", bytes, file.name));
     Object.assign(S, { name: file.name, info: {}, items: [], nextColour: 0, hits: [], legend: [],
-                       notes: [], counted: [], decisions: {}, selected: null, stale: false });
+                       notes: [], counted: [], decisions: {}, selected: null, stale: false,
+                       scales: {}, runs: [], circuits: [], circNotes: [], circStale: false, selCircuit: null,
+                       trace: [], scalePts: [], panelFor: null });
     sheetList();
     renderItems();
     renderResults();
+    renderCircuits();
+    renderRuns();
     await showPage(1);
   } catch (err) {
     $("countMsg").textContent = "Could not open this file: " + err.message;
@@ -135,9 +143,12 @@ function sheetCount(page) {
 async function showPage(n) {
   S.page = n;
   S.zoom = 0;
+  S.trace = [];
+  S.scalePts = [];
   sheetList();
   await render();
   $("scroller").scrollTo(0, 0);
+  if (S.info[n]) await readScale(n); else scaleLine();
 }
 
 // ----------------------------------------------------------------- render ---
@@ -226,6 +237,39 @@ function drawOverlay() {
     if (d === "drop") r.setAttribute("stroke-dasharray", "3 3");
     svg.appendChild(r);
   }
+  drawLengths(svg);
+}
+
+function segPath(segs) {
+  return segs.map((s) => `M${s[0]} ${s[1]}L${s[2]} ${s[3]}`).join("");
+}
+
+function drawLengths(svg) {
+  if ($("showCirc").checked) {
+    for (const c of S.circuits) {
+      if (c.page !== S.page) continue;
+      const sel = c.id === S.selCircuit;
+      const w = sel ? 4 : 2;
+      if (c.route.length) svg.appendChild(el("path", { d: segPath(c.route), fill: "none", stroke: CIRCUIT,
+        "stroke-width": w, "stroke-opacity": sel ? 1 : 0.75, "vector-effect": "non-scaling-stroke",
+        "pointer-events": "none" }));
+      if (c.homerun.length) svg.appendChild(el("path", { d: segPath(c.homerun), fill: "none", stroke: CIRCUIT,
+        "stroke-width": w, "stroke-dasharray": "6 4", "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
+    }
+  }
+  for (const r of S.runs) {
+    if (r.page !== S.page) continue;
+    svg.appendChild(el("path", { d: segPath(r.segs), fill: "none", stroke: RUN, "stroke-width": 3,
+      "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
+  }
+  const live = S.mode === "trace" ? S.trace : S.mode === "scalePts" || S.scalePts.length === 2 ? S.scalePts : [];
+  if (live.length) {
+    const d = live.map((p, k) => (k ? "L" : "M") + p.x + " " + p.y).join("");
+    svg.appendChild(el("path", { id: "livePath", d, fill: "none", stroke: RUN, "stroke-width": 2,
+      "stroke-dasharray": "5 3", "vector-effect": "non-scaling-stroke", "pointer-events": "none" }));
+    for (const p of live) svg.appendChild(el("circle", { cx: p.x, cy: p.y, r: 2.5 / S.scale + 0.8, fill: RUN,
+      "pointer-events": "none" }));
+  }
 }
 
 // ------------------------------------------------------- clicks and boxes ---
@@ -238,21 +282,41 @@ function toPdf(evt) {
   return pt.matrixTransform(overlay.getScreenCTM().inverse());
 }
 
+const HINTS = {
+  pick: "Click on a line of one symbol. Esc to cancel.",
+  box: "Drag a box around one whole symbol. Esc to cancel.",
+  trace: "Click along the route. Double-click, Enter or Finish to end; Esc to cancel.",
+  follow: "Click on the line to measure. Esc to cancel.",
+  scalePts: "Click two points a known distance apart, e.g. the ends of a dimension.",
+  panel: "Click where the panel is. Esc to cancel.",
+  wire: "Click on one drawn wire. Esc to cancel.",
+};
+
 function setMode(mode) {
+  if (S.mode === "trace" && mode !== "trace") S.trace = [];
+  if (mode === "scalePts") S.scalePts = [];
   S.mode = mode;
   $("pick").classList.toggle("on", mode === "pick");
   $("boxPick").classList.toggle("on", mode === "box");
+  $("trace").classList.toggle("on", mode === "trace");
+  $("follow").classList.toggle("on", mode === "follow");
+  $("scalePts").classList.toggle("on", mode === "scalePts");
+  $("wirePick").classList.toggle("on", mode === "wire");
+  $("traceDone").classList.toggle("hide", mode !== "trace");
   $("stage").classList.toggle("picking", !!mode);
   const hint = $("hint");
   hint.classList.toggle("act", !!mode);
-  hint.textContent = mode === "pick" ? "Click on a line of one symbol. Esc to cancel."
-    : mode === "box" ? "Drag a box around one whole symbol. Esc to cancel."
-    : "Drag to scroll. Zoom in to click small symbols.";
+  hint.textContent = mode === "panel" ? `Click where panel ${S.panelFor} is. Esc to cancel.`
+    : HINTS[mode] || "Drag to scroll. Zoom in to click small symbols.";
+  drawOverlay();
 }
 
 $("pick").addEventListener("click", () => setMode(S.mode === "pick" ? null : "pick"));
 $("boxPick").addEventListener("click", () => setMode(S.mode === "box" ? null : "box"));
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") setMode(null); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") setMode(null);
+  if (e.key === "Enter" && S.mode === "trace" && document.activeElement.tagName !== "INPUT") finishTrace();
+});
 
 let drag = null;
 overlay.addEventListener("pointerdown", (e) => {
@@ -271,6 +335,12 @@ overlay.addEventListener("pointerdown", (e) => {
   }
 });
 overlay.addEventListener("pointermove", (e) => {
+  if (!drag && S.mode === "trace" && S.trace.length) {
+    // The leg from the last point to the pointer, as a preview.
+    const p = toPdf(e);
+    const live = document.getElementById("livePath");
+    if (live) live.setAttribute("d", S.trace.map((q, k) => (k ? "L" : "M") + q.x + " " + q.y).join("") + `L${p.x} ${p.y}`);
+  }
   if (!drag) return;
   if (drag.kind === "pan") {
     const sc = $("scroller");
@@ -296,7 +366,29 @@ overlay.addEventListener("pointerup", (e) => {
   }
 });
 overlay.addEventListener("click", (e) => {
-  if (S.mode === "pick") addItem(toPdf(e), null);
+  const p = toPdf(e);
+  if (S.mode === "pick") addItem(p, null);
+  else if (S.mode === "trace") { S.trace.push({ x: p.x, y: p.y }); drawOverlay(); }
+  else if (S.mode === "follow") measureRun("follow", [[p.x, p.y], [Math.max(1.5, 6 / S.scale), 0]]);
+  else if (S.mode === "scalePts") {
+    S.scalePts.push({ x: p.x, y: p.y });
+    if (S.scalePts.length === 2) {
+      setMode(null);
+      S.scalePts = S.scalePts.slice(0, 2);
+      $("scaleFeetRow").classList.remove("hide");
+      $("scaleFeet").focus();
+    }
+    drawOverlay();
+  } else if (S.mode === "panel") placePanel(p);
+  else if (S.mode === "wire") pickWire(p);
+});
+overlay.addEventListener("dblclick", (e) => {
+  if (S.mode !== "trace") return;
+  e.preventDefault();
+  // The double-click's own two clicks added the same point twice.
+  const n = S.trace.length;
+  if (n >= 2 && Math.hypot(S.trace[n - 1].x - S.trace[n - 2].x, S.trace[n - 1].y - S.trace[n - 2].y) < 2 / S.scale) S.trace.pop();
+  finishTrace();
 });
 
 // ------------------------------------------------------------------ items ---
@@ -422,6 +514,8 @@ async function runCount() {
     sheetList();
     renderResults();
     drawOverlay();
+    await readScale(S.page);
+    await computeCircuits();
   } catch (err) {
     msg.textContent = "Counting failed: " + err.message;
     msg.classList.add("err");
@@ -520,8 +614,10 @@ function renderDetail() {
 
 function decide(id, what) {
   if (what) S.decisions[id] = what; else delete S.decisions[id];
+  if (S.circuits.length || S.circNotes.length) S.circStale = true;
   drawOverlay();
   renderResults();
+  renderCircuits();
   sheetList();
 }
 
@@ -549,7 +645,7 @@ async function goTo(page, x, y) {
 $("download").addEventListener("click", async () => {
   busy("Writing the spreadsheet…");
   try {
-    const bytes = await call("xlsx", JSON.stringify(S.decisions));
+    const bytes = await call("xlsx", JSON.stringify(S.decisions), JSON.stringify(allowances()));
     const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
@@ -565,6 +661,271 @@ $("download").addEventListener("click", async () => {
     idle();
   }
 });
+
+// --------------------------------------------------------------- lengths ---
+function fmtFeet(f) {
+  if (f === null || f === undefined || !isFinite(f)) return "—";
+  let whole = Math.floor(f), inches = Math.round((f - whole) * 12);
+  if (inches === 12) { whole += 1; inches = 0; }
+  return `${whole.toLocaleString()}'-${inches}"`;
+}
+const fmtFt = (f) => Math.round(f).toLocaleString() + " ft";
+
+async function readScale(page) {
+  try {
+    S.scales[page] = JSON.parse(await call("scale_info", page));
+  } catch (err) { /* the sheet couldn't be read; scaleLine says so */ }
+  scaleLine();
+}
+
+function scaleLine() {
+  const line = $("scaleLine");
+  const s = S.scales[S.page];
+  if (!S.info[S.page] || !s) {
+    line.textContent = "The scale is read from this sheet when you first measure or count on it.";
+    return;
+  }
+  if (s.set) line.textContent = `Scale: ${s.set.text} (set by you). Every length on this sheet uses it.`;
+  else if (s.distinct.length === 1) line.textContent = `Scale: ${s.distinct[0]}, as printed on this sheet.`;
+  else if (s.distinct.length > 1) line.textContent = `This sheet has drawings at ${s.distinct.join(" and ")}. ` +
+    "Each length uses the scale printed under its own drawing; set one here to use it everywhere on this sheet.";
+  else line.textContent = "No scale is printed on this sheet. Set one before measuring.";
+}
+
+$("scaleChange").addEventListener("click", () => {
+  const edit = $("scaleEdit");
+  edit.classList.toggle("hide");
+  $("scaleChange").setAttribute("aria-expanded", String(!edit.classList.contains("hide")));
+});
+
+async function setScale(how, value) {
+  const msg = $("runMsg");
+  msg.classList.remove("err");
+  await ensureLoaded(S.page);
+  const r = JSON.parse(await call("set_scale", S.page, how, value));
+  if (r.error) { msg.textContent = r.error; msg.classList.add("err"); return; }
+  S.runs = r.runs;
+  await readScale(S.page);
+  msg.textContent = how === "clear" ? "Using the scale printed on the sheet." : `Scale set to ${r.set.text}.`;
+  $("scaleFeetRow").classList.add("hide");
+  S.scalePts = [];
+  renderRuns();
+  if (S.hits.length) await computeCircuits();
+  drawOverlay();
+}
+$("scaleSet").addEventListener("click", () => setScale("text", $("scaleText").value));
+$("scaleClear").addEventListener("click", () => setScale("clear", ""));
+$("scalePts").addEventListener("click", async () => { await ensureLoaded(S.page); setMode(S.mode === "scalePts" ? null : "scalePts"); });
+$("scaleFeetSet").addEventListener("click", () => {
+  const [a, b] = S.scalePts;
+  if (!a || !b) return;
+  setScale("points", JSON.stringify([Math.hypot(b.x - a.x, b.y - a.y), Number($("scaleFeet").value)]));
+});
+
+$("trace").addEventListener("click", async () => { await ensureLoaded(S.page); setMode(S.mode === "trace" ? null : "trace"); });
+$("follow").addEventListener("click", async () => { await ensureLoaded(S.page); setMode(S.mode === "follow" ? null : "follow"); });
+$("traceDone").addEventListener("click", finishTrace);
+
+function finishTrace() {
+  const pts = S.trace.map((p) => [p.x, p.y]);
+  setMode(null);
+  if (pts.length < 2) { $("runMsg").textContent = "A traced run needs at least two points."; return; }
+  measureRun("trace", pts);
+}
+
+async function measureRun(how, pts) {
+  const msg = $("runMsg");
+  msg.classList.remove("err");
+  if (how === "follow") setMode(null);
+  const name = $("runName").value.trim() || `Run ${S.runs.length + 1}`;
+  busy(how === "follow" ? "Following the line…" : "Measuring…");
+  let r;
+  try {
+    r = JSON.parse(await call("measure_run", how, S.page, JSON.stringify(pts), name));
+  } finally {
+    idle();
+  }
+  if (r.error) {
+    msg.textContent = (how === "follow" ? "Couldn't follow a line there: " : "Couldn't measure that: ") + r.error +
+      (how === "follow" ? " Zoom in and click right on the line." : "");
+    msg.classList.add("err");
+    return;
+  }
+  S.runs.push(r);
+  $("runName").value = "";
+  msg.textContent = r.feet === null ? `${r.name}: no scale on this sheet. Set one and it will be measured.`
+    : `${r.name}: ${fmtFeet(r.feet)} at ${r.scale.text}.` + (r.note ? " " + r.note : "");
+  if (!readScaleDone(S.page)) await readScale(S.page);
+  renderRuns();
+  drawOverlay();
+}
+const readScaleDone = (page) => !!S.scales[page];
+
+function renderRuns() {
+  const ul = $("runs");
+  ul.textContent = "";
+  for (const r of S.runs) {
+    const li = document.createElement("li");
+    const sw = document.createElement("span");
+    sw.className = "sw";
+    sw.style.background = RUN;
+    const nm = document.createElement("span");
+    nm.className = "nm";
+    nm.textContent = r.name + " ";
+    const meta = document.createElement("small");
+    meta.textContent = `${r.sheet || "page " + r.page} · ${r.how}`;
+    nm.appendChild(meta);
+    const ft = document.createElement("span");
+    ft.className = "feet";
+    ft.textContent = fmtFeet(r.feet);
+    const cond = document.createElement("input");
+    cond.type = "number"; cond.min = "1"; cond.className = "cond"; cond.value = r.conductors;
+    cond.title = "Wires in this run"; cond.setAttribute("aria-label", "Wires in " + r.name);
+    cond.addEventListener("change", async () => {
+      S.runs = JSON.parse(await call("edit_run", r.id, JSON.stringify({ conductors: Number(cond.value) || 1 })));
+    });
+    const show = document.createElement("button");
+    show.className = "btn small"; show.textContent = "Show";
+    show.addEventListener("click", () => goTo(r.page, r.segs[0][0], r.segs[0][1]));
+    const rm = document.createElement("button");
+    rm.className = "btn small"; rm.textContent = "Remove"; rm.setAttribute("aria-label", "Remove " + r.name);
+    rm.addEventListener("click", async () => {
+      S.runs = JSON.parse(await call("forget_run", r.id));
+      renderRuns();
+      drawOverlay();
+    });
+    li.append(sw, nm, ft, cond, show, rm);
+    ul.appendChild(li);
+  }
+  $("dlBox").classList.toggle("hide", !(S.counted.length || S.runs.length));
+}
+
+function allowances() {
+  const num = (id, d) => { const v = Number($(id).value); return isFinite(v) && $(id).value !== "" ? v : d; };
+  return { conduit_height: num("aHeight", 10), device_height: num("aDevice", 1.5),
+           makeup: num("aMakeup", 1), waste: num("aWaste", 10) / 100 };
+}
+
+function circuitFeet(c, a) {
+  const drops = c.heights.reduce((s, h) => s + Math.max(0, a.conduit_height - (h === null ? a.device_height : h)), 0);
+  const run = c.route_ft + (c.homerun_ft || 0) + drops;
+  return { drops, conduit: run * (1 + a.waste),
+           wire: (run * c.conductors + a.makeup * c.conductors * c.devices.length) * (1 + a.waste) };
+}
+
+async function computeCircuits() {
+  if (!S.hits.length) { S.circuits = []; S.circNotes = []; renderCircuits(); return; }
+  busy("Measuring circuits…");
+  try {
+    const r = JSON.parse(await call("circuits", JSON.stringify(S.decisions)));
+    S.circuits = r.circuits;
+    S.circNotes = r.notes;
+    S.circStale = false;
+    S.selCircuit = null;
+  } catch (err) {
+    S.circuits = [];
+    S.circNotes = ["Circuits could not be measured: " + err.message];
+  } finally {
+    idle();
+  }
+  renderCircuits();
+  drawOverlay();
+}
+
+function renderCircuits() {
+  const box = $("circuitsBox");
+  box.classList.toggle("hide", !S.counted.length);
+  renderRuns();
+  if (!S.counted.length) return;
+  const a = allowances();
+  let conduit = 0, wire = 0;
+  for (const c of S.circuits) { const f = circuitFeet(c, a); conduit += f.conduit; wire += f.wire; }
+  $("circSummary").textContent = S.circuits.length
+    ? `${S.circuits.length} circuit${S.circuits.length > 1 ? "s" : ""}: about ${fmtFt(conduit)} of conduit and ${fmtFt(wire)} of wire.`
+    : "No circuits: the counted devices carry no circuit label and no drawn wiring was found.";
+  const notes = [...S.circNotes];
+  if (S.circStale) notes.unshift("Your calls changed which devices count. Press Update circuits.");
+  const nb = $("circNotes");
+  nb.textContent = "";
+  for (const n of notes) { const p = document.createElement("p"); p.textContent = n; nb.appendChild(p); }
+  nb.classList.toggle("hide", !notes.length);
+  $("circUpdate").classList.toggle("hide", !S.circStale);
+
+  // Panels a homerun needs but the drawing doesn't name.
+  const pl = $("panelList");
+  pl.textContent = "";
+  const missing = [...new Set(S.circuits.filter((c) => c.page === S.page && c.panel && c.homerun_ft === null)
+    .map((c) => c.panel))];
+  if (missing.length) {
+    const p = document.createElement("p");
+    p.className = "msg";
+    p.textContent = "Homeruns need the panel's place on this drawing: ";
+    for (const name of missing) {
+      const b = document.createElement("button");
+      b.className = "btn small";
+      b.textContent = "Place " + name;
+      b.addEventListener("click", () => { S.panelFor = name; setMode("panel"); });
+      p.append(b, document.createTextNode(" "));
+    }
+    pl.appendChild(p);
+  }
+
+  const t = $("circTable");
+  t.textContent = "";
+  const mine = S.circuits.filter((c) => c.page === S.page);
+  if (!mine.length) return;
+  const head = t.insertRow();
+  for (const [txt, n] of [["Circuit", 0], ["Devices", 1], ["Conduit", 1], ["Wire", 1]]) {
+    const th = document.createElement("th"); th.textContent = txt; if (n) th.className = "n"; head.appendChild(th);
+  }
+  for (const c of mine) {
+    const f = circuitFeet(c, a);
+    const row = t.insertRow();
+    row.className = "pick" + (c.id === S.selCircuit ? " sel" : "");
+    row.title = [c.items, `${fmtFeet(c.route_ft)} device to device`, c.homerun_ft === null ? "homerun not measured"
+      : `${fmtFeet(c.homerun_ft)} homerun`, `${fmtFeet(f.drops)} of drops`, `${c.conductors} wires`, c.note]
+      .filter(Boolean).join("\n");
+    row.insertCell().textContent = (c.label || "unnamed") + (c.homerun_ft === null ? " *" : "");
+    const d = row.insertCell(); d.className = "n"; d.textContent = c.devices.length;
+    const k = row.insertCell(); k.className = "n feet"; k.textContent = fmtFt(f.conduit);
+    const w = row.insertCell(); w.className = "n feet"; w.textContent = fmtFt(f.wire);
+    row.addEventListener("click", () => {
+      S.selCircuit = c.id;
+      renderCircuits();
+      const h = S.hits[c.devices[0]];
+      goTo(c.page, h.x, h.y);
+    });
+  }
+  if (mine.some((c) => c.homerun_ft === null)) {
+    const r = t.insertRow(); r.className = "sub";
+    const cell = r.insertCell(); cell.colSpan = 4;
+    cell.textContent = "* homerun not measured: its panel isn't on this drawing. Place it, or add it in the spreadsheet.";
+  }
+}
+
+for (const id of ["aHeight", "aDevice", "aMakeup", "aWaste"]) $(id).addEventListener("input", renderCircuits);
+$("showCirc").addEventListener("change", drawOverlay);
+$("circUpdate").addEventListener("click", computeCircuits);
+$("wirePick").addEventListener("click", () => setMode(S.mode === "wire" ? null : "wire"));
+$("useLabels").addEventListener("click", async () => {
+  await call("set_wires", S.page, 0, 0, true);
+  await computeCircuits();
+});
+
+async function placePanel(p) {
+  const name = S.panelFor;
+  setMode(null);
+  await call("set_panel", S.page, name, p.x, p.y);
+  $("runMsg").textContent = `Panel ${name} placed. Homeruns to it are measured from the nearest device.`;
+  await computeCircuits();
+}
+
+async function pickWire(p) {
+  setMode(null);
+  const r = JSON.parse(await call("set_wires", S.page, p.x, p.y, false));
+  if (r.error) { $("circSummary").textContent = r.error; return; }
+  await computeCircuits();
+}
 
 // For the browser smoke test: where a PDF point is on screen right now.
 window.__takeoff = {
