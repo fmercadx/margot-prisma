@@ -44,6 +44,15 @@ async function loadOrCreateKey(): Promise<AESEncryptionKey> {
   return key;
 }
 
+/**
+ * Deletes the data key. Only for erasing everything: anything still sealed
+ * with it can never be opened again, which is the point. Call it after the
+ * stored data is gone, then createDataCodec() makes a fresh key.
+ */
+export async function destroyDataKey(): Promise<void> {
+  await SecureStore.deleteItemAsync(KEY_NAME, KEY_OPTIONS);
+}
+
 export async function createDataCodec(): Promise<Codec> {
   const key = await loadOrCreateKey();
   return {

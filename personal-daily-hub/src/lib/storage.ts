@@ -16,6 +16,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { DEFAULT_CATEGORY, isBudget, isCategory } from './categories';
 import { isSealed, plainCodec, type Codec } from './codec';
 import { isDateKey } from './date';
 import { MAX_EXPENSE_CENTS } from './money';
@@ -26,6 +27,7 @@ import {
   ENERGY_MAX,
   ENERGY_MIN,
   EXPENSE_LABEL_MAX_LENGTH,
+  FOCUS_MAX_LENGTH,
   HABIT_MAX_LENGTH,
   MOOD_MAX,
   MOOD_MIN,
@@ -81,7 +83,9 @@ function sanitizeExpense(v: unknown): Expense | null {
   if (!isObj(v) || !isId(v.id) || !isTime(v.createdAt)) return null;
   if (!Number.isInteger(v.cents) || (v.cents as number) <= 0 || (v.cents as number) > MAX_EXPENSE_CENTS) return null;
   const label = isStr(v.label) ? v.label.slice(0, EXPENSE_LABEL_MAX_LENGTH) : '';
-  return { id: v.id, cents: v.cents as number, label, createdAt: v.createdAt };
+  // Saved before categories existed (1.2 and earlier), or one this build doesn't know.
+  const category = isCategory(v.category) ? v.category : DEFAULT_CATEGORY;
+  return { id: v.id, cents: v.cents as number, label, category, createdAt: v.createdAt };
 }
 
 function list<T>(v: unknown, each: (x: unknown) => T | null, max = DAY_ITEMS_MAX): T[] {
@@ -107,7 +111,9 @@ const inRange = (v: unknown, lo: number, hi: number): number | null =>
 export function sanitizeDay(v: unknown): DayLog {
   const o = isObj(v) ? v : {};
   const water = isNum(o.water) ? Math.min(WATER_MAX, Math.max(0, Math.round(o.water))) : 0;
+  const focus = isStr(o.focus) ? o.focus.slice(0, FOCUS_MAX_LENGTH * 4).replace(/\s+/g, ' ').trim().slice(0, FOCUS_MAX_LENGTH) : '';
   return {
+    focus,
     notes: list(o.notes, sanitizeNote),
     habitsDone: Array.isArray(o.habitsDone)
       ? [...new Set(o.habitsDone.slice(0, CUSTOM_HABITS_MAX + CORE_HABITS.length).filter(isId))]
@@ -128,6 +134,7 @@ export function sanitizeSettings(v: unknown): Settings {
     reminderHour: int(o.reminderHour, REMINDER_HOUR_MIN, REMINDER_HOUR_MAX, DEFAULT_SETTINGS.reminderHour),
     lockEnabled: o.lockEnabled === true,
     haptics: o.haptics !== false, // on unless switched off
+    dailyBudgetCents: isBudget(o.dailyBudgetCents) ? o.dailyBudgetCents : null,
   };
 }
 
@@ -233,6 +240,18 @@ export async function loadDays(dates: string[]): Promise<Record<string, DayLog>>
   return days;
 }
 
+// ---- erasing --------------------------------------------------------------
+
+/**
+ * Removes every value the app has stored: days, habits, settings, and any
+ * quarantined copies. Keys outside the app's prefix are left alone.
+ */
+export async function eraseStoredData(): Promise<number> {
+  const keys = (await AsyncStorage.getAllKeys()).filter((k) => k.startsWith(PREFIX));
+  if (keys.length > 0) await AsyncStorage.multiRemove(keys);
+  return keys.length;
+}
+
 // ---- writing --------------------------------------------------------------
 
 export type Persister = {
@@ -242,6 +261,12 @@ export type Persister = {
   flush(): Promise<void>;
   /** Stop the timer. Queued values are flushed first. */
   dispose(): Promise<void>;
+  /**
+   * Drop everything queued without writing it, and resolve once any write
+   * already under way has landed. Used before erasing, so nothing sealed
+   * with the old key can arrive after the erase.
+   */
+  discard(): Promise<void>;
 };
 
 /**
@@ -260,6 +285,8 @@ export function createPersister(
   const pending = new Map<string, string>();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let chain: Promise<void> = Promise.resolve();
+  // Bumped by discard(), so a write that fails afterwards is not re-queued.
+  let generation = 0;
 
   const flush = (): Promise<void> => {
     if (timer) {
@@ -268,8 +295,10 @@ export function createPersister(
     }
     if (pending.size === 0) return chain;
     const batch = [...pending.entries()];
+    const gen = generation;
     pending.clear();
     chain = chain.then(async () => {
+      if (gen !== generation) return; // discarded before it started
       try {
         // Sealed here, at write time, so a burst of edits is encrypted once.
         const sealed = await Promise.all(
@@ -278,6 +307,7 @@ export function createPersister(
         await AsyncStorage.multiSet(sealed);
         opts.onSaved?.();
       } catch (err) {
+        if (gen !== generation) return;
         for (const [key, value] of batch) if (!pending.has(key)) pending.set(key, value);
         opts.onError?.(err);
       }
@@ -293,6 +323,15 @@ export function createPersister(
     },
     flush,
     dispose: flush,
+    discard() {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      pending.clear();
+      generation++;
+      return chain;
+    },
   };
 }
 

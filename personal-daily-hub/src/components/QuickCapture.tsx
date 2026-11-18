@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { ArrowUp, Check, Lock, NotebookPen, X } from '../icons';
+import { ArrowUp, Check, Lock, NotebookPen, Search, X } from '../icons';
 
 import { clockTime } from '../lib/date';
 import { FREE_NOTES_PER_DAY } from '../lib/premium';
@@ -19,9 +19,11 @@ type Props = {
   onDelete: (id: string) => void;
   /** Saves new text for a note. Blank text is refused (delete it instead). */
   onEdit: (id: string, text: string) => void;
+  /** Opens search across every day. */
+  onSearch: () => void;
 };
 
-export function QuickCapture({ notes, isPremium, draft, onDraftChange, onSubmit, onDelete, onEdit }: Props) {
+export function QuickCapture({ notes, isPremium, draft, onDraftChange, onSubmit, onDelete, onEdit, onSearch }: Props) {
   // One note at a time is open for editing.
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
   const saveEdit = () => {
@@ -52,7 +54,12 @@ export function QuickCapture({ notes, isPremium, draft, onDraftChange, onSubmit,
       accent={colors.notes}
       title="Quick Capture"
       subtitle="Get it out of your head"
-      right={counter}
+      right={
+        <View style={styles.right}>
+          {counter}
+          <IconButton icon={Search} size={18} label="Search all notes" onPress={onSearch} testID="open-search" />
+        </View>
+      }
       testID="card-notes"
     >
       <View style={styles.inputRow}>
@@ -155,6 +162,7 @@ export function QuickCapture({ notes, isPremium, draft, onDraftChange, onSubmit,
 }
 
 const styles = StyleSheet.create({
+  right: { flexDirection: 'row', alignItems: 'center', gap: space.xs, marginRight: -space.sm },
   counter: { ...type.label, color: colors.textSecondary },
   pill: {
     flexDirection: 'row',

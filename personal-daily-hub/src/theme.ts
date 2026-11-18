@@ -24,10 +24,12 @@ export const colors = {
   expenses: '#FB7185',
   history: '#A78BFA',
   mood: '#2DD4BF',
+  focus: '#FB923C',
 
   premium: '#E8C468',
   onPremium: '#121212',
   danger: '#F87171',
+  warning: '#FAB219', // a status, not a module: always beside an icon and words
   backdrop: 'rgba(0,0,0,0.6)',
 } as const;
 

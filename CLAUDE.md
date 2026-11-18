@@ -50,7 +50,10 @@ are tested, but each looks like an implementation detail:
   and never log a decrypted value.
 - `src/lib/dataCodec.ts` creates the key only when none is stored. If reading
   it throws, launch fails safe (saving off); minting a new key there would
-  orphan everything sealed with the old one.
+  orphan everything sealed with the old one. The one deliberate exception is
+  Erase everything (`erase` in `useDailyHub.ts`): it drains the writer,
+  removes the data, then deletes the key, in that order, before a new key
+  is made.
 - The release APK has no INTERNET permission (`app.config.js`, set by the APK
   workflow), and the emulator test asserts it. A network feature means
   revisiting that, not quietly re-adding the permission.

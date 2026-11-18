@@ -1,5 +1,6 @@
 // The week at a glance, for the history card. Pure.
 
+import { categoryTotals, type ExpenseCategory } from './categories';
 import type { DayLog } from './store';
 
 export type WeekSummary = {
@@ -8,6 +9,7 @@ export type WeekSummary = {
   avgMood: number | null; // 1–5, over days mood was logged
   spentCents: number;
   habitRate: number | null; // 0–1: ticks / (days × habits)
+  topCategory: { category: ExpenseCategory; cents: number } | null; // where most money went
 };
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
@@ -24,5 +26,6 @@ export function weekSummary(days: { log: DayLog | null }[], habitIds: string[]):
     spentCents: present.reduce((n, l) => n + l.expenses.reduce((m, e) => m + e.cents, 0), 0),
     // Every day in the window counts, logged or not: a skipped day is a miss.
     habitRate: ids.size && days.length ? ticks / (days.length * ids.size) : null,
+    topCategory: categoryTotals(present.flatMap((l) => l.expenses))[0] ?? null,
   };
 }

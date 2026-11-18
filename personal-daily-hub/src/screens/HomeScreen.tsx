@@ -19,8 +19,10 @@ import { HistoryCard } from '../components/HistoryCard';
 import { LockScreen } from '../components/LockScreen';
 import { PaywallModal } from '../components/PaywallModal';
 import { QuickCapture } from '../components/QuickCapture';
+import { SearchSheet } from '../components/SearchSheet';
 import { SettingsSheet } from '../components/SettingsSheet';
 import { UndoToast } from '../components/Toast';
+import { TodayFocus } from '../components/TodayFocus';
 import { WaterEnergy } from '../components/WaterEnergy';
 import { useAppLock } from '../hooks/useAppLock';
 import { useToday } from '../hooks/useClock';
@@ -43,8 +45,10 @@ import {
 import { loadAllDays } from '../lib/storage';
 import {
   CUSTOM_HABITS_MAX,
+  cleanFocus,
   getDay,
   HABIT_MAX_LENGTH,
+  type DayLog,
   habitStreak,
   mergeBackup,
   newId,
@@ -60,7 +64,7 @@ const UNDO_MS = 5000;
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const today = useToday();
-  const { state, dispatch, ready, loadFailed, saveFailed, encrypted } = useDailyHub(today);
+  const { state, dispatch, ready, loadFailed, saveFailed, encrypted, erase } = useDailyHub(today);
   const lock = useAppLock(state.settings.lockEnabled);
   const day = getDay(state, today);
 
@@ -150,6 +154,30 @@ export default function HomeScreen() {
     dispatch({ type: 'deleteNote', date: today, id });
     haptic.remove();
     setUndo({ message: 'Note deleted', restore: { type: 'restoreNote', date: today, note } });
+  };
+
+  // ---- today's focus ------------------------------------------------------
+  const saveFocus = (text: string) => {
+    if (cleanFocus(text) === day.focus) return;
+    dispatch({ type: 'setFocus', date: today, text });
+    haptic.success();
+  };
+
+  // ---- search -------------------------------------------------------------
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchDays, setSearchDays] = useState<Record<string, DayLog> | null>(null);
+
+  const openSearch = () => {
+    setSearchDays(null);
+    setSearchOpen(true);
+    // Every stored day, decrypted on the phone. Memory has the newest copy
+    // of the days it holds.
+    loadAllDays()
+      .then((all) => setSearchDays({ ...all, ...state.days }))
+      .catch((err) => {
+        console.warn('[search] could not read older days', err);
+        setSearchDays({ ...state.days });
+      });
   };
 
   // ---- habits -------------------------------------------------------------
@@ -338,6 +366,39 @@ export default function HomeScreen() {
     setMessage(`Restored ${days} ${days === 1 ? 'day' : 'days'} from your backup.`);
   };
 
+  // ---- erase everything ---------------------------------------------------
+  const [eraseConfirming, setEraseConfirming] = useState(false);
+  const [eraseBusy, setEraseBusy] = useState(false);
+
+  const eraseEverything = async () => {
+    setEraseBusy(true);
+    try {
+      // With the app lock on, only the owner can wipe it.
+      if (state.settings.lockEnabled && !(await authenticate('Confirm to erase all data'))) return;
+      // The reminder goes first, so resetting the reminder time can't
+      // reschedule it.
+      await disableDailyReminder();
+      setReminderOn(false);
+      await erase();
+      removeOldExports();
+      setUndo(null);
+      setNoteDraft('');
+      setRestorePending(null);
+      setHabitComposerOpen(false);
+      setOpenDay(null);
+      setEraseConfirming(false);
+      setSettingsOpen(false);
+      setMessage('Everything on this phone has been erased.');
+    } catch (err) {
+      console.warn('[erase] failed', err);
+      setEraseConfirming(false);
+      setSettingsOpen(false);
+      setMessage('Couldn’t erase everything. Please try again.');
+    } finally {
+      setEraseBusy(false);
+    }
+  };
+
   // ---- day details --------------------------------------------------------
   const [openDay, setOpenDay] = useState<string | null>(null);
   const loadedDates = useMemo(() => lastNDays(today, LOADED_DAYS), [today]);
@@ -399,6 +460,8 @@ export default function HomeScreen() {
             <Banner text="Changes aren’t being saved right now. We’ll keep trying." />
           ) : null}
 
+          <TodayFocus key={today} focus={day.focus} onSave={saveFocus} />
+
           <QuickCapture
             notes={day.notes}
             isPremium={isPremium}
@@ -407,6 +470,7 @@ export default function HomeScreen() {
             onSubmit={submitNote}
             onDelete={deleteNote}
             onEdit={editNote}
+            onSearch={openSearch}
           />
 
           <HabitChecklist
@@ -449,11 +513,12 @@ export default function HomeScreen() {
           <ExpenseLogger
             expenses={day.expenses}
             totalCents={totalCents(day)}
-            onAdd={(cents, label) => {
+            budgetCents={state.settings.dailyBudgetCents}
+            onAdd={(cents, label, category) => {
               dispatch({
                 type: 'addExpense',
                 date: today,
-                expense: { id: newId('exp'), cents, label, createdAt: Date.now() },
+                expense: { id: newId('exp'), cents, label, category, createdAt: Date.now() },
               });
               haptic.success();
             }}
@@ -465,6 +530,8 @@ export default function HomeScreen() {
             waterGoal={state.settings.waterGoal}
             habitIds={state.habits.map((h) => h.id)}
             days={history}
+            allDays={state.days}
+            firstLoaded={loadedDates[0]}
             onUnlock={() => openPaywall('history')}
             onOpenDay={setOpenDay}
           />
@@ -480,6 +547,7 @@ export default function HomeScreen() {
         onClose={() => {
           setSettingsOpen(false);
           setRestorePending(null);
+          setEraseConfirming(false);
         }}
         settings={state.settings}
         onChange={changeSettings}
@@ -500,7 +568,14 @@ export default function HomeScreen() {
         }
         onConfirmRestore={confirmRestore}
         onCancelRestore={() => setRestorePending(null)}
+        eraseConfirming={eraseConfirming}
+        eraseBusy={eraseBusy}
+        onRequestErase={() => setEraseConfirming(true)}
+        onConfirmErase={eraseEverything}
+        onCancelErase={() => setEraseConfirming(false)}
       />
+
+      <SearchSheet visible={searchOpen} days={searchDays} today={today} onClose={() => setSearchOpen(false)} />
 
       <DaySheet
         date={openDay}

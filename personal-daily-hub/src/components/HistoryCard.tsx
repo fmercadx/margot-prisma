@@ -3,12 +3,14 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ChartColumnBig, ChevronRight, Lock } from '../icons';
 import { longDate, parseDateKey, weekdayInitial, weekdayName } from '../lib/date';
+import { CATEGORY_LABELS } from '../lib/categories';
 import { formatCents, formatCentsCompact } from '../lib/money';
 import { moodWord } from '../lib/mood';
 import { ENERGY_MAX, MOOD_MAX, totalCents, type DayLog } from '../lib/store';
 import { weekSummary } from '../lib/summary';
 import { colors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
+import { MonthCalendar } from './MonthCalendar';
 
 type Props = {
   isPremium: boolean;
@@ -16,11 +18,15 @@ type Props = {
   habitIds: string[];
   /** Oldest first; the last entry is today. A missing day is null. */
   days: { date: string; log: DayLog | null }[];
+  /** Every day in memory, for the month calendar. */
+  allDays: Record<string, DayLog>;
+  /** The oldest day in memory. */
+  firstLoaded: string;
   onUnlock: () => void;
   onOpenDay: (date: string) => void;
 };
 
-export function HistoryCard({ isPremium, waterGoal, habitIds, days, onUnlock, onOpenDay }: Props) {
+export function HistoryCard({ isPremium, waterGoal, habitIds, days, allDays, firstLoaded, onUnlock, onOpenDay }: Props) {
   // One selected day for every chart, so they always describe the same date.
   const [selected, setSelected] = useState(days.length - 1);
   const today = days[days.length - 1]?.date;
@@ -32,12 +38,13 @@ export function HistoryCard({ isPremium, waterGoal, habitIds, days, onUnlock, on
     <Card
       icon={ChartColumnBig}
       accent={colors.history}
-      title="Last 7 days"
-      subtitle={isPremium ? 'Tap a day to compare it' : 'Trends for water, energy, mood and spending'}
+      title="History"
+      subtitle={isPremium ? 'The last 7 days, and month by month' : 'Trends, a month calendar, and every past day'}
       testID="card-history"
     >
       {isPremium ? (
         <>
+          <Text style={styles.sectionLabel}>Last 7 days</Text>
           <Summary days={days} habitIds={habitIds} />
           <View style={styles.charts}>
             <MiniColumns
@@ -95,6 +102,14 @@ export function HistoryCard({ isPremium, waterGoal, habitIds, days, onUnlock, on
             <Text style={styles.openDayText}>See everything from {dayName}</Text>
             <ChevronRight size={18} color={colors.notes} />
           </Pressable>
+          <View style={styles.divider} />
+          <MonthCalendar
+            days={allDays}
+            habitIds={habitIds}
+            today={today}
+            firstLoaded={firstLoaded}
+            onOpenDay={onOpenDay}
+          />
         </>
       ) : (
         <Pressable
@@ -122,18 +137,30 @@ export function HistoryCard({ isPremium, waterGoal, habitIds, days, onUnlock, on
 /** Four stat tiles for the week. A measure never logged shows a dash, not a zero. */
 function Summary({ days, habitIds }: { days: Props['days']; habitIds: string[] }) {
   const s = weekSummary(days, habitIds);
-  const tiles: { label: string; value: string }[] = [
+  const tiles: { label: string; value: string; detail?: string }[] = [
     { label: 'Water a day', value: s.avgWater === null ? '—' : s.avgWater.toFixed(1) },
     { label: 'Energy', value: s.avgEnergy === null ? '—' : s.avgEnergy.toFixed(1) },
-    { label: 'Spent', value: formatCents(s.spentCents) },
+    { label: 'Mood', value: s.avgMood === null ? '—' : moodWord(Math.round(s.avgMood)) },
     { label: 'Habits done', value: s.habitRate === null ? '—' : `${Math.round(s.habitRate * 100)}%` },
+    { label: 'Spent', value: formatCents(s.spentCents) },
+    s.topCategory
+      ? { label: 'Most on', value: CATEGORY_LABELS[s.topCategory.category], detail: formatCents(s.topCategory.cents) }
+      : { label: 'Most on', value: '—' },
   ];
   return (
     <View style={styles.tiles} testID="week-summary">
       {tiles.map((t) => (
-        <View key={t.label} style={styles.tile} accessible accessibilityLabel={`${t.label}: ${t.value}`}>
+        <View
+          key={t.label}
+          style={styles.tile}
+          accessible
+          accessibilityLabel={`${t.label}: ${t.value}${t.detail ? `, ${t.detail}` : ''}`}
+        >
           <Text style={styles.tileLabel}>{t.label}</Text>
-          <Text style={styles.tileValue}>{t.value}</Text>
+          <Text style={styles.tileValue} numberOfLines={1} adjustsFontSizeToFit>
+            {t.value}
+          </Text>
+          {t.detail ? <Text style={styles.tileDetail}>{t.detail}</Text> : null}
         </View>
       ))}
     </View>
@@ -217,6 +244,7 @@ function MiniColumns({ title, color, days, selected, onSelect, value, scaleMax, 
 }
 
 const styles = StyleSheet.create({
+  sectionLabel: { ...type.label, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: -space.sm },
   tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   tile: {
     flexGrow: 1,
@@ -229,6 +257,7 @@ const styles = StyleSheet.create({
   },
   tileLabel: { ...type.caption, color: colors.textSecondary },
   tileValue: { fontSize: 20, fontWeight: '700', color: colors.text },
+  tileDetail: { ...type.caption, color: colors.textSecondary, fontVariant: ['tabular-nums'] },
   charts: { gap: space.xl },
   chart: { gap: space.sm },
   chartHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: space.sm },
@@ -262,6 +291,7 @@ const styles = StyleSheet.create({
     backgroundColor: tint(colors.notes, 0.12),
   },
   openDayText: { ...type.label, color: colors.notes, fontWeight: '700' },
+  divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.hairline },
   locked: {
     height: 120,
     borderRadius: radius.md,

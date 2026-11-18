@@ -40,7 +40,7 @@ test('renders every module', async () => {
   expect(screen.getByText('Habits')).toBeOnTheScreen();
   expect(screen.getByText('Water, Energy & Mood')).toBeOnTheScreen();
   expect(screen.getByText('Expenses')).toBeOnTheScreen();
-  expect(screen.getByText('Last 7 days')).toBeOnTheScreen();
+  expect(screen.getByText('History')).toBeOnTheScreen();
   expect(screen.getAllByRole('checkbox')).toHaveLength(4);
 });
 
