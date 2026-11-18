@@ -11,7 +11,9 @@ between PDF.js and pdfplumber: each fails here and nowhere else.
 
 Checked:
   · one click on a duplex and one on a quad count a synthetic sheet exactly
-  · dropping a hit takes it out of the count and out of the spreadsheet
+  · circuits from the labels beside the devices come out as under CPython
+  · a traced run and a followed line are measured at the printed scale
+  · dropping a hit takes it out of the count, its circuit and the spreadsheet
   · nothing off-origin is requested, because the drawing never leaving the
     machine is the point of running in the browser
   · the page doesn't scroll sideways at phone width
@@ -37,6 +39,8 @@ import test_takeoff as tt  # noqa: E402  (the synthetic-drawing helpers)
 DUPLEXES = [(100, 100, 0, False), (200, 100, 1, False), (300, 100, 2, False), (400, 100, 3, False),
             (500, 100, 0, True), (600, 100, 1, True), (100, 300, 0, False)]
 QUADS = [(200, 300, 0, False), (300, 300, 1, False)]
+LINE = (700, 500, 900, 500)          # a line to follow: 200 pt, 22'-2" at 1/8"
+TRACE = [(100, 600), (172, 600)]     # a run to trace: 72 pt, 8'-0" at 1/8"
 
 
 def synthetic(path: Path) -> None:
@@ -46,6 +50,10 @@ def synthetic(path: Path) -> None:
     for x, y, turn, mirror in QUADS:
         plan += tt._strokes(tt._place(tt.quad(), x, y, turn, mirror))
     plan += tt._text(108, 98, 6, "GFI")          # a label beside the first duplex
+    for x, y, *_ in DUPLEXES[:3]:                 # three duplexes on circuit A-1
+        plan += tt._text(x + 9, y + 14, 6, "A-1")
+    plan += tt._text(100, 700, 9, 'SCALE: 1/8" = 1\'-0"')
+    plan += tt._strokes([LINE], grey=0.3, width=0.5)
     plan += tt._text(1120, 760, 40, "E2.1")
     legend = tt._strokes(tt._place(tt.duplex(), 100, 100)) + tt._text(80, 60, 12, "ELECTRICAL SYMBOLS")
     legend += tt._text(1110, 760, 40, "E0.01")
@@ -61,6 +69,20 @@ class _Quiet(http.server.SimpleHTTPRequestHandler):
 
     def log_message(self, *a):  # noqa: D102 - silence per-request logging
         pass
+
+
+def expected_circuits(pdf: Path) -> list[tuple[str, int, float]]:
+    """The circuits CPython finds on the same sheet: (label, devices, feet device to device)."""
+    import drawings
+    import match
+    import measure
+    plan = drawings.load(str(pdf), [1])[0]
+    hits = match.find(plan, match.seed_at(plan, 100, 100 + 1.68), "Duplex")
+    hits += match.find(plan, match.seed_at(plan, 200 - 1.68, 300), "Quad")
+    hits = match.resolve(hits)
+    match.attach_text(hits, {1: plan})
+    found, _ = measure.circuits(hits, {1: plan})
+    return [(c.label, len(c.devices), round(c.route_ft, 1)) for c in found]
 
 
 def results(page) -> dict[str, tuple[int, int]]:
@@ -128,6 +150,34 @@ def main(argv=None) -> int:
             if not any("GFI" in s for s in subs):
                 failures.append(f"the GFI label beside the first duplex was not split out: {subs}")
 
+            # Circuits from the labels, the same as under CPython.
+            page.wait_for_function("__takeoff.state.circuits.length > 0", timeout=120_000)
+            got_c = page.evaluate("__takeoff.state.circuits.map(c => [c.label, c.devices.length, Math.round(c.route_ft * 10) / 10])")
+            want_c = expected_circuits(pdf)
+            if [tuple(c) for c in got_c] != want_c or not want_c:
+                failures.append(f"circuits: browser {got_c}, CPython {want_c}")
+            if "1/8" not in page.text_content("#scaleLine"):
+                failures.append(f"scale not read: {page.text_content('#scaleLine')!r}")
+
+            # A traced run and a followed line, at the printed scale.
+            page.fill("#runName", "Homerun")
+            page.click("#trace")
+            for x, y in TRACE:
+                pt = page.evaluate(f"__takeoff.pdfToClient({x}, {y})")
+                page.mouse.click(pt["x"], pt["y"])
+                page.wait_for_timeout(150)
+            page.click("#traceDone")
+            page.wait_for_function("__takeoff.state.runs.length === 1", timeout=60_000)
+            page.click("#follow")
+            pt = page.evaluate(f"__takeoff.pdfToClient({(LINE[0] + LINE[2]) / 2}, {LINE[1]})")
+            page.mouse.click(pt["x"], pt["y"])
+            page.wait_for_function("__takeoff.state.runs.length === 2", timeout=60_000)
+            # A click lands within half a screen pixel of its point: a traced
+            # run is good to a few hundredths of a foot here, a followed one exact.
+            feet = page.evaluate("__takeoff.state.runs.map(r => r.feet)")
+            if len(feet) != 2 or abs(feet[0] - 8.0) > 0.15 or abs(feet[1] - 200 / 9) > 0.01:
+                failures.append(f"run lengths: expected [8.0, {200 / 9:.2f}], got {feet}")
+
             # Drop one duplex by clicking its box, then check the count and the download.
             hit = page.evaluate("__takeoff.state.hits.find(h => h.item === 'Duplex' && h.page === 1)")
             pt = page.evaluate(f"__takeoff.pdfToClient({hit['x'] + hit['hw']}, {hit['y']})")
@@ -145,6 +195,12 @@ def main(argv=None) -> int:
                 rows = {r[0]: r for r in wb["Summary"].iter_rows(values_only=True) if r[0]}
                 if rows.get("Duplex", (None, None))[1] != len(DUPLEXES) - 1:
                     failures.append(f"spreadsheet Duplex count: {rows.get('Duplex')}")
+                circ = {r[1]: r for r in wb["Circuits"].iter_rows(min_row=9, values_only=True) if r[0] and r[1]}
+                if circ.get("A-1", [None] * 4)[3] != 2:      # the dropped duplex was one of A-1's three
+                    failures.append(f"spreadsheet circuit A-1: {circ.get('A-1')}")
+                runs = [r for r in wb["Runs"].iter_rows(min_row=5, values_only=True) if r[1] and r[0] != "Total"]
+                if len(runs) != 2 or abs(runs[0][3] - 8.0) > 0.15 or abs(runs[1][3] - 200 / 9) > 0.06:
+                    failures.append(f"spreadsheet runs: {runs}")
             except Exception as e:  # noqa: BLE001 - report, don't crash the smoke test
                 failures.append(f"downloaded spreadsheet unreadable: {e}")
 
@@ -170,7 +226,8 @@ def main(argv=None) -> int:
         for f in failures:
             print("  -", f)
         return 1
-    print(f"smoke ok: Duplex {len(DUPLEXES)}, Quad {len(QUADS)}, drop and download checked, no off-origin requests")
+    print(f"smoke ok: Duplex {len(DUPLEXES)}, Quad {len(QUADS)}, circuits and runs measured, drop and download "
+          "checked, no off-origin requests")
     return 0
 
 

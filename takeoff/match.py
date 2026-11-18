@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from drawings import CIRCUIT_RE, SOLID, Page
+from drawings import CIRCUIT_RE, SOLID, Page, circuit_text
 
 MATCH, REVIEW = "match", "review"
 
@@ -593,12 +593,13 @@ def _refine(verts: np.ndarray, sv: np.ndarray, theta: float, t: np.ndarray, reac
 def _nearest_label(page: Page, x: float, y: float, reach: float) -> str:
     best, best_d = "", reach
     for w in page.words:
-        if not CIRCUIT_RE.match(w["text"]):
+        label = circuit_text(w["text"])
+        if not label:
             continue
         cx, cy = (w["x0"] + w["x1"]) / 2, (w["top"] + w["bottom"]) / 2
         d = float(np.hypot(cx - x, cy - y))
         if d < best_d:
-            best, best_d = w["text"], d
+            best, best_d = label, d
     return best
 
 

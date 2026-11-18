@@ -12,7 +12,8 @@ Six unrelated products share this repository:
   their Tesla's browser. Its own Gradle build; ships as an APK on GitHub
   Releases, not on Pages or Railway. Its README explains the design.
 - **`takeoff/`** — counts symbols on CAD-exported electrical drawings from one
-  clicked example. A Python command-line tool, and a click screen serving
+  clicked example, and measures circuits, conduit and wire in feet at the
+  printed scale. A Python command-line tool, and a click screen serving
   `fmercadx.github.io/margot-prisma/takeoff/` that runs the same modules in the
   browser.
 - **`personal-daily-hub/`** — a React Native + Expo (SDK 58) daily dashboard
@@ -169,7 +170,7 @@ cd credit-analyzer/mobile  && npm test
 # The adult family home site: build, then browser checks against dist/
 cd shepherds-whisper && npm ci && npm run build && npm run smoke
 
-# Takeoff: tests on a synthetic drawing set. Real sets stay outside the repo.
+# Takeoff: 56 tests on synthetic drawing sets. Real sets stay outside the repo.
 cd takeoff && python -m pytest test_takeoff.py -q
 
 # Takeoff click screen: build (needs `npm ci`; fetches Pyodide's numpy and

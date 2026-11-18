@@ -411,3 +411,238 @@ def test_sideways_labels_are_read_the_right_way_round(fixes):
     hits = _plain_hits(fixes)
     match.attach_text(hits, {fixes.number: fixes})
     assert _at(hits, *VERTICAL_TAG)[0].text == "GFI"
+
+
+# ---------------------------------------------------------------------------
+# Lengths: scales, measured runs and circuits, on sheets of their own.
+
+import measure  # noqa: E402
+
+FT8 = 8 / 72        # feet per point at 1/8" = 1'-0": an inch of paper is 8 ft
+FT4 = 4 / 72        # at 1/4" = 1'-0"
+
+TOP = [(100, 100, ""), (200, 100, ""), (200, 200, ""), (400, 100, '48"')]   # x, y, height label
+LABELS = ["A-1", "A-1", "A-1", "A-2"]
+LOWER = [(100, 450), (160, 450)]        # the enlarged plan repeats circuit A-1
+PANEL_AT = (100, 250)
+PEN = (0.3, 0.5)                        # the lines to follow: grey 0.3, 0.5 wide
+
+
+@pytest.mark.parametrize("text, feet_per_inch", [
+    ('1/8" = 1\'-0"', 8), ('SCALE: 3/32" = 1\'-0"', 32 / 3), ("3/8\"= 1' - 0\"", 8 / 3),
+    ('3/32 = 1\'-0"', 32 / 3), ('E-301 3/16" = 1\'-0"', 16 / 3), ('1 1/2" = 1\'-0"', 2 / 3),
+    ('1" = 20\'', 20), ('1/4" = 1\'-6"', 6), ("SCALE 1:100", 100 / 12),
+])
+def test_scales_as_printed(text, feet_per_inch):
+    assert measure.parse_scale(text) * 72 == pytest.approx(feet_per_inch)
+
+
+@pytest.mark.parametrize("text", ["NOT TO SCALE", "SCALE: AS NOTED", "12'-0\" CLEAR", "NTS"])
+def test_things_that_are_not_scales(text):
+    assert measure.parse_scale(text) is None
+
+
+@pytest.fixture(scope="module")
+def lengths_path(tmp_path_factory):
+    ops = []
+    for (x, y, height), label in zip(TOP, LABELS):
+        ops += _strokes(_place(duplex(), x, y))
+        ops += _text(x + 8, y - 3, 6, label)
+        if height:
+            ops += _text(x + 8, y + 9, 6, height)
+    ops += _text(PANEL_AT[0], PANEL_AT[1], 7, "PANEL A")
+    ops += _text(100, 330, 9, 'SCALE: 1/8" = 1\'-0"')
+    for x, y in LOWER:
+        ops += _strokes(_place(duplex(), x, y))
+        ops += _text(x + 8, y - 3, 6, "A-1")
+    ops += _text(100, 560, 9, 'SCALE: 1/4" = 1\'-0"')
+    # A printed scale ruler along the bottom: not any drawing's scale.
+    for k, s in enumerate(['1/16" = 1\'-0"', '1/8" = 1\'-0"', '1/4" = 1\'-0"', '1/2" = 1\'-0"']):
+        ops += _text(100 + 150 * k, 760, 6, s)
+    g, w = PEN
+    # An L of two strokes, the first drawn twice over, as exports do.
+    ops += _strokes([(600, 100, 700, 100), (600, 100, 700, 100), (700, 100, 700, 200)], grey=g, width=w)
+    # A dashed run: 6 pt dashes, 3 pt gaps, from x = 600 to 795.
+    ops += _strokes([(600 + 9 * k, 300, 606 + 9 * k, 300) for k in range(22)], grey=g, width=w)
+    # A line that ends on a receptacle drawn in the same pen.
+    ops += _strokes([(600, 400, 680.5, 400)] + _place(duplex(), 686, 400, 2), grey=g, width=w)
+    ops += _text(1120, 760, 40, "E3.1")
+    path = tmp_path_factory.mktemp("lengths") / "lengths.pdf"
+    write_pdf(path, [ops])
+    return str(path)
+
+
+@pytest.fixture(scope="module")
+def lengths(lengths_path):
+    return drawings.load(lengths_path)[0]
+
+
+def test_each_drawing_has_its_own_scale_and_the_ruler_is_ignored(lengths):
+    assert sorted(round(s.feet_per_point * 72, 3) for s in measure.scales(lengths)) == [4, 8]
+    assert measure.scale_at(lengths, 300, 150).feet_per_point == pytest.approx(FT8)
+    assert measure.scale_at(lengths, 130, 450).feet_per_point == pytest.approx(FT4)
+
+
+def test_a_traced_run_is_measured_at_the_drawing_scale(lengths):
+    run = measure.trace(lengths, [(100, 120), (172, 120), (172, 192)], "Homerun")
+    assert run.length == pytest.approx(144)
+    assert run.feet == pytest.approx(16)                    # two inches of paper at 1/8"
+    assert measure.fmt_feet(run.feet) == "16'-0\""
+
+
+def test_following_a_line_takes_every_stroke_once(lengths):
+    run = measure.follow(lengths, 650, 100)
+    assert run.length == pytest.approx(200, abs=0.5)        # the doubled stroke counts once
+    assert run.feet == pytest.approx(200 * FT8, abs=0.1)
+
+
+def test_following_a_dashed_line_bridges_its_gaps(lengths):
+    run = measure.follow(lengths, 603, 300)
+    assert run.length == pytest.approx(195, abs=0.5)
+    assert len(run.segs) == 22
+
+
+def test_following_stops_at_a_receptacle_in_the_same_pen(lengths):
+    run = measure.follow(lengths, 640, 400)
+    assert run.length == pytest.approx(80.5, abs=0.5)
+
+
+def _lengths_hits(page):
+    page.cache.clear()
+    hits = match.find(page, match.seed_at(page, *TOP[0][:2]), "Duplex")
+    match.attach_text(hits, {page.number: page})
+    return hits
+
+
+def test_circuits_from_labels(lengths):
+    hits = _lengths_hits(lengths)
+    circuits, notes = measure.circuits(hits, {lengths.number: lengths})
+    by = {(c.label, round(c.scale.feet_per_point * 72)): c for c in circuits}
+    assert set(by) == {("A-1", 8), ("A-2", 8), ("A-1", 4)}  # the enlarged plan keeps its own
+    a1 = by[("A-1", 8)]
+    assert len(a1.devices) == 3
+    # Joined along the axes: 100 pt across and 100 pt down, at 1/8".
+    assert a1.route_ft == pytest.approx(200 * FT8, abs=0.2)
+    # The panel is named on the same drawing: a homerun from the nearest device.
+    assert a1.homerun_ft is not None and a1.homerun
+    a2 = by[("A-2", 8)]
+    assert a2.heights == [4.0]                              # 48" printed beside it
+    a = measure.Allowances(conduit_height=10, device_height=1.5, makeup=1, waste=0.1)
+    assert a2.drops(a) == pytest.approx(6.0)
+    assert a1.drops(a) == pytest.approx(3 * 8.5)
+    assert a1.conductors == 3
+    assert a1.conduit(a) == pytest.approx((a1.route_ft + a1.homerun_ft + 25.5) * 1.1)
+    assert a1.wire(a) == pytest.approx(((a1.route_ft + a1.homerun_ft + 25.5) * 3 + 1 * 3 * 3) * 1.1)
+    lower = by[("A-1", 4)]
+    assert lower.homerun_ft is None and "panel A" in lower.note   # its panel is on the other drawing
+    assert any("1/8" in n and "1/4" in n for n in notes)
+
+
+def test_conductors_and_panels_from_labels():
+    assert measure.conductors_for("R1A-8") == 3
+    assert measure.conductors_for("R1K-10,12") == 5
+    assert measure.panel_of("LP-1-12") == "LP-1"
+    assert measure.panel_of("P2:14") == "P2"
+    assert measure.device_height('48" AFF') == pytest.approx(4.0)
+    assert measure.device_height("GFI") is None
+
+
+WIRED_ROW = [(100, 600), (200, 600), (300, 600), (400, 600), (500, 600), (600, 600)]
+WIRE = (0.0, 0.84)
+
+
+@pytest.fixture(scope="module")
+def wired(tmp_path_factory):
+    """A plan that draws its wiring: devices joined by arcs, named only at
+    the homerun arrow."""
+    ops = []
+    for x, y in WIRED_ROW:
+        ops += _strokes(_place(duplex(), x, y))
+    g, w = WIRE
+    for (x0, y0), (x1, y1) in zip(WIRED_ROW, WIRED_ROW[1:]):
+        # An arc drawn in pieces from the top of one circle to the next.
+        pts = [(x0 + (x1 - x0) * k / 6, y0 - R - 25 * math.sin(math.pi * k / 6)) for k in range(7)]
+        ops += _strokes([(*a, *b) for a, b in zip(pts, pts[1:])], grey=g, width=w)
+    # The homerun: a short arc from the last device to an arrow and its label.
+    hx, hy = WIRED_ROW[-1]
+    pts = [(hx + R, hy), (hx + 15, hy + 10), (hx + 22, hy + 25), (hx + 25, hy + 40)]
+    ops += _strokes([(*a, *b) for a, b in zip(pts, pts[1:])], grey=g, width=w)
+    ops += _text(hx + 18, hy + 52, 7, "A-3")
+    ops += _text(100, 700, 9, 'SCALE: 1/4" = 1\'-0"')
+    ops += _text(1120, 760, 40, "E3.2")
+    path = tmp_path_factory.mktemp("wired") / "wired.pdf"
+    write_pdf(path, [ops])
+    return drawings.load(str(path))[0]
+
+
+def test_circuits_from_drawn_wiring(wired):
+    hits = _lengths_hits_at(wired, WIRED_ROW[0])
+    assert len([h for h in hits if h.status == match.MATCH]) == len(WIRED_ROW)
+    circuits, notes = measure.circuits(hits, {wired.number: wired})
+    assert len(circuits) == 1
+    c = circuits[0]
+    assert c.label == "A-3" and len(c.devices) == len(WIRED_ROW)
+    # Device to device along the axes, not along the arcs: 500 pt at 1/4".
+    assert c.route_ft == pytest.approx(500 * FT4, abs=0.3)
+
+
+def test_the_wiring_pen_can_be_given_by_a_click(wired):
+    hits = _lengths_hits_at(wired, WIRED_ROW[0])
+    k = measure.nearest_stroke(wired, 150, WIRED_ROW[0][1] - R - 25)
+    pen = wired.styles[wired.style[k]]
+    assert pen == ((0.0,), 0.84)
+    circuits, _ = measure.circuits(hits, {wired.number: wired}, wire_pens={wired.number: pen})
+    assert [c.label for c in circuits] == ["A-3"]
+
+
+def _lengths_hits_at(page, at):
+    page.cache.clear()
+    hits = match.find(page, match.seed_at(page, *at), "Duplex")
+    match.attach_text(hits, {page.number: page})
+    return hits
+
+
+def test_the_spreadsheet_carries_lengths_as_formulas(lengths, tmp_path):
+    hits = _lengths_hits(lengths)
+    circuits, notes = measure.circuits(hits, {lengths.number: lengths})
+    runs = [measure.trace(lengths, [(100, 120), (172, 120)], "Homerun")]
+    out = tmp_path / "t.xlsx"
+    report.write_xlsx(hits, {1: lengths.sheet}, str(out), circuits=circuits, runs=runs, notes=notes)
+    wb = openpyxl.load_workbook(out)
+    assert wb.sheetnames[:3] == ["Summary", "Circuits", "Runs"]
+    c = wb["Circuits"]
+    assert c["B3"].value == 10 and c["B6"].value == 0.1
+    head = [cell.value for cell in c[8]]
+    assert head[:4] == ["Sheet", "Circuit", "Panel", "Devices"]
+    row = [cell.value for cell in c[9]]
+    assert row[9] == "=MAX(0,D9*$B$3-((D9-H9)*$B$4+I9))"
+    assert row[10] == "=(F9+G9+J9)*(1+$B$6)"
+    assert row[12] == "=((F9+G9+J9)*L9+$B$5*L9*D9)*(1+$B$6)"
+    r = wb["Runs"]
+    assert r["D5"].value == pytest.approx(8.0) and r["F5"].value == "=D5*(1+Circuits!$B$6)"
+    summary = [row[0] for row in wb["Summary"].iter_rows(values_only=True)]
+    assert "Conduit, circuits (ft)" in summary
+
+
+def test_command_line_lengths(lengths_path, tmp_path):
+    result = takeoff.run(lengths_path, [("Duplex", 1, TOP[0][:2])], out=str(tmp_path), log=lambda *_: None,
+                         traces=[("Homerun", 1, [(100, 120), (172, 120)])], follows=[("L", 1, [(650, 100)])],
+                         scales=[(1, measure.scale_from_text('1/4" = 1\'-0"'))])
+    assert [round(r.feet, 1) for r in result.runs] == [4.0, round(200 * FT4, 1)]   # the scale given wins
+    assert result.circuits and all(c.scale.source == "set by hand" for c in result.circuits)
+    assert os.path.getsize(tmp_path / "takeoff.xlsx") > 0
+
+
+@pytest.mark.parametrize("spec, flag, many, named, ok", [
+    ("Homerun A=9:120,400;300,400", "--trace", True, True, True),
+    ("Homerun A=9:120,400", "--trace", True, True, False),           # one point is not a route
+    ("Feeder=9:850,1210", "--follow", False, True, True),
+    ("9:850,1210", "--follow", False, True, False),
+    ("9:1100,880", "--wires", False, False, True),
+])
+def test_length_flags(spec, flag, many, named, ok):
+    if ok:
+        takeoff.parse_where(spec, flag, many=many, named=named)
+    else:
+        with pytest.raises(Exception):
+            takeoff.parse_where(spec, flag, many=many, named=named)

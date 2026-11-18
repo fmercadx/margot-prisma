@@ -36,6 +36,14 @@ _LEGEND_RE = re.compile(r"\bSYMBOLS? LEGEND\b|\bLEGEND OF SYMBOLS\b|\bELECTRICAL
 # Circuit labels written beside devices: R1A-8, LP-1-12, R1K-10,12, 2LA-5,7,9.
 CIRCUIT_RE = re.compile(r"^[A-Z0-9]{1,5}(?:-[A-Z0-9]{1,4})?-\d{1,3}(?:,\d{1,3})*$")
 
+
+def circuit_text(word: str, pattern: re.Pattern = CIRCUIT_RE) -> str:
+    """The circuit in a word of a label, or "": R1K-10,12 as it is, LM-12
+    out of LM-12,SR (a circuit and a modifier with no space between)."""
+    t = word.upper().strip(",;:.")
+    t = re.sub(r",[A-Z][A-Z0-9]*$", "", t)
+    return t if pattern.match(t) else ""
+
 # The interiors of symbol-sized fills, any colour. Larger fills are rooms,
 # walls and title blocks, and keep only their outline.
 SOLID = (("solid",), 0.0)

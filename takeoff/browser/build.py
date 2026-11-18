@@ -9,7 +9,8 @@ Produces a directory any static host can serve, GitHub Pages included:
     pdfjs/         PDF.js, which draws the sheets, with its fonts and decoders
     pyodide/       CPython in WebAssembly, plus numpy, cryptography and
                    charset-normalizer wheels from the Pyodide distribution
-    takeoff.zip    pdfminer.six, pdfplumber, openpyxl and the takeoff modules,
+    takeoff.zip    pdfminer.six, pdfplumber, openpyxl and the takeoff modules (drawings,
+                   match, measure, report, engine),
                    unpacked into the virtual filesystem at start
 
 Everything is served from the page's own origin, as with the credit analyzer:
@@ -43,7 +44,8 @@ TAKEOFF = HERE.parent
 REPO = TAKEOFF.parent
 
 PAGE = ["index.html", "app.js", "worker.js"]
-MODULES = [TAKEOFF / "drawings.py", TAKEOFF / "match.py", TAKEOFF / "report.py", HERE / "engine.py"]
+MODULES = [TAKEOFF / "drawings.py", TAKEOFF / "match.py", TAKEOFF / "measure.py", TAKEOFF / "report.py",
+           HERE / "engine.py"]
 
 # Loaded by worker.js with pyodide.loadPackage; their dependencies come along.
 PYODIDE_PACKAGES = ["numpy", "cryptography", "charset-normalizer"]
