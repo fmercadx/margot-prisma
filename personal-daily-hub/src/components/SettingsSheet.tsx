@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { FileDown, FileUp, Minus, Plus, ShieldCheck, Trash2, X } from '../icons';
+import { FileDown, FileSpreadsheet, FileUp, Minus, Plus, ShieldCheck, Trash2, X } from '../icons';
 import { stepBudget } from '../lib/categories';
 import { formatCents } from '../lib/money';
 import { hourLabel } from '../lib/reminders';
@@ -30,6 +30,8 @@ type Props = {
   exportSupported: boolean;
   exportBusy: boolean;
   onExport: () => void;
+  csvBusy: boolean;
+  onExportCsv: () => void;
   encrypted: boolean;
   version: string;
   hapticsSupported: boolean;
@@ -191,6 +193,30 @@ export function SettingsSheet(p: Props) {
                 </Pressable>
               ) : null}
 
+              {p.exportSupported ? (
+                <Pressable
+                  onPress={p.onExportCsv}
+                  disabled={p.csvBusy}
+                  accessibilityRole="button"
+                  accessibilityLabel="Export expenses as a spreadsheet"
+                  accessibilityHint="Saves every expense as a CSV file you choose where to send. The file is not encrypted."
+                  style={({ pressed }) => [styles.exportRow, pressed && { opacity: 0.7 }]}
+                  testID="export-csv"
+                >
+                  <View style={styles.rowText}>
+                    <Text style={styles.rowTitle}>Export expenses (CSV)</Text>
+                    <Text style={styles.rowSubtitle}>
+                      Every expense as a spreadsheet: date, time, amount, category and label. Not encrypted.
+                    </Text>
+                  </View>
+                  {p.csvBusy ? (
+                    <ActivityIndicator color={colors.textSecondary} />
+                  ) : (
+                    <FileSpreadsheet size={20} color={colors.textSecondary} />
+                  )}
+                </Pressable>
+              ) : null}
+
               {p.restorePreview ? (
                 <RestorePreview {...p.restorePreview} onConfirm={p.onConfirmRestore} onCancel={p.onCancelRestore} />
               ) : (
@@ -316,6 +342,7 @@ function RestorePreview(props: {
     stats.notesAdded ? plural(stats.notesAdded, 'note', 'notes') : '',
     stats.expensesAdded ? plural(stats.expensesAdded, 'expense', 'expenses') : '',
     stats.habitsAdded ? plural(stats.habitsAdded, 'custom habit', 'custom habits') : '',
+    stats.countdownsAdded ? plural(stats.countdownsAdded, 'countdown', 'countdowns') : '',
   ].filter(Boolean);
   const when = props.exportedAt ? new Date(props.exportedAt) : null;
   return (

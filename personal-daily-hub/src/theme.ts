@@ -27,6 +27,8 @@ export const colors = {
   focus: '#FB923C',
   sleep: '#818CF8',
   journal: '#F472B6',
+  insights: '#FACC15',
+  countdown: '#22D3EE',
 
   premium: '#E8C468',
   onPremium: '#121212',

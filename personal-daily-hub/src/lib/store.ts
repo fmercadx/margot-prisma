@@ -61,10 +61,14 @@ export type Settings = {
   hideAmounts: boolean; // show every amount of money as "$•••", for using the app in company
 };
 
+/** A date worth counting down to. */
+export type Countdown = { id: string; label: string; date: string };
+
 export type HubState = {
   habits: Habit[];
   days: Record<string, DayLog>;
   settings: Settings;
+  countdowns: Countdown[]; // soonest first
 };
 
 export const WATER_GOAL_MIN = 4;
@@ -106,6 +110,10 @@ export const RECENT_EXPENSES_MAX = 6;
 export const HABIT_MAX_LENGTH = 60;
 export const EXPENSE_LABEL_MAX_LENGTH = 40;
 export const CUSTOM_HABITS_MAX = 20;
+export const COUNTDOWNS_MAX = 10;
+export const COUNTDOWN_LABEL_MAX_LENGTH = 40;
+/** The furthest ahead a countdown can be set, in days. */
+export const COUNTDOWN_MAX_DAYS = 3650;
 
 export const CORE_HABITS: readonly Habit[] = [
   { id: 'core-move', label: 'Move for 30 minutes', core: true },
@@ -126,10 +134,13 @@ export const EMPTY_DAY: DayLog = Object.freeze({
   expenses: [],
 }) as DayLog;
 
-export const initialState: HubState = { habits: [...CORE_HABITS], days: {}, settings: DEFAULT_SETTINGS };
+export const initialState: HubState = { habits: [...CORE_HABITS], days: {}, settings: DEFAULT_SETTINGS, countdowns: [] };
 
 export type Action =
-  | { type: 'hydrate'; habits: Habit[]; days: Record<string, DayLog>; settings: Settings }
+  | { type: 'hydrate'; habits: Habit[]; days: Record<string, DayLog>; settings: Settings; countdowns?: Countdown[] }
+  | { type: 'addCountdown'; countdown: Countdown }
+  | { type: 'removeCountdown'; id: string }
+  | { type: 'renameHabit'; id: string; label: string }
   | { type: 'updateSettings'; patch: Partial<Settings> }
   | { type: 'restoreNote'; date: string; note: Note }
   | { type: 'restoreExpense'; date: string; expense: Expense }
@@ -150,7 +161,7 @@ export type Action =
   | { type: 'toggleTask'; date: string; id: string; now: number }
   | { type: 'carryOver'; to: string; items: { from: string; id: string; copy: { id: string; createdAt: number } }[] }
   | { type: 'editNote'; date: string; id: string; text: string; now: number }
-  | { type: 'importBackup'; habits: Habit[]; days: Record<string, DayLog> }
+  | { type: 'importBackup'; habits: Habit[]; days: Record<string, DayLog>; countdowns?: Countdown[] }
   | { type: 'addExpense'; date: string; expense: Expense }
   | { type: 'deleteExpense'; date: string; id: string };
 
@@ -170,7 +181,35 @@ function updateDay(state: HubState, date: string, fn: (day: DayLog) => DayLog): 
 export function reducer(state: HubState, action: Action): HubState {
   switch (action.type) {
     case 'hydrate':
-      return { habits: action.habits, days: action.days, settings: action.settings };
+      return {
+        habits: action.habits,
+        days: action.days,
+        settings: action.settings,
+        countdowns: action.countdowns ?? [],
+      };
+
+    case 'addCountdown': {
+      const label = action.countdown.label.trim().slice(0, COUNTDOWN_LABEL_MAX_LENGTH);
+      if (!label || state.countdowns.length >= COUNTDOWNS_MAX) return state;
+      if (state.countdowns.some((c) => c.id === action.countdown.id)) return state;
+      return { ...state, countdowns: sortCountdowns([...state.countdowns, { ...action.countdown, label }]) };
+    }
+
+    case 'removeCountdown': {
+      const countdowns = state.countdowns.filter((c) => c.id !== action.id);
+      return countdowns.length === state.countdowns.length ? state : { ...state, countdowns };
+    }
+
+    case 'renameHabit': {
+      const label = action.label.trim().slice(0, HABIT_MAX_LENGTH);
+      const i = state.habits.findIndex((h) => h.id === action.id);
+      if (i === -1 || state.habits[i].core || !label || state.habits[i].label === label) return state;
+      const clash = state.habits.some((h, j) => j !== i && h.label.toLowerCase() === label.toLowerCase());
+      if (clash) return state;
+      const habits = [...state.habits];
+      habits[i] = { ...habits[i], label };
+      return { ...state, habits };
+    }
 
     case 'updateSettings': {
       const p = action.patch;
@@ -376,7 +415,7 @@ export function reducer(state: HubState, action: Action): HubState {
     }
 
     case 'importBackup':
-      return mergeBackup(state, action.habits, action.days).state;
+      return mergeBackup(state, action.habits, action.days, action.countdowns).state;
 
     case 'addExpense': {
       const { cents } = action.expense;
@@ -406,6 +445,7 @@ export type MergeStats = {
   notesAdded: number;
   expensesAdded: number;
   habitsAdded: number;
+  countdownsAdded: number;
 };
 
 const byNewest = <T extends { createdAt: number }>(a: T, b: T) => b.createdAt - a.createdAt;
@@ -427,8 +467,25 @@ export function mergeBackup(
   state: HubState,
   habits: Habit[],
   days: Record<string, DayLog>,
+  countdowns: Countdown[] = [],
 ): { state: HubState; stats: MergeStats } {
-  const stats: MergeStats = { daysAdded: 0, daysMerged: 0, notesAdded: 0, expensesAdded: 0, habitsAdded: 0 };
+  const stats: MergeStats = {
+    daysAdded: 0,
+    daysMerged: 0,
+    notesAdded: 0,
+    expensesAdded: 0,
+    habitsAdded: 0,
+    countdownsAdded: 0,
+  };
+
+  // Countdowns: by id, up to the cap; the phone's own come first.
+  let nextCountdowns = state.countdowns;
+  for (const c of countdowns) {
+    if (nextCountdowns.length >= COUNTDOWNS_MAX || nextCountdowns.some((x) => x.id === c.id)) continue;
+    nextCountdowns = [...nextCountdowns, c];
+    stats.countdownsAdded++;
+  }
+  if (nextCountdowns !== state.countdowns) nextCountdowns = sortCountdowns(nextCountdowns);
 
   let nextHabits = state.habits;
   for (const h of habits) {
@@ -483,8 +540,11 @@ export function mergeBackup(
     nextDays[date] = merged;
   }
 
-  const unchanged = nextHabits === state.habits && nextDays === state.days;
-  return { state: unchanged ? state : { ...state, habits: nextHabits, days: nextDays }, stats };
+  const unchanged = nextHabits === state.habits && nextDays === state.days && nextCountdowns === state.countdowns;
+  return {
+    state: unchanged ? state : { ...state, habits: nextHabits, days: nextDays, countdowns: nextCountdowns },
+    stats,
+  };
 }
 
 /** Line breaks kept, ends trimmed, capped. Clearing the text clears the entry. */
@@ -537,6 +597,18 @@ export function openTasksBefore(
 /** One line, trimmed, capped. Clearing the text clears the focus. */
 export function cleanFocus(text: string): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, FOCUS_MAX_LENGTH);
+}
+
+/** Soonest first; same day, by name. */
+export function sortCountdowns(list: Countdown[]): Countdown[] {
+  return [...list].sort((a, b) => (a.date === b.date ? a.label.localeCompare(b.label) : a.date < b.date ? -1 : 1));
+}
+
+/** Whole days from `today` to `date` (negative once it has passed). Local calendar days, not 24-hour spans. */
+export function daysUntil(date: string, today: string): number {
+  const a = parseDateKey(today);
+  const b = parseDateKey(date);
+  return Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 86_400_000);
 }
 
 function insertByTime<T extends { createdAt: number }>(list: T[], item: T): T[] {

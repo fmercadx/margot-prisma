@@ -30,16 +30,20 @@ export function removeOldExports(): void {
   }
 }
 
-export async function shareExport(filename: string, json: string): Promise<void> {
+const TYPES = {
+  json: { mimeType: 'application/json', UTI: 'public.json' },
+  csv: { mimeType: 'text/csv', UTI: 'public.comma-separated-values-text' },
+} as const;
+
+export async function shareExport(filename: string, content: string, kind: keyof typeof TYPES = 'json'): Promise<void> {
   removeOldExports();
   const file = new File(Paths.cache, filename);
   file.create({ overwrite: true });
-  await file.write(json);
+  await file.write(content);
   // Not deleted straight after: on Android the receiving app may still be
   // reading it once this resolves. removeOldExports() runs at next launch.
   await Sharing.shareAsync(file.uri, {
-    mimeType: 'application/json',
-    UTI: 'public.json',
+    ...TYPES[kind],
     dialogTitle: 'Export Personal Daily Hub data',
   });
 }
