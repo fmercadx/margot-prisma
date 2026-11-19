@@ -251,6 +251,7 @@ describe('export', () => {
     await fireEvent.press(screen.getByRole('button', { name: 'Save note' }));
     await openSettings();
     await fireEvent.press(screen.getByRole('button', { name: 'Export my data' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Export without a passphrase' }));
 
     await waitFor(() => expect(Sharing.shareAsync).toHaveBeenCalledTimes(1));
     const [uri, options] = Sharing.shareAsync.mock.calls[0];

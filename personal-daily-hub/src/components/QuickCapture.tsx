@@ -29,6 +29,8 @@ type Props = {
   carry: { count: number; from: string } | null;
   onCarry: () => void;
   onDismissCarry: () => void;
+  /** "today", "yesterday" or "on Tuesday": the day being logged. */
+  dayWord?: string;
 };
 
 export function QuickCapture(p: Props) {
@@ -132,7 +134,9 @@ export function QuickCapture(p: Props) {
       </View>
 
       {notes.length === 0 ? (
-        <Text style={styles.empty}>Nothing captured yet today.</Text>
+        <Text style={styles.empty}>
+          {!p.dayWord || p.dayWord === 'today' ? 'Nothing captured yet today.' : `Nothing captured ${p.dayWord}.`}
+        </Text>
       ) : (
         // A nested, natively scrolling list: it grows to a few rows, then
         // scrolls inside the card instead of pushing the rest of the page down.

@@ -32,9 +32,13 @@ type Props = {
   /** "Hide amounts" is on. */
   hidden: boolean;
   onToggleHidden: () => void;
+  /** "today", "yesterday" or "on Tuesday": the day being logged. */
+  dayWord?: string;
 };
 
-export function ExpenseLogger({ expenses, totalCents, budgetCents, onAdd, onDelete, recent, onRepeat, hidden, onToggleHidden }: Props) {
+export function ExpenseLogger(props: Props) {
+  const { expenses, totalCents, budgetCents, onAdd, onDelete, recent, onRepeat, hidden, onToggleHidden } = props;
+  const dayWord = props.dayWord ?? 'today';
   const { money } = useMoney();
   const [amount, setAmount] = useState('');
   const [label, setLabel] = useState('');
@@ -59,7 +63,7 @@ export function ExpenseLogger({ expenses, totalCents, budgetCents, onAdd, onDele
       icon={Wallet}
       accent={colors.expenses}
       title="Expenses"
-      subtitle={expenses.length === 1 ? '1 entry today' : `${expenses.length} entries today`}
+      subtitle={expenses.length === 1 ? `1 entry ${dayWord}` : `${expenses.length} entries ${dayWord}`}
       right={
         <IconButton
           icon={hidden ? EyeOff : Eye}
@@ -73,7 +77,7 @@ export function ExpenseLogger({ expenses, totalCents, budgetCents, onAdd, onDele
       testID="card-expenses"
     >
       <View style={styles.totals}>
-        <Text style={styles.totalLabel}>Spent today</Text>
+        <Text style={styles.totalLabel}>Spent {dayWord}</Text>
         <Text style={styles.total} testID="expense-total" accessibilityLiveRegion="polite">
           {money(totalCents)}
         </Text>

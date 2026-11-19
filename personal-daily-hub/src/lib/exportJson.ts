@@ -42,3 +42,8 @@ export function buildExport(
   };
   return { filename: `${EXPORT_FILE_PREFIX}${dateKey(now)}.json`, json: JSON.stringify(file, null, 2) };
 }
+
+/** A protected backup's name says so, so it isn't mistaken for a readable one. */
+export function protectedFilename(filename: string): string {
+  return filename.replace(/\.json$/, '-protected.json');
+}
