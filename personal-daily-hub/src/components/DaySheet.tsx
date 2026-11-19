@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Check, ChevronLeft, ChevronRight, Circle, CircleCheck, Forward, Target, X } from '../icons';
+import { Check, ChevronLeft, ChevronRight, Circle, CircleCheck, Forward, Share2, Target, X } from '../icons';
+import { dayAsText } from '../lib/dayText';
 import { CATEGORY_LABELS } from '../lib/categories';
 import { clockTime, longDate, parseDateKey, weekdayName } from '../lib/date';
 import { moodWord } from '../lib/mood';
@@ -24,6 +25,8 @@ type Props = {
   onPrev: () => void;
   onNext: () => void;
   onClose: () => void;
+  /** Hands the day, as plain text, to the system share sheet. */
+  onShare: (text: string) => void;
 };
 
 /**
@@ -71,6 +74,12 @@ export function DaySheet(p: Props) {
               <Text style={styles.subtitle}>{date ? longDate(date) : ''}</Text>
             </View>
             <IconButton icon={ChevronRight} label="Next day" onPress={p.onNext} disabled={!p.canNext} filled />
+            <IconButton
+              icon={Share2}
+              label="Share this day"
+              onPress={() => p.date && p.onShare(dayAsText(p.date, day, p.habits, p.waterGoal, money))}
+              filled
+            />
             <IconButton icon={X} label="Close day" onPress={p.onClose} filled />
           </View>
 

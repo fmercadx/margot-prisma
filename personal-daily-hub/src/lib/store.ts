@@ -99,6 +99,8 @@ export const SLEEP_STEP = 0.5;
 export const SLEEP_START = 7;
 /** Streak lengths worth a word of congratulations. */
 export const STREAK_MILESTONES: readonly number[] = [3, 7, 14, 30, 60];
+/** How far back a forgotten day can still be filled in from the home screen. */
+export const EDITABLE_DAYS = 7;
 /** How far back unfinished to-dos are offered to bring over to today. */
 export const CARRY_LOOKBACK_DAYS = 7;
 export const NOTE_MAX_LENGTH = 500;

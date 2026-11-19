@@ -10,12 +10,17 @@ type Props = {
   focus: string;
   /** Saves the day's focus. Saving blank text clears it. */
   onSave: (text: string) => void;
+  /** "today", "yesterday" or "on Tuesday": the day being logged. */
+  dayWord?: string;
 };
 
 /** One line for the thing that matters most today. Tap it to change it. */
-export function TodayFocus({ focus, onSave }: Props) {
+export function TodayFocus({ focus, onSave, dayWord = 'today' }: Props) {
   const [draft, setDraft] = useState<string | null>(null); // null = not editing
   const editing = draft !== null;
+  const today = dayWord === 'today';
+  const title = today ? 'Today’s focus' : `Focus ${dayWord}`;
+  const prompt = today ? 'What matters most today?' : 'What mattered most that day?';
 
   const save = () => {
     if (draft === null) return;
@@ -35,14 +40,14 @@ export function TodayFocus({ focus, onSave }: Props) {
             value={draft}
             onChangeText={setDraft}
             onSubmitEditing={save}
-            placeholder="What matters most today?"
+            placeholder={prompt}
             {...inputColors}
             style={styles.input}
             maxLength={FOCUS_MAX_LENGTH}
             autoFocus
             returnKeyType="done"
             submitBehavior="submit"
-            accessibilityLabel="Today’s focus"
+            accessibilityLabel={title}
             testID="focus-input"
           />
           <IconButton icon={Check} size={18} label="Save focus" onPress={save} color={colors.focus} />
@@ -52,13 +57,15 @@ export function TodayFocus({ focus, onSave }: Props) {
         <Pressable
           onPress={() => setDraft(focus)}
           accessibilityRole="button"
-          accessibilityLabel={focus ? `Today’s focus: ${focus}. Tap to change it` : 'Set today’s focus'}
+          accessibilityLabel={
+            focus ? `${title}: ${focus}. Tap to change it` : today ? 'Set today’s focus' : `Set the focus ${dayWord}`
+          }
           style={({ pressed }) => [styles.body, pressed && { opacity: 0.7 }]}
           testID="focus-edit"
         >
-          <Text style={styles.label}>Today’s focus</Text>
+          <Text style={styles.label}>{title}</Text>
           <Text style={[styles.text, !focus && styles.placeholder]} testID="focus-text">
-            {focus || 'What matters most today?'}
+            {focus || prompt}
           </Text>
         </Pressable>
       )}

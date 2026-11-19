@@ -85,6 +85,8 @@ jest.mock('expo-crypto', () => {
   }
   return {
     __nonces: nonces,
+    getRandomBytes: (n) => new Uint8Array(nodeCrypto.randomBytes(n)),
+    getRandomBytesAsync: async (n) => new Uint8Array(nodeCrypto.randomBytes(n)),
     AESEncryptionKey,
     AESSealedData,
     aesEncryptAsync,

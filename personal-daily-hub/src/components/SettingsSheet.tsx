@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { FileDown, FileSpreadsheet, FileUp, Minus, Plus, ShieldCheck, Trash2, X } from '../icons';
+import { FileDown, FileSpreadsheet, FileUp, KeyRound, Minus, Plus, ShieldCheck, Trash2, X } from '../icons';
+import { PASSPHRASE_MIN_LENGTH } from '../lib/backupCrypto';
 import { stepBudget } from '../lib/categories';
 import { formatCents } from '../lib/money';
 import { hourLabel } from '../lib/reminders';
@@ -15,7 +16,7 @@ import {
   WATER_GOAL_MIN,
   type Settings,
 } from '../lib/store';
-import { colors, radius, space, type } from '../theme';
+import { colors, inputColors, radius, space, type } from '../theme';
 import { IconButton } from './IconButton';
 
 type Props = {
@@ -29,7 +30,12 @@ type Props = {
   onToggleLock: (next: boolean) => void;
   exportSupported: boolean;
   exportBusy: boolean;
-  onExport: () => void;
+  /** The export choices (passphrase or plain) are showing. */
+  exportOpen: boolean;
+  onOpenExport: () => void;
+  onCloseExport: () => void;
+  /** null exports plain JSON. */
+  onExport: (passphrase: string | null) => void;
   csvBusy: boolean;
   onExportCsv: () => void;
   encrypted: boolean;
@@ -41,6 +47,10 @@ type Props = {
   restorePreview: { stats: MergeStats; exportedAt: string | null } | null;
   onConfirmRestore: () => void;
   onCancelRestore: () => void;
+  /** A protected backup was picked and needs its passphrase. */
+  restoreLocked: boolean;
+  restoreUnlockError: string | null;
+  onUnlockRestore: (passphrase: string) => void;
   /** Showing the "are you sure" step for erasing everything. */
   eraseConfirming: boolean;
   eraseBusy: boolean;
@@ -170,27 +180,27 @@ export function SettingsSheet(p: Props) {
               ) : null}
 
               {p.exportSupported ? (
-                <Pressable
-                  onPress={p.onExport}
-                  disabled={p.exportBusy}
-                  accessibilityRole="button"
-                  accessibilityLabel="Export my data"
-                  accessibilityHint="Saves everything as a file you choose where to send. The file is not encrypted."
-                  style={({ pressed }) => [styles.exportRow, pressed && { opacity: 0.7 }]}
-                  testID="export"
-                >
-                  <View style={styles.rowText}>
-                    <Text style={styles.rowTitle}>Export my data</Text>
-                    <Text style={styles.rowSubtitle}>
-                      A JSON file of everything you have logged, sent where you choose. The file is not encrypted.
-                    </Text>
-                  </View>
-                  {p.exportBusy ? (
-                    <ActivityIndicator color={colors.textSecondary} />
-                  ) : (
+                p.exportOpen ? (
+                  <ExportPanel busy={p.exportBusy} onExport={p.onExport} onCancel={p.onCloseExport} />
+                ) : (
+                  <Pressable
+                    onPress={p.onOpenExport}
+                    accessibilityRole="button"
+                    accessibilityLabel="Export my data"
+                    accessibilityHint="Saves everything as a file you choose where to send, protected with a passphrase if you like."
+                    style={({ pressed }) => [styles.exportRow, pressed && { opacity: 0.7 }]}
+                    testID="export"
+                  >
+                    <View style={styles.rowText}>
+                      <Text style={styles.rowTitle}>Export my data</Text>
+                      <Text style={styles.rowSubtitle}>
+                        A file of everything you have logged, sent where you choose. Protect it with a passphrase, or
+                        keep it as plain JSON.
+                      </Text>
+                    </View>
                     <FileDown size={20} color={colors.textSecondary} />
-                  )}
-                </Pressable>
+                  </Pressable>
+                )
               ) : null}
 
               {p.exportSupported ? (
@@ -219,6 +229,13 @@ export function SettingsSheet(p: Props) {
 
               {p.restorePreview ? (
                 <RestorePreview {...p.restorePreview} onConfirm={p.onConfirmRestore} onCancel={p.onCancelRestore} />
+              ) : p.restoreLocked ? (
+                <UnlockPanel
+                  busy={p.restoreBusy}
+                  error={p.restoreUnlockError}
+                  onUnlock={p.onUnlockRestore}
+                  onCancel={p.onCancelRestore}
+                />
               ) : (
                 <Pressable
                   onPress={p.onRestore}
@@ -316,6 +333,150 @@ export function SettingsSheet(p: Props) {
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** Export with a passphrase (the file is encrypted) or without (plain JSON). */
+function ExportPanel(props: { busy: boolean; onExport: (passphrase: string | null) => void; onCancel: () => void }) {
+  const [pass, setPass] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const longEnough = pass.length >= PASSPHRASE_MIN_LENGTH;
+  const matches = pass === confirm;
+  const canProtect = longEnough && matches && !props.busy;
+  const hint = !pass
+    ? `At least ${PASSPHRASE_MIN_LENGTH} characters. A forgotten passphrase can't be recovered.`
+    : !longEnough
+      ? `${PASSPHRASE_MIN_LENGTH - pass.length} more ${PASSPHRASE_MIN_LENGTH - pass.length === 1 ? 'character' : 'characters'}`
+      : !matches
+        ? 'The two passphrases don’t match yet.'
+        : 'Ready. Keep the passphrase somewhere safe: without it the file can’t be opened.';
+  return (
+    <View style={styles.preview} testID="export-panel">
+      <Text style={styles.rowTitle}>Export my data</Text>
+      <TextInput
+        value={pass}
+        onChangeText={setPass}
+        placeholder="Passphrase"
+        {...inputColors}
+        style={styles.field}
+        secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+        textContentType="newPassword"
+        accessibilityLabel="Passphrase"
+      />
+      <TextInput
+        value={confirm}
+        onChangeText={setConfirm}
+        placeholder="The same passphrase again"
+        {...inputColors}
+        style={styles.field}
+        secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+        textContentType="newPassword"
+        accessibilityLabel="Passphrase again"
+      />
+      <Text style={styles.rowSubtitle} accessibilityLiveRegion="polite" testID="export-hint">
+        {hint}
+      </Text>
+      <Pressable
+        onPress={() => canProtect && props.onExport(pass)}
+        disabled={!canProtect}
+        accessibilityRole="button"
+        accessibilityLabel="Export protected"
+        accessibilityState={{ disabled: !canProtect, busy: props.busy }}
+        style={({ pressed }) => [styles.previewButton, styles.previewConfirm, !canProtect && styles.off, pressed && { opacity: 0.85 }]}
+        testID="export-protected"
+      >
+        {props.busy ? (
+          <ActivityIndicator color={colors.background} />
+        ) : (
+          <View style={styles.inline}>
+            <KeyRound size={16} color={canProtect ? colors.background : colors.textMuted} strokeWidth={2.5} />
+            <Text style={[styles.previewConfirmText, !canProtect && styles.offText]}>Export protected</Text>
+          </View>
+        )}
+      </Pressable>
+      <View style={styles.previewButtons}>
+        <Pressable
+          onPress={props.onCancel}
+          disabled={props.busy}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel export"
+          style={({ pressed }) => [styles.previewButton, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={styles.previewCancel}>Cancel</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => props.onExport(null)}
+          disabled={props.busy}
+          accessibilityRole="button"
+          accessibilityLabel="Export without a passphrase"
+          style={({ pressed }) => [styles.previewButton, pressed && { opacity: 0.7 }]}
+          testID="export-plain"
+        >
+          <Text style={styles.previewCancel}>Without a passphrase</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/** A protected backup was picked: ask for its passphrase. */
+function UnlockPanel(props: { busy: boolean; error: string | null; onUnlock: (passphrase: string) => void; onCancel: () => void }) {
+  const [pass, setPass] = useState('');
+  const can = pass.length > 0 && !props.busy;
+  return (
+    <View style={styles.preview} testID="restore-unlock" accessibilityLiveRegion="polite">
+      <Text style={styles.rowTitle}>This backup is protected</Text>
+      <Text style={styles.rowSubtitle}>Enter the passphrase it was exported with.</Text>
+      <TextInput
+        value={pass}
+        onChangeText={setPass}
+        onSubmitEditing={() => can && props.onUnlock(pass)}
+        placeholder="Passphrase"
+        {...inputColors}
+        style={styles.field}
+        secureTextEntry
+        autoCapitalize="none"
+        autoCorrect={false}
+        autoFocus
+        textContentType="password"
+        accessibilityLabel="Backup passphrase"
+      />
+      {props.error ? (
+        <Text style={styles.error} accessibilityRole="alert">
+          {props.error}
+        </Text>
+      ) : null}
+      <View style={styles.previewButtons}>
+        <Pressable
+          onPress={props.onCancel}
+          disabled={props.busy}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel restore"
+          style={({ pressed }) => [styles.previewButton, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={styles.previewCancel}>Cancel</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => can && props.onUnlock(pass)}
+          disabled={!can}
+          accessibilityRole="button"
+          accessibilityLabel="Open backup"
+          accessibilityState={{ disabled: !can, busy: props.busy }}
+          style={({ pressed }) => [styles.previewButton, styles.previewConfirm, !can && styles.off, pressed && { opacity: 0.85 }]}
+          testID="restore-unlock-confirm"
+        >
+          {props.busy ? (
+            <ActivityIndicator color={colors.background} />
+          ) : (
+            <Text style={[styles.previewConfirmText, !can && styles.offText]}>Open</Text>
+          )}
+        </Pressable>
+      </View>
+    </View>
+  );
+}
 
 export function relockLabel(sec: number): string {
   if (sec === 0) return 'At once';
@@ -494,6 +655,18 @@ const styles = StyleSheet.create({
   previewCancel: { ...type.label, color: colors.textSecondary, fontWeight: '700' },
   previewConfirmText: { ...type.label, color: colors.background, fontWeight: '700' },
   eraseButton: { backgroundColor: colors.danger },
+  field: {
+    minHeight: 44,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    color: colors.text,
+    ...type.body,
+  },
+  off: { backgroundColor: colors.card },
+  offText: { color: colors.textMuted },
+  inline: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  error: { ...type.caption, color: colors.danger },
   danger: { color: colors.danger },
   privacy: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.md },
   privacyText: { ...type.caption, color: colors.textSecondary, flex: 1 },

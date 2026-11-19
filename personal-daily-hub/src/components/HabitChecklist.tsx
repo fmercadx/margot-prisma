@@ -29,6 +29,8 @@ type Props = {
   onSetDays: (id: string, days: number[] | null) => void;
   /** Renames a custom habit. Returns null on success, or why not. */
   onRename: (id: string, label: string) => string | null;
+  /** The day being logged is today (false while filling in an earlier day). */
+  isToday?: boolean;
 };
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -129,7 +131,7 @@ export function HabitChecklist(props: Props) {
         {due.map((habit) => renderHabit(habit, false))}
         {resting.length > 0 ? (
           <Text style={styles.restHeader} accessibilityRole="header">
-            Not today
+            {props.isToday === false ? 'Not planned that day' : 'Not today'}
           </Text>
         ) : null}
         {resting.map((habit) => renderHabit(habit, true))}

@@ -1,4 +1,4 @@
-import { Bell, BellRing, CalendarDays, Clock, Crown, Settings } from '../icons';
+import { Bell, BellRing, CalendarDays, ChevronLeft, ChevronRight, Clock, Crown, Settings } from '../icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useClock } from '../hooks/useClock';
@@ -13,9 +13,19 @@ type Props = {
   reminder: { supported: boolean; on: boolean; busy: boolean; hour: number; onToggle: () => void };
   onSettingsPress: () => void;
   message: string | null;
+  /** Which day is being logged, and stepping between today and the past week. */
+  logging: {
+    label: string; // "Today", "Yesterday", "Tuesday", "Last Thursday"
+    fullDate: string;
+    isToday: boolean;
+    canBack: boolean;
+    onBack: () => void;
+    onForward: () => void;
+    onToday: () => void;
+  };
 };
 
-export function Header({ isPremium, onPremiumPress, reminder, onSettingsPress, message }: Props) {
+export function Header({ isPremium, onPremiumPress, reminder, onSettingsPress, message, logging }: Props) {
   const now = useClock();
 
   return (
@@ -69,6 +79,42 @@ export function Header({ isPremium, onPremiumPress, reminder, onSettingsPress, m
         </View>
       </View>
 
+      <View
+        style={[styles.dayBar, !logging.isToday && styles.dayBarPast]}
+        accessibilityRole="toolbar"
+        accessibilityLabel={logging.isToday ? 'Logging today' : `Logging ${logging.fullDate}`}
+        testID="day-bar"
+      >
+        <IconButton
+          icon={ChevronLeft}
+          size={16}
+          label="Log the day before"
+          onPress={logging.onBack}
+          disabled={!logging.canBack}
+          color={logging.isToday ? colors.textSecondary : colors.premium}
+        />
+        <View style={styles.dayBarText}>
+          <Text style={[styles.dayBarLabel, !logging.isToday && { color: colors.premium }]} testID="logging-day">
+            {logging.isToday ? 'Logging today' : `Logging ${logging.label}`}
+          </Text>
+          {!logging.isToday ? <Text style={styles.dayBarDate}>{logging.fullDate}</Text> : null}
+        </View>
+        {logging.isToday ? null : (
+          <>
+            <IconButton icon={ChevronRight} size={16} label="Log the day after" onPress={logging.onForward} color={colors.premium} />
+            <Pressable
+              onPress={logging.onToday}
+              accessibilityRole="button"
+              accessibilityLabel="Back to today"
+              hitSlop={8}
+              style={({ pressed }) => [styles.todayButton, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={styles.todayText}>Today</Text>
+            </Pressable>
+          </>
+        )}
+      </View>
+
       {message ? (
         <Text style={styles.message} accessibilityLiveRegion="polite">
           {message}
@@ -80,6 +126,28 @@ export function Header({ isPremium, onPremiumPress, reminder, onSettingsPress, m
 
 const styles = StyleSheet.create({
   wrap: { gap: space.xs, paddingTop: space.sm, paddingBottom: space.sm },
+  dayBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.xs,
+    marginTop: space.sm,
+    paddingRight: space.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.card,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  dayBarPast: { backgroundColor: tint(colors.premium, 0.1), borderColor: colors.premium },
+  dayBarText: { flex: 1, gap: 1 },
+  dayBarLabel: { ...type.label, color: colors.textSecondary, fontWeight: '600' },
+  dayBarDate: { ...type.caption, color: colors.textSecondary },
+  todayButton: {
+    paddingHorizontal: space.md,
+    paddingVertical: space.xs + 2,
+    borderRadius: radius.pill,
+    backgroundColor: colors.premium,
+  },
+  todayText: { ...type.label, color: colors.onPremium, fontWeight: '700' },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   greeting: { ...type.label, color: colors.textSecondary, letterSpacing: 0.2 },
   actions: { flexDirection: 'row', alignItems: 'center', gap: space.sm },

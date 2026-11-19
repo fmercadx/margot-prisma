@@ -5,7 +5,7 @@ A one-screen, dark-mode daily dashboard built with React Native and Expo
 
 | Module | What it does |
 | --- | --- |
-| Header | Day, date and time, kept current to the minute; greeting; daily-reminder toggle; Settings |
+| Header | Day, date and time, kept current to the minute; greeting; daily-reminder toggle; Settings; step back up to a week to fill in a day you forgot to log |
 | Today's focus | One line for the thing that matters most today; tap to change or clear it |
 | Quick Capture | Timestamped notes and to-dos in a list that scrolls inside its card; tap to edit, tick a to-do off; unfinished to-dos from the past week can be brought over to today; search every note, focus and expense label from any day |
 | Habits | Four core habits with cross-out on completion and day streaks, with a word of congratulations at 3, 7, 14, 30 and 60 days; choose the weekdays each habit is for (days off sit under "Not today" and never break a streak); custom habits, which can be renamed (Premium) |
@@ -14,8 +14,8 @@ A one-screen, dark-mode daily dashboard built with React Native and Expo
 | Journal | A few lines at the end of the day, with a different question each weekday; searchable |
 | Coming up | Countdowns to the dates you're looking forward to: a trip, a birthday, a deadline |
 | Insights | Patterns in your own logs: energy and mood after more sleep or less, mood on days you did a habit, energy when you reached your water goal, the weekday you spend most (Premium) |
-| History | Weekly summary (water, sleep, energy, mood, habits done, spending, where most went), water / sleep / energy / mood / spending charts, a month calendar shaded by habits done with the month's totals and where its money went, and every past day in full (Premium) |
-| Settings | Water goal, reminder time, daily budget, haptic feedback, app lock and how soon it locks again, export and restore your data, expenses as a spreadsheet (CSV), erase everything |
+| History | Day details can be shared as plain text through the share sheet. Weekly summary (water, sleep, energy, mood, habits done, spending, where most went), water / sleep / energy / mood / spending charts, a month calendar shaded by habits done with the month's totals and where its money went, and every past day in full (Premium) |
+| Settings | Water goal, reminder time, daily budget, haptic feedback, app lock and how soon it locks again, export (optionally protected with a passphrase) and restore your data, expenses as a spreadsheet (CSV), erase everything |
 
 Deleting a note, an expense or a custom habit shows **Undo** for five
 seconds.
@@ -32,6 +32,7 @@ What protects what, and why each is there:
 | No network | The release APK has **no INTERNET permission**, so Android itself refuses any connection. The app makes none anyway. | `app.config.js` |
 | No cloud backup | `allowBackup` is off, so the data never lands in a Google backup. Export is the explicit way to take a copy. | `app.json` |
 | Fewest permissions | Push, launcher-badge, storage and photo (`READ_MEDIA_IMAGES`) permissions are stripped; CI fails if one comes back. | `app.json`, APK workflow |
+| Passphrase-protected backups | Export can seal the file with AES-256-GCM under a key derived from a passphrase with scrypt (N = 2^15, r = 8, p = 1; `@noble/hashes`, audited, pure JS). The cost settings and salt are bound in as authenticated data, so editing them makes the file fail to open rather than open weaker. On restore, a file's cost settings are checked against hard limits (N ≤ 2^16, r ≤ 8, p ≤ 2, so at most 64 MB) before any work, so a crafted file can't freeze the phone. There is no recovery for a forgotten passphrase. | `src/lib/backupCrypto.ts` |
 | Spreadsheets can't run your labels | In the CSV export, a label starting with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with an apostrophe, so Excel, Sheets and Numbers show it as text instead of running it as a formula (CSV injection). Commas, quotes and line breaks are quoted per RFC 4180. | `src/lib/exportCsv.ts` |
 | Erase everything | Settings → Erase all data, after a confirmation (and the owner's fingerprint, face or PIN when app lock is on). Every stored value is removed, quarantined copies included, and then the encryption key is deleted from the Keystore / Keychain, so a copy of the database taken earlier can't be decrypted. A new key is made for whatever comes next. The daily reminder is cancelled and old export files are deleted too. | `erase` in `src/hooks/useDailyHub.ts` |
 | Restore treats the file as hostile | A picked backup is size-capped (5 MB), must name this app and a format it knows, and passes the same sanitizers as stored data, with length caps on every string, per-day caps on notes and expenses, real non-future dates only, and at most ten years. Restoring only adds: nothing on the phone is overwritten, and the picker's plain-JSON copy is deleted from the cache once read. | `src/lib/importJson.ts`, `mergeBackup` in `store.ts` |
@@ -52,8 +53,9 @@ Limits worth knowing:
   id; water takes the larger count. Restoring the same file twice adds
   nothing the second time. The preview says exactly what will be added
   before anything is written.
-- An exported file is plain JSON, by design (it is your copy, to open
-  anywhere). Settings says so. Export files are written to the app's private
+- An exported file is plain JSON unless you give it a passphrase (it is
+  your copy, to open anywhere). Settings offers both and says which is which;
+  a protected file is named `…-protected.json`. Export files are written to the app's private
   cache and removed at the next launch.
 - The web demo has no secure key store, so it keeps plain JSON in the
   browser. Its Settings says "Stored only on this device" rather than
@@ -209,6 +211,11 @@ What keeps it safe (`src/hooks/useDailyHub.ts`, `src/lib/storage.ts`):
 - Custom habits are stored in full; a core habit is stored only as its
   schedule (`{ id, core: true, days }`), because its name belongs to the app.
   A 1.4 build reading that skips it, so the habit is simply every day there.
+- Filling in an earlier day (up to 7 back) changes only what is logged:
+  notes, habits, water, sleep, energy, mood, expenses, focus and journal go
+  to that day. Streaks, carry-over, countdowns and streak milestones always
+  count from the real today, and the header bar stays amber until you go
+  back to today.
 - Insights compare two groups of days and say something only when each
   side has at least four days and the gap is clear (half a point of energy,
   a third of a point of mood). The wording is "on days you…", never "because":
@@ -285,6 +292,8 @@ src/components/CategoryBars.tsx  "where it went" bars, for a day and a month
 src/lib/search.ts           accent- and case-insensitive search with match positions (pure)
 src/lib/insights.ts         patterns in the logs, with minimum sample sizes (pure)
 src/lib/exportCsv.ts        expenses as CSV, safe to open in a spreadsheet (pure)
+src/lib/backupCrypto.ts     passphrase-protected backups: scrypt + AES-256-GCM
+src/lib/dayText.ts          one day as plain text, for sharing (pure)
 src/lib/haptics.ts          feedback taps, switchable, silent on web
 src/lib/mood.ts             the five mood words
 src/lib/reminders.ts        daily local reminder (reminders.web.ts stubs it)
