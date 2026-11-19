@@ -1,4 +1,4 @@
-import { Plus, TriangleAlert, Wallet, X } from '../icons';
+import { Eye, EyeOff, Plus, Repeat, TriangleAlert, Wallet, X } from '../icons';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -10,13 +10,14 @@ import {
   type ExpenseCategory,
 } from '../lib/categories';
 import { clockTime } from '../lib/date';
-import { formatCents, parseAmountToCents } from '../lib/money';
+import { parseAmountToCents } from '../lib/money';
 import { expenseName, EXPENSE_LABEL_MAX_LENGTH, type Expense } from '../lib/store';
 import { colors, inputColors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
 import { CategoryBars } from './CategoryBars';
 import { CATEGORY_ICONS } from './categoryIcons';
 import { IconButton } from './IconButton';
+import { useMoney } from './Money';
 
 type Props = {
   expenses: Expense[];
@@ -25,9 +26,16 @@ type Props = {
   budgetCents: number | null;
   onAdd: (cents: number, label: string, category: ExpenseCategory) => void;
   onDelete: (id: string) => void;
+  /** Recent distinct expenses, offered to add again with one tap. */
+  recent: Expense[];
+  onRepeat: (e: Expense) => void;
+  /** "Hide amounts" is on. */
+  hidden: boolean;
+  onToggleHidden: () => void;
 };
 
-export function ExpenseLogger({ expenses, totalCents, budgetCents, onAdd, onDelete }: Props) {
+export function ExpenseLogger({ expenses, totalCents, budgetCents, onAdd, onDelete, recent, onRepeat, hidden, onToggleHidden }: Props) {
+  const { money } = useMoney();
   const [amount, setAmount] = useState('');
   const [label, setLabel] = useState('');
   // Kept after adding: several expenses in a row are often the same kind.
@@ -52,12 +60,22 @@ export function ExpenseLogger({ expenses, totalCents, budgetCents, onAdd, onDele
       accent={colors.expenses}
       title="Expenses"
       subtitle={expenses.length === 1 ? '1 entry today' : `${expenses.length} entries today`}
+      right={
+        <IconButton
+          icon={hidden ? EyeOff : Eye}
+          size={18}
+          label={hidden ? 'Show amounts' : 'Hide amounts'}
+          onPress={onToggleHidden}
+          color={hidden ? colors.expenses : colors.textMuted}
+          testID="toggle-amounts"
+        />
+      }
       testID="card-expenses"
     >
       <View style={styles.totals}>
         <Text style={styles.totalLabel}>Spent today</Text>
         <Text style={styles.total} testID="expense-total" accessibilityLiveRegion="polite">
-          {formatCents(totalCents)}
+          {money(totalCents)}
         </Text>
         {budgetCents !== null ? <Budget spent={totalCents} budget={budgetCents} /> : null}
       </View>
@@ -131,6 +149,36 @@ export function ExpenseLogger({ expenses, totalCents, budgetCents, onAdd, onDele
         })}
       </View>
 
+      {recent.length > 0 ? (
+        <View style={styles.recent} testID="recent-expenses">
+          <View style={styles.recentHead}>
+            <Repeat size={13} color={colors.textSecondary} strokeWidth={2.25} />
+            <Text style={styles.recentTitle}>Add again</Text>
+          </View>
+          <View style={styles.recentRow}>
+            {recent.map((e) => {
+              const Icon = CATEGORY_ICONS[e.category];
+              return (
+                <Pressable
+                  key={e.id}
+                  onPress={() => onRepeat(e)}
+                  hitSlop={4}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Add again: ${expenseName(e)}, ${money(e.cents)}`}
+                  style={({ pressed }) => [styles.again, pressed && { opacity: 0.7 }]}
+                >
+                  <Icon size={13} color={colors.textSecondary} strokeWidth={2.25} />
+                  <Text style={styles.againName} numberOfLines={1}>
+                    {expenseName(e)}
+                  </Text>
+                  <Text style={styles.againAmount}>{money(e.cents)}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
       {expenses.length > 0 ? (
         <ScrollView style={styles.list} nestedScrollEnabled keyboardShouldPersistTaps="handled">
           {expenses.map((e, i) => {
@@ -149,11 +197,11 @@ export function ExpenseLogger({ expenses, totalCents, budgetCents, onAdd, onDele
                     {e.label && e.category !== DEFAULT_CATEGORY ? ` · ${CATEGORY_LABELS[e.category]}` : ''}
                   </Text>
                 </View>
-                <Text style={styles.itemAmount}>{formatCents(e.cents)}</Text>
+                <Text style={styles.itemAmount}>{money(e.cents)}</Text>
                 <IconButton
                   icon={X}
                   size={16}
-                  label={`Delete ${e.label || (e.category === DEFAULT_CATEGORY ? 'expense' : `${CATEGORY_LABELS[e.category].toLowerCase()} expense`)} ${formatCents(e.cents)}`}
+                  label={`Delete ${e.label || (e.category === DEFAULT_CATEGORY ? 'expense' : `${CATEGORY_LABELS[e.category].toLowerCase()} expense`)} ${money(e.cents)}`}
                   onPress={() => onDelete(e.id)}
                   color={colors.textMuted}
                 />
@@ -173,11 +221,12 @@ export function ExpenseLogger({ expenses, totalCents, budgetCents, onAdd, onDele
 
 /** Spent against the day's budget: what is left, or how far over. */
 function Budget({ spent, budget }: { spent: number; budget: number }) {
+  const { money } = useMoney();
   const over = spent > budget;
   const share = Math.min(1, spent / budget);
   const text = over
-    ? `${formatCents(spent - budget)} over your ${formatCents(budget)} budget`
-    : `${formatCents(budget - spent)} left of ${formatCents(budget)}`;
+    ? `${money(spent - budget)} over your ${money(budget)} budget`
+    : `${money(budget - spent)} left of ${money(budget)}`;
   return (
     <View style={styles.budget} testID="budget" accessible accessibilityLabel={text}>
       <View style={styles.track}>
@@ -230,6 +279,23 @@ const styles = StyleSheet.create({
   chipOn: { backgroundColor: tint(colors.expenses, 0.16), borderColor: colors.expenses },
   chipText: { ...type.label, color: colors.textSecondary },
   chipTextOn: { color: colors.text, fontWeight: '600' },
+  recent: { gap: space.sm },
+  recentHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  recentTitle: { ...type.caption, color: colors.textSecondary },
+  recentRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
+  again: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 36,
+    maxWidth: '100%',
+    paddingHorizontal: space.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+  },
+  againName: { ...type.label, color: colors.text, flexShrink: 1 },
+  againAmount: { ...type.label, color: colors.textSecondary, fontVariant: ['tabular-nums'] },
   itemIcon: {
     width: 28,
     height: 28,

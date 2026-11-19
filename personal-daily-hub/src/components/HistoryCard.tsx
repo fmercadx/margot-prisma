@@ -4,19 +4,20 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ChartColumnBig, ChevronRight, Lock } from '../icons';
 import { longDate, parseDateKey, weekdayInitial, weekdayName } from '../lib/date';
 import { CATEGORY_LABELS } from '../lib/categories';
-import { formatCents, formatCentsCompact } from '../lib/money';
 import { moodWord } from '../lib/mood';
-import { ENERGY_MAX, MOOD_MAX, totalCents, type DayLog } from '../lib/store';
+import { ENERGY_MAX, MOOD_MAX, totalCents, type DayLog, type Habit } from '../lib/store';
 import { weekSummary } from '../lib/summary';
 import { colors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
+import { useMoney } from './Money';
 import { MonthCalendar } from './MonthCalendar';
 import { sleepLabel } from './WaterEnergy';
 
 type Props = {
   isPremium: boolean;
   waterGoal: number;
-  habitIds: string[];
+  /** Habits with their schedules: a habit counts only on its days. */
+  habits: Habit[];
   /** Oldest first; the last entry is today. A missing day is null. */
   days: { date: string; log: DayLog | null }[];
   /** Every day in memory, for the month calendar. */
@@ -27,7 +28,8 @@ type Props = {
   onOpenDay: (date: string) => void;
 };
 
-export function HistoryCard({ isPremium, waterGoal, habitIds, days, allDays, firstLoaded, onUnlock, onOpenDay }: Props) {
+export function HistoryCard({ isPremium, waterGoal, habits, days, allDays, firstLoaded, onUnlock, onOpenDay }: Props) {
+  const { money, compact } = useMoney();
   // One selected day for every chart, so they always describe the same date.
   const [selected, setSelected] = useState(days.length - 1);
   const today = days[days.length - 1]?.date;
@@ -46,7 +48,7 @@ export function HistoryCard({ isPremium, waterGoal, habitIds, days, allDays, fir
       {isPremium ? (
         <>
           <Text style={styles.sectionLabel}>Last 7 days</Text>
-          <Summary days={days} habitIds={habitIds} />
+          <Summary days={days} habits={habits} />
           <View style={styles.charts}>
             <MiniColumns
               title="Water"
@@ -100,8 +102,8 @@ export function HistoryCard({ isPremium, waterGoal, habitIds, days, allDays, fir
               onSelect={setSelected}
               value={(d) => (d && d.expenses.length > 0 ? totalCents(d) : null)}
               scaleMax={(vals) => Math.max(1, ...vals)}
-              format={formatCents}
-              short={formatCentsCompact}
+              format={money}
+              short={compact}
             />
           </View>
           <Pressable
@@ -117,7 +119,7 @@ export function HistoryCard({ isPremium, waterGoal, habitIds, days, allDays, fir
           <View style={styles.divider} />
           <MonthCalendar
             days={allDays}
-            habitIds={habitIds}
+            habits={habits}
             today={today}
             firstLoaded={firstLoaded}
             onOpenDay={onOpenDay}
@@ -147,17 +149,18 @@ export function HistoryCard({ isPremium, waterGoal, habitIds, days, allDays, fir
 }
 
 /** Four stat tiles for the week. A measure never logged shows a dash, not a zero. */
-function Summary({ days, habitIds }: { days: Props['days']; habitIds: string[] }) {
-  const s = weekSummary(days, habitIds);
+function Summary({ days, habits }: { days: Props['days']; habits: Habit[] }) {
+  const { money } = useMoney();
+  const s = weekSummary(days, habits);
   const tiles: { label: string; value: string; detail?: string }[] = [
     { label: 'Water a day', value: s.avgWater === null ? '—' : s.avgWater.toFixed(1) },
     { label: 'Sleep a night', value: s.avgSleep === null ? '—' : `${s.avgSleep.toFixed(1)} h` },
     { label: 'Energy', value: s.avgEnergy === null ? '—' : s.avgEnergy.toFixed(1) },
     { label: 'Mood', value: s.avgMood === null ? '—' : moodWord(Math.round(s.avgMood)) },
     { label: 'Habits done', value: s.habitRate === null ? '—' : `${Math.round(s.habitRate * 100)}%` },
-    { label: 'Spent', value: formatCents(s.spentCents) },
+    { label: 'Spent', value: money(s.spentCents) },
     s.topCategory
-      ? { label: 'Most on', value: CATEGORY_LABELS[s.topCategory.category], detail: formatCents(s.topCategory.cents) }
+      ? { label: 'Most on', value: CATEGORY_LABELS[s.topCategory.category], detail: money(s.topCategory.cents) }
       : { label: 'Most on', value: '—' },
   ];
   return (

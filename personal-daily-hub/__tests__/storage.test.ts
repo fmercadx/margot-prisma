@@ -17,7 +17,7 @@ beforeEach(async () => {
 });
 
 test('sanitizeDay turns anything into a valid day', () => {
-  expect(sanitizeDay(null)).toEqual({ focus: '', notes: [], habitsDone: [], water: 0, energy: null, mood: null, sleep: null, expenses: [] });
+  expect(sanitizeDay(null)).toEqual({ focus: '', journal: '', notes: [], habitsDone: [], water: 0, energy: null, mood: null, sleep: null, expenses: [] });
   expect(
     sanitizeDay({
       notes: [{ id: 'n', text: 'ok', createdAt: 1 }, { id: 2 }, 'junk'],
@@ -29,6 +29,7 @@ test('sanitizeDay turns anything into a valid day', () => {
     }),
   ).toEqual({
     focus: '',
+    journal: '',
     notes: [{ id: 'n', text: 'ok', createdAt: 1 }],
     habitsDone: ['a'],
     water: 20,

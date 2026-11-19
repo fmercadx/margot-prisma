@@ -16,7 +16,9 @@ import { ExpenseLogger } from '../components/ExpenseLogger';
 import { HabitChecklist } from '../components/HabitChecklist';
 import { Header } from '../components/Header';
 import { HistoryCard } from '../components/HistoryCard';
+import { Journal } from '../components/Journal';
 import { LockScreen } from '../components/LockScreen';
+import { MoneyVisibility } from '../components/Money';
 import { PaywallModal } from '../components/PaywallModal';
 import { QuickCapture } from '../components/QuickCapture';
 import { SearchSheet } from '../components/SearchSheet';
@@ -56,9 +58,11 @@ import {
   HABIT_MAX_LENGTH,
   type DayLog,
   habitStreak,
+  isScheduled,
   mergeBackup,
   newId,
   openTasksBefore,
+  recentExpenses,
   STREAK_MILESTONES,
   totalCents,
   type Action,
@@ -270,6 +274,8 @@ export default function HomeScreen() {
   }, [state, today]);
 
   // ---- expenses -----------------------------------------------------------
+  const recent = useMemo(() => recentExpenses(state, today), [state, today]);
+
   const deleteExpense = (id: string) => {
     const expense = day.expenses.find((e) => e.id === id);
     if (!expense) return;
@@ -474,191 +480,217 @@ export default function HomeScreen() {
   return (
     // iOS: the ScrollView insets itself for the keyboard. Android: edge-to-edge
     // means the window no longer resizes, so pad for the keyboard here.
-    <KeyboardAvoidingView style={styles.fill} behavior="padding" enabled={Platform.OS === 'android'}>
-      <ScrollView
-        style={styles.fill}
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: insets.top + space.sm, paddingBottom: insets.bottom + space.xxl + (undo ? 64 : 0) },
-        ]}
-        scrollEnabled={scrollEnabled}
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
-        automaticallyAdjustKeyboardInsets
-        showsVerticalScrollIndicator={false}
-        testID="home-scroll"
-      >
-        <View style={styles.column}>
-          <Header
-            isPremium={isPremium}
-            onPremiumPress={() => openPaywall('upgrade')}
-            reminder={{
-              supported: remindersSupported,
-              on: reminderOn,
-              busy: reminderBusy,
-              hour: reminderHour,
-              onToggle: toggleReminder,
-            }}
-            onSettingsPress={() => setSettingsOpen(true)}
-            message={message}
-          />
+    <MoneyVisibility value={state.settings.hideAmounts}>
+      <KeyboardAvoidingView style={styles.fill} behavior="padding" enabled={Platform.OS === 'android'}>
+        <ScrollView
+          style={styles.fill}
+          contentContainerStyle={[
+            styles.content,
+            { paddingTop: insets.top + space.sm, paddingBottom: insets.bottom + space.xxl + (undo ? 64 : 0) },
+          ]}
+          scrollEnabled={scrollEnabled}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          automaticallyAdjustKeyboardInsets
+          showsVerticalScrollIndicator={false}
+          testID="home-scroll"
+        >
+          <View style={styles.column}>
+            <Header
+              isPremium={isPremium}
+              onPremiumPress={() => openPaywall('upgrade')}
+              reminder={{
+                supported: remindersSupported,
+                on: reminderOn,
+                busy: reminderBusy,
+                hour: reminderHour,
+                onToggle: toggleReminder,
+              }}
+              onSettingsPress={() => setSettingsOpen(true)}
+              message={message}
+            />
 
-          {loadFailed ? (
-            <Banner text="Couldn’t read your saved data. To keep it safe, changes made now won’t be saved." />
-          ) : saveFailed ? (
-            <Banner text="Changes aren’t being saved right now. We’ll keep trying." />
-          ) : null}
+            {loadFailed ? (
+              <Banner text="Couldn’t read your saved data. To keep it safe, changes made now won’t be saved." />
+            ) : saveFailed ? (
+              <Banner text="Changes aren’t being saved right now. We’ll keep trying." />
+            ) : null}
 
-          <TodayFocus key={today} focus={day.focus} onSave={saveFocus} />
+            <TodayFocus key={`focus-${today}`} focus={day.focus} onSave={saveFocus} />
 
-          <QuickCapture
-            notes={day.notes}
-            isPremium={isPremium}
-            draft={noteDraft}
-            onDraftChange={setNoteDraft}
-            onSubmit={submitNote}
-            onDelete={deleteNote}
-            onEdit={editNote}
-            onSearch={openSearch}
-            taskMode={taskMode}
-            onTaskModeChange={setTaskMode}
-            onToggleTask={toggleTask}
-            carry={openTasks.length > 0 && carryDismissedOn !== today ? { count: openTasks.length, from: carryFrom } : null}
-            onCarry={carryOver}
-            onDismissCarry={() => setCarryDismissedOn(today)}
-          />
+            <QuickCapture
+              notes={day.notes}
+              isPremium={isPremium}
+              draft={noteDraft}
+              onDraftChange={setNoteDraft}
+              onSubmit={submitNote}
+              onDelete={deleteNote}
+              onEdit={editNote}
+              onSearch={openSearch}
+              taskMode={taskMode}
+              onTaskModeChange={setTaskMode}
+              onToggleTask={toggleTask}
+              carry={openTasks.length > 0 && carryDismissedOn !== today ? { count: openTasks.length, from: carryFrom } : null}
+              onCarry={carryOver}
+              onDismissCarry={() => setCarryDismissedOn(today)}
+            />
 
-          <HabitChecklist
-            habits={state.habits}
-            done={day.habitsDone}
-            streaks={streaks}
-            streakCap={LOADED_DAYS}
-            isPremium={isPremium}
-            composerOpen={habitComposerOpen}
-            onToggle={(id) => {
-              const ticking = !day.habitsDone.includes(id);
-              dispatch({ type: 'toggleHabit', date: today, id });
-              // Not ticked yet today, the streak counts up to yesterday; this tick adds today.
-              const reached = (streaks[id] ?? 0) + 1;
-              const habit = state.habits.find((h) => h.id === id);
-              if (ticking && habit && STREAK_MILESTONES.includes(reached)) {
-                haptic.success();
-                setMessage(`${reached}-day streak on “${habit.label}”. Keep it going!`);
-              } else {
+            <HabitChecklist
+              habits={state.habits}
+              done={day.habitsDone}
+              streaks={streaks}
+              streakCap={LOADED_DAYS}
+              isPremium={isPremium}
+              composerOpen={habitComposerOpen}
+              onToggle={(id) => {
+                const ticking = !day.habitsDone.includes(id);
+                dispatch({ type: 'toggleHabit', date: today, id });
+                // Not ticked yet today, the streak counts up to yesterday; this tick adds today.
+                const reached = (streaks[id] ?? 0) + 1;
+                const habit = state.habits.find((h) => h.id === id);
+                // A tick on a day off doesn't add to the streak, so it is no milestone.
+                if (ticking && habit && isScheduled(habit, today) && STREAK_MILESTONES.includes(reached)) {
+                  haptic.success();
+                  setMessage(`${reached}-day streak on “${habit.label}”. Keep it going!`);
+                } else {
+                  haptic.tick();
+                }
+              }}
+              onRemove={removeHabit}
+              onRequestAdd={requestAddHabit}
+              onCloseComposer={() => setHabitComposerOpen(false)}
+              onAdd={addHabit}
+              today={today}
+              onSetDays={(id, days) => dispatch({ type: 'setHabitDays', id, days })}
+            />
+
+            <WaterEnergy
+              water={day.water}
+              goal={state.settings.waterGoal}
+              energy={day.energy}
+              onAdjustWater={(delta) => {
+                dispatch({ type: 'adjustWater', date: today, delta });
                 haptic.tick();
-              }
-            }}
-            onRemove={removeHabit}
-            onRequestAdd={requestAddHabit}
-            onCloseComposer={() => setHabitComposerOpen(false)}
-            onAdd={addHabit}
-          />
+              }}
+              onSetEnergy={(value) => {
+                dispatch({ type: 'setEnergy', date: today, value });
+                haptic.tick();
+              }}
+              onDragStateChange={(dragging) => setScrollEnabled(!dragging)}
+              mood={day.mood}
+              onSetMood={(value) => {
+                dispatch({ type: 'setMood', date: today, value });
+                haptic.tick();
+              }}
+              sleep={day.sleep}
+              onSetSleep={(value) => {
+                dispatch({ type: 'setSleep', date: today, value });
+                haptic.tick();
+              }}
+            />
 
-          <WaterEnergy
-            water={day.water}
-            goal={state.settings.waterGoal}
-            energy={day.energy}
-            onAdjustWater={(delta) => {
-              dispatch({ type: 'adjustWater', date: today, delta });
-              haptic.tick();
-            }}
-            onSetEnergy={(value) => {
-              dispatch({ type: 'setEnergy', date: today, value });
-              haptic.tick();
-            }}
-            onDragStateChange={(dragging) => setScrollEnabled(!dragging)}
-            mood={day.mood}
-            onSetMood={(value) => {
-              dispatch({ type: 'setMood', date: today, value });
-              haptic.tick();
-            }}
-            sleep={day.sleep}
-            onSetSleep={(value) => {
-              dispatch({ type: 'setSleep', date: today, value });
-              haptic.tick();
-            }}
-          />
+            <ExpenseLogger
+              expenses={day.expenses}
+              totalCents={totalCents(day)}
+              budgetCents={state.settings.dailyBudgetCents}
+              onAdd={(cents, label, category) => {
+                dispatch({
+                  type: 'addExpense',
+                  date: today,
+                  expense: { id: newId('exp'), cents, label, category, createdAt: Date.now() },
+                });
+                haptic.success();
+              }}
+              onDelete={deleteExpense}
+              recent={recent}
+              onRepeat={(e) => {
+                dispatch({
+                  type: 'addExpense',
+                  date: today,
+                  expense: { id: newId('exp'), cents: e.cents, label: e.label, category: e.category, createdAt: Date.now() },
+                });
+                haptic.success();
+              }}
+              hidden={state.settings.hideAmounts}
+              onToggleHidden={() => changeSettings({ hideAmounts: !state.settings.hideAmounts })}
+            />
 
-          <ExpenseLogger
-            expenses={day.expenses}
-            totalCents={totalCents(day)}
-            budgetCents={state.settings.dailyBudgetCents}
-            onAdd={(cents, label, category) => {
-              dispatch({
-                type: 'addExpense',
-                date: today,
-                expense: { id: newId('exp'), cents, label, category, createdAt: Date.now() },
-              });
-              haptic.success();
-            }}
-            onDelete={deleteExpense}
-          />
+            <Journal
+              key={`journal-${today}`}
+              date={today}
+              entry={day.journal}
+              onSave={(text) => {
+                dispatch({ type: 'setJournal', date: today, text });
+                haptic.success();
+              }}
+            />
 
-          <HistoryCard
-            isPremium={isPremium}
-            waterGoal={state.settings.waterGoal}
-            habitIds={state.habits.map((h) => h.id)}
-            days={history}
-            allDays={state.days}
-            firstLoaded={loadedDates[0]}
-            onUnlock={() => openPaywall('history')}
-            onOpenDay={setOpenDay}
-          />
-        </View>
-      </ScrollView>
+            <HistoryCard
+              isPremium={isPremium}
+              waterGoal={state.settings.waterGoal}
+              habits={state.habits}
+              days={history}
+              allDays={state.days}
+              firstLoaded={loadedDates[0]}
+              onUnlock={() => openPaywall('history')}
+              onOpenDay={setOpenDay}
+            />
+          </View>
+        </ScrollView>
 
-      {undo ? <UndoToast message={undo.message} onUndo={runUndo} /> : null}
+        {undo ? <UndoToast message={undo.message} onUndo={runUndo} /> : null}
 
-      <PaywallModal reason={paywall} onClose={closePaywall} onUnlock={unlockPremium} />
+        <PaywallModal reason={paywall} onClose={closePaywall} onUnlock={unlockPremium} />
 
-      <SettingsSheet
-        visible={settingsOpen}
-        onClose={() => {
-          setSettingsOpen(false);
-          setRestorePending(null);
-          setEraseConfirming(false);
-        }}
-        settings={state.settings}
-        onChange={changeSettings}
-        reminderOn={reminderOn}
-        lockSupported={appLockSupported}
-        lockBusy={lockBusy}
-        onToggleLock={toggleLock}
-        exportSupported={canExport}
-        exportBusy={exportBusy}
-        onExport={runExport}
-        encrypted={encrypted}
-        version={appConfig.expo.version}
-        hapticsSupported={Platform.OS !== 'web'}
-        restoreBusy={restoreBusy}
-        onRestore={startRestore}
-        restorePreview={
-          restorePending ? { stats: restorePending.stats, exportedAt: restorePending.backup.exportedAt } : null
-        }
-        onConfirmRestore={confirmRestore}
-        onCancelRestore={() => setRestorePending(null)}
-        eraseConfirming={eraseConfirming}
-        eraseBusy={eraseBusy}
-        onRequestErase={() => setEraseConfirming(true)}
-        onConfirmErase={eraseEverything}
-        onCancelErase={() => setEraseConfirming(false)}
-      />
+        <SettingsSheet
+          visible={settingsOpen}
+          onClose={() => {
+            setSettingsOpen(false);
+            setRestorePending(null);
+            setEraseConfirming(false);
+          }}
+          settings={state.settings}
+          onChange={changeSettings}
+          reminderOn={reminderOn}
+          lockSupported={appLockSupported}
+          lockBusy={lockBusy}
+          onToggleLock={toggleLock}
+          exportSupported={canExport}
+          exportBusy={exportBusy}
+          onExport={runExport}
+          encrypted={encrypted}
+          version={appConfig.expo.version}
+          hapticsSupported={Platform.OS !== 'web'}
+          restoreBusy={restoreBusy}
+          onRestore={startRestore}
+          restorePreview={
+            restorePending ? { stats: restorePending.stats, exportedAt: restorePending.backup.exportedAt } : null
+          }
+          onConfirmRestore={confirmRestore}
+          onCancelRestore={() => setRestorePending(null)}
+          eraseConfirming={eraseConfirming}
+          eraseBusy={eraseBusy}
+          onRequestErase={() => setEraseConfirming(true)}
+          onConfirmErase={eraseEverything}
+          onCancelErase={() => setEraseConfirming(false)}
+        />
 
-      <SearchSheet visible={searchOpen} days={searchDays} today={today} onClose={() => setSearchOpen(false)} />
+        <SearchSheet visible={searchOpen} days={searchDays} today={today} onClose={() => setSearchOpen(false)} />
 
-      <DaySheet
-        date={openDay}
-        isToday={openDay === today}
-        log={openDay ? (state.days[openDay] ?? null) : null}
-        habits={state.habits}
-        waterGoal={state.settings.waterGoal}
-        canPrev={openIndex > 0}
-        canNext={openIndex >= 0 && openIndex < loadedDates.length - 1}
-        onPrev={() => openIndex > 0 && setOpenDay(loadedDates[openIndex - 1])}
-        onNext={() => openIndex < loadedDates.length - 1 && setOpenDay(loadedDates[openIndex + 1])}
-        onClose={() => setOpenDay(null)}
-      />
-    </KeyboardAvoidingView>
+        <DaySheet
+          date={openDay}
+          isToday={openDay === today}
+          log={openDay ? (state.days[openDay] ?? null) : null}
+          habits={state.habits}
+          waterGoal={state.settings.waterGoal}
+          canPrev={openIndex > 0}
+          canNext={openIndex >= 0 && openIndex < loadedDates.length - 1}
+          onPrev={() => openIndex > 0 && setOpenDay(loadedDates[openIndex - 1])}
+          onNext={() => openIndex < loadedDates.length - 1 && setOpenDay(loadedDates[openIndex + 1])}
+          onClose={() => setOpenDay(null)}
+        />
+      </KeyboardAvoidingView>
+    </MoneyVisibility>
   );
 }
 

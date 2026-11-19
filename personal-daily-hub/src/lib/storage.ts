@@ -29,6 +29,8 @@ import {
   EXPENSE_LABEL_MAX_LENGTH,
   FOCUS_MAX_LENGTH,
   HABIT_MAX_LENGTH,
+  JOURNAL_MAX_LENGTH,
+  normalizeDays,
   MOOD_MAX,
   MOOD_MIN,
   NOTE_MAX_LENGTH,
@@ -121,8 +123,10 @@ export function sanitizeDay(v: unknown): DayLog {
   const o = isObj(v) ? v : {};
   const water = isNum(o.water) ? Math.min(WATER_MAX, Math.max(0, Math.round(o.water))) : 0;
   const focus = isStr(o.focus) ? o.focus.slice(0, FOCUS_MAX_LENGTH * 4).replace(/\s+/g, ' ').trim().slice(0, FOCUS_MAX_LENGTH) : '';
+  const journal = isStr(o.journal) ? o.journal.slice(0, JOURNAL_MAX_LENGTH * 2).replace(/\r\n?/g, '\n').trim().slice(0, JOURNAL_MAX_LENGTH) : '';
   return {
     focus,
+    journal,
     notes: list(o.notes, sanitizeNote),
     habitsDone: Array.isArray(o.habitsDone)
       ? [...new Set(o.habitsDone.slice(0, CUSTOM_HABITS_MAX + CORE_HABITS.length).filter(isId))]
@@ -149,22 +153,42 @@ export function sanitizeSettings(v: unknown): Settings {
       isNum(o.relockAfterSec) && RELOCK_CHOICES_SEC.includes(o.relockAfterSec)
         ? o.relockAfterSec
         : DEFAULT_SETTINGS.relockAfterSec,
+    hideAmounts: o.hideAmounts === true,
   };
 }
 
-/** Custom habits from storage, with the four core habits always present. */
+/** A stored schedule, or undefined for every day (and for anything invalid). */
+function sanitizeDays(v: unknown): number[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  return normalizeDays(v.slice(0, 7)) ?? undefined;
+}
+
+const withDays = (h: Habit, days: number[] | undefined): Habit => (days ? { ...h, days } : h);
+
+/**
+ * Custom habits from storage, with the four core habits always present.
+ * A core habit is stored only as `{ id, core: true, days }` when it has a
+ * schedule; its name is the app's.
+ */
 export function sanitizeHabits(v: unknown): Habit[] {
+  const raw = Array.isArray(v) ? v.slice(0, CUSTOM_HABITS_MAX * 2 + CORE_HABITS.length) : [];
+  const coreDays = new Map<string, number[]>();
+  for (const h of raw) {
+    if (!isObj(h) || h.core !== true || !isId(h.id) || coreDays.has(h.id)) continue;
+    const days = sanitizeDays(h.days);
+    if (days && CORE_HABITS.some((c) => c.id === h.id)) coreDays.set(h.id, days);
+  }
   const custom = list(
-    v,
+    raw,
     (h) =>
       isObj(h) && isId(h.id) && isStr(h.label) && h.core !== true && h.label.trim()
-        ? { id: h.id, label: h.label.trim().slice(0, HABIT_MAX_LENGTH), core: false }
+        ? withDays({ id: h.id, label: h.label.trim().slice(0, HABIT_MAX_LENGTH), core: false }, sanitizeDays(h.days))
         : null,
     CUSTOM_HABITS_MAX * 2,
   )
     .filter((h) => !CORE_HABITS.some((c) => c.id === h.id))
     .slice(0, CUSTOM_HABITS_MAX);
-  return [...CORE_HABITS, ...custom];
+  return [...CORE_HABITS.map((c) => withDays(c, coreDays.get(c.id))), ...custom];
 }
 
 // ---- the codec ------------------------------------------------------------
@@ -349,7 +373,12 @@ export function createPersister(
   };
 }
 
-/** Only custom habits are stored; the core four are part of the app. */
-export function habitsForStorage(habits: Habit[]): Habit[] {
-  return habits.filter((h) => !h.core);
+/**
+ * Custom habits in full; a core habit only for its schedule, since its
+ * name and id are part of the app.
+ */
+type StoredHabit = Habit | { id: string; core: true; days: number[] };
+
+export function habitsForStorage(habits: Habit[]): StoredHabit[] {
+  return habits.flatMap((h): StoredHabit[] => (!h.core ? [h] : h.days ? [{ id: h.id, core: true, days: h.days }] : []));
 }

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { NotebookPen, Search, SearchX, Target, Wallet, X } from '../icons';
+import { BookHeart, NotebookPen, Search, SearchX, Target, Wallet, X } from '../icons';
 import { clockTime, longDate, parseDateKey, weekdayName } from '../lib/date';
 import { SEARCH_QUERY_MAX, searchDays, type SearchHit } from '../lib/search';
 import type { DayLog } from '../lib/store';
@@ -31,6 +31,7 @@ type Props = {
 const KIND = {
   note: { icon: NotebookPen, color: colors.notes, name: 'Note' },
   focus: { icon: Target, color: colors.focus, name: 'Focus' },
+  journal: { icon: BookHeart, color: colors.journal, name: 'Journal' },
   expense: { icon: Wallet, color: colors.expenses, name: 'Expense' },
 } as const;
 
@@ -64,7 +65,7 @@ export function SearchSheet({ visible, days, today, onClose }: Props) {
               <TextInput
                 value={query}
                 onChangeText={setQuery}
-                placeholder="Search notes, focus and expenses"
+                placeholder="Search notes, journal, expenses…"
                 {...inputColors}
                 style={styles.input}
                 maxLength={SEARCH_QUERY_MAX}

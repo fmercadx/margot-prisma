@@ -3,7 +3,7 @@
 // directly.
 
 import { CATEGORY_LABELS, DEFAULT_CATEGORY, isBudget, isCategory, type ExpenseCategory } from './categories';
-import { lastNDays } from './date';
+import { lastNDays, parseDateKey } from './date';
 //
 // Daily data is keyed by local date string, so "today" starts empty each
 // morning while every earlier day stays where it was:
@@ -31,10 +31,17 @@ export type Note = {
   carriedTo?: string;
 };
 export type Expense = { id: string; cents: number; label: string; category: ExpenseCategory; createdAt: number };
-export type Habit = { id: string; label: string; core: boolean };
+export type Habit = {
+  id: string;
+  label: string;
+  core: boolean;
+  /** Weekdays it is meant for (0 = Sunday … 6 = Saturday), sorted. Absent = every day. */
+  days?: number[];
+};
 
 export type DayLog = {
   focus: string; // the one thing that matters today; '' until set
+  journal: string; // a few lines at the end of the day; '' until written
   notes: Note[]; // newest first
   habitsDone: string[]; // ids of habits ticked that day
   water: number; // glasses
@@ -51,6 +58,7 @@ export type Settings = {
   haptics: boolean; // a light tap of feedback on ticks, steps and saves
   dailyBudgetCents: number | null; // spending limit for a day; null = no budget
   relockAfterSec: number; // with app lock on: time in the background before it locks again
+  hideAmounts: boolean; // show every amount of money as "$•••", for using the app in company
 };
 
 export type HubState = {
@@ -70,6 +78,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   haptics: true,
   dailyBudgetCents: null,
   relockAfterSec: 30,
+  hideAmounts: false,
 });
 
 /** The choices for how long the app may sit in the background before locking again. */
@@ -90,6 +99,10 @@ export const STREAK_MILESTONES: readonly number[] = [3, 7, 14, 30, 60];
 export const CARRY_LOOKBACK_DAYS = 7;
 export const NOTE_MAX_LENGTH = 500;
 export const FOCUS_MAX_LENGTH = 120;
+export const JOURNAL_MAX_LENGTH = 2000;
+/** How far back recent expenses are offered to add again. */
+export const RECENT_EXPENSE_DAYS = 14;
+export const RECENT_EXPENSES_MAX = 6;
 export const HABIT_MAX_LENGTH = 60;
 export const EXPENSE_LABEL_MAX_LENGTH = 40;
 export const CUSTOM_HABITS_MAX = 20;
@@ -103,6 +116,7 @@ export const CORE_HABITS: readonly Habit[] = [
 
 export const EMPTY_DAY: DayLog = Object.freeze({
   focus: '',
+  journal: '',
   notes: [],
   habitsDone: [],
   water: 0,
@@ -130,6 +144,8 @@ export type Action =
   | { type: 'setEnergy'; date: string; value: number }
   | { type: 'setMood'; date: string; value: number | null }
   | { type: 'setFocus'; date: string; text: string }
+  | { type: 'setJournal'; date: string; text: string }
+  | { type: 'setHabitDays'; id: string; days: number[] | null }
   | { type: 'setSleep'; date: string; value: number | null }
   | { type: 'toggleTask'; date: string; id: string; now: number }
   | { type: 'carryOver'; to: string; items: { from: string; id: string; copy: { id: string; createdAt: number } }[] }
@@ -177,6 +193,7 @@ export function reducer(state: HubState, action: Action): HubState {
           p.relockAfterSec !== undefined && RELOCK_CHOICES_SEC.includes(p.relockAfterSec)
             ? p.relockAfterSec
             : cur.relockAfterSec,
+        hideAmounts: p.hideAmounts === undefined ? cur.hideAmounts : p.hideAmounts === true,
       };
       const same =
         next.waterGoal === cur.waterGoal &&
@@ -184,7 +201,8 @@ export function reducer(state: HubState, action: Action): HubState {
         next.lockEnabled === cur.lockEnabled &&
         next.haptics === cur.haptics &&
         next.dailyBudgetCents === cur.dailyBudgetCents &&
-        next.relockAfterSec === cur.relockAfterSec;
+        next.relockAfterSec === cur.relockAfterSec &&
+        next.hideAmounts === cur.hideAmounts;
       return same ? state : { ...state, settings: next };
     }
 
@@ -298,6 +316,25 @@ export function reducer(state: HubState, action: Action): HubState {
     case 'setFocus': {
       const focus = cleanFocus(action.text);
       return updateDay(state, action.date, (d) => (focus === d.focus ? d : { ...d, focus }));
+    }
+
+    case 'setJournal': {
+      const journal = cleanJournal(action.text);
+      return updateDay(state, action.date, (d) => (journal === d.journal ? d : { ...d, journal }));
+    }
+
+    case 'setHabitDays': {
+      const i = state.habits.findIndex((h) => h.id === action.id);
+      if (i === -1) return state;
+      const days = action.days === null ? undefined : normalizeDays(action.days);
+      if (days === null) return state; // a habit needs at least one day
+      const cur = state.habits[i];
+      if (sameDays(cur.days, days)) return state;
+      const habits = [...state.habits];
+      const next: Habit = { id: cur.id, label: cur.label, core: cur.core };
+      if (days) next.days = days;
+      habits[i] = next;
+      return { ...state, habits };
     }
 
     case 'setSleep':
@@ -417,6 +454,7 @@ export function mergeBackup(
       const habitsDone = [...new Set([...mine.habitsDone, ...theirs.habitsDone])];
       const candidate: DayLog = {
         focus: mine.focus || theirs.focus,
+        journal: mine.journal || theirs.journal,
         notes: notes.list,
         expenses: expenses.list,
         habitsDone: habitsDone.length === mine.habitsDone.length ? mine.habitsDone : habitsDone,
@@ -427,6 +465,7 @@ export function mergeBackup(
       };
       const changed =
         candidate.focus !== mine.focus ||
+        candidate.journal !== mine.journal ||
         candidate.notes !== mine.notes ||
         candidate.expenses !== mine.expenses ||
         candidate.habitsDone !== mine.habitsDone ||
@@ -446,6 +485,30 @@ export function mergeBackup(
 
   const unchanged = nextHabits === state.habits && nextDays === state.days;
   return { state: unchanged ? state : { ...state, habits: nextHabits, days: nextDays }, stats };
+}
+
+/** Line breaks kept, ends trimmed, capped. Clearing the text clears the entry. */
+export function cleanJournal(text: string): string {
+  return text.replace(/\r\n?/g, '\n').trim().slice(0, JOURNAL_MAX_LENGTH);
+}
+
+/**
+ * Weekdays as a sorted list of 0–6. All seven means every day (undefined);
+ * none is not a schedule (null).
+ */
+export function normalizeDays(days: readonly unknown[]): number[] | undefined | null {
+  const set = [...new Set(days.filter((d): d is number => Number.isInteger(d) && (d as number) >= 0 && (d as number) <= 6))].sort();
+  if (set.length === 0) return null;
+  return set.length === 7 ? undefined : set;
+}
+
+function sameDays(a: number[] | undefined, b: number[] | undefined): boolean {
+  return (a ?? []).join() === (b ?? []).join();
+}
+
+/** Whether the habit is meant for that date. */
+export function isScheduled(habit: Pick<Habit, 'days'>, date: string): boolean {
+  return !habit.days || habit.days.includes(parseDateKey(date).getDay());
 }
 
 /** Half-hour steps between 0 and SLEEP_MAX. */
@@ -490,15 +553,39 @@ function insertByTime<T extends { createdAt: number }>(list: T[], item: T): T[] 
  * history the app has loaded.
  */
 export function habitStreak(state: HubState, habitId: string, today: string, maxDays: number): number {
+  const habit = state.habits.find((h) => h.id === habitId) ?? { days: undefined };
   const days = lastNDays(today, maxDays + 1).reverse(); // today first
   const doneOn = (date: string) => state.days[date]?.habitsDone.includes(habitId) ?? false;
-  let i = doneOn(days[0]) ? 0 : 1;
+  // Days the habit isn't meant for are stepped over: they neither count nor break it.
+  let i = doneOn(days[0]) && isScheduled(habit, days[0]) ? 0 : 1;
   let streak = 0;
-  while (i < days.length && streak < maxDays && doneOn(days[i])) {
+  for (; i < days.length && streak < maxDays; i++) {
+    if (!isScheduled(habit, days[i])) continue;
+    if (!doneOn(days[i])) break;
     streak++;
-    i++;
   }
   return streak;
+}
+
+/**
+ * Distinct expenses from today and the RECENT_EXPENSE_DAYS days before,
+ * most recent first, for adding again with one tap. Two are the same when
+ * label, amount and category all match.
+ */
+export function recentExpenses(state: HubState, today: string): Expense[] {
+  const seen = new Set<string>();
+  const out: Expense[] = [];
+  const days = lastNDays(today, RECENT_EXPENSE_DAYS + 1).reverse(); // today first
+  for (const date of days) {
+    for (const e of state.days[date]?.expenses ?? []) {
+      const key = `${e.label.trim().toLowerCase()}|${e.cents}|${e.category}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(e);
+      if (out.length === RECENT_EXPENSES_MAX) return out;
+    }
+  }
+  return out;
 }
 
 /** What an expense is called: its label, else its category ("Expense" for other). */
@@ -518,6 +605,7 @@ export function habitsDoneCount(state: HubState, day: DayLog): number {
 export function hasAnyData(day: DayLog): boolean {
   return (
     day.focus !== '' ||
+    day.journal !== '' ||
     day.notes.length > 0 ||
     day.habitsDone.length > 0 ||
     day.water > 0 ||

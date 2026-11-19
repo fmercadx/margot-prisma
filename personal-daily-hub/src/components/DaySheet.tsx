@@ -5,12 +5,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Check, ChevronLeft, ChevronRight, Circle, CircleCheck, Forward, Target, X } from '../icons';
 import { CATEGORY_LABELS } from '../lib/categories';
 import { clockTime, longDate, parseDateKey, weekdayName } from '../lib/date';
-import { formatCents } from '../lib/money';
 import { moodWord } from '../lib/mood';
-import { ENERGY_MAX, EMPTY_DAY, expenseName, totalCents, type DayLog, type Habit } from '../lib/store';
+import { ENERGY_MAX, EMPTY_DAY, expenseName, isScheduled, totalCents, type DayLog, type Habit } from '../lib/store';
 import { colors, radius, space, type } from '../theme';
 import { CATEGORY_ICONS } from './categoryIcons';
 import { IconButton } from './IconButton';
+import { useMoney } from './Money';
 import { sleepLabel } from './WaterEnergy';
 
 type Props = {
@@ -32,11 +32,16 @@ type Props = {
  */
 export function DaySheet(p: Props) {
   const insets = useSafeAreaInsets();
+  const { money } = useMoney();
   const day = p.log ?? EMPTY_DAY;
   const date = p.date ? parseDateKey(p.date) : null;
   const done = p.habits.filter((h) => day.habitsDone.includes(h.id));
+  // Out of the habits meant for that weekday; one done on a day off still shows.
+  const due = p.date ? p.habits.filter((h) => isScheduled(h, p.date!)) : p.habits;
+  const doneDue = due.filter((h) => day.habitsDone.includes(h.id)).length;
   const nothing =
     !day.focus &&
+    !day.journal &&
     day.notes.length === 0 &&
     day.expenses.length === 0 &&
     done.length === 0 &&
@@ -75,7 +80,7 @@ export function DaySheet(p: Props) {
               <Stat label="Sleep" value={day.sleep === null ? '—' : sleepLabel(day.sleep)} />
               <Stat label="Energy" value={day.energy === null ? '—' : `${day.energy}/${ENERGY_MAX}`} />
               <Stat label="Mood" value={day.mood === null ? '—' : moodWord(day.mood)} />
-              <Stat label="Spent" value={day.expenses.length ? formatCents(totalCents(day)) : '—'} />
+              <Stat label="Spent" value={day.expenses.length ? money(totalCents(day)) : '—'} />
             </View>
 
             {nothing ? <Text style={styles.empty}>Nothing was logged on this day.</Text> : null}
@@ -88,7 +93,7 @@ export function DaySheet(p: Props) {
             ) : null}
 
             {done.length > 0 ? (
-              <Section title={`Habits · ${done.length}/${p.habits.length}`}>
+              <Section title={`Habits · ${doneDue}/${due.length}`}>
                 {done.map((h) => (
                   <View key={h.id} style={styles.line}>
                     <Check size={16} color={colors.habits} strokeWidth={3} />
@@ -138,8 +143,16 @@ export function DaySheet(p: Props) {
               </Section>
             ) : null}
 
+            {day.journal ? (
+              <Section title="Journal">
+                <Text style={[styles.lineText, styles.journal]} testID="day-journal">
+                  {day.journal}
+                </Text>
+              </Section>
+            ) : null}
+
             {day.expenses.length > 0 ? (
-              <Section title={`Expenses · ${formatCents(totalCents(day))}`}>
+              <Section title={`Expenses · ${money(totalCents(day))}`}>
                 {day.expenses.map((e) => {
                   const Icon = CATEGORY_ICONS[e.category];
                   return (
@@ -151,7 +164,7 @@ export function DaySheet(p: Props) {
                           {clockTime(e.createdAt)} · {CATEGORY_LABELS[e.category]}
                         </Text>
                       </View>
-                      <Text style={styles.amount}>{formatCents(e.cents)}</Text>
+                      <Text style={styles.amount}>{money(e.cents)}</Text>
                     </View>
                   );
                 })}
@@ -229,4 +242,5 @@ const styles = StyleSheet.create({
   lineText: { ...type.body, color: colors.text, flexShrink: 1 },
   meta: { ...type.caption, color: colors.textMuted, fontVariant: ['tabular-nums'] },
   amount: { ...type.body, color: colors.text, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  journal: { paddingVertical: space.sm, lineHeight: 22 },
 });

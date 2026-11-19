@@ -3,16 +3,16 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ChevronLeft, ChevronRight } from '../icons';
 import { dateKey, longDate, monthTitle, parseDateKey } from '../lib/date';
-import { formatCents } from '../lib/money';
-import { hasAnyData, type DayLog } from '../lib/store';
+import { hasAnyData, isScheduled, type DayLog, type Habit } from '../lib/store';
 import { monthSummary } from '../lib/summary';
 import { colors, radius, space, tint, type } from '../theme';
 import { CategoryBars } from './CategoryBars';
 import { IconButton } from './IconButton';
+import { useMoney } from './Money';
 
 type Props = {
   days: Record<string, DayLog>;
-  habitIds: string[];
+  habits: Habit[];
   today: string;
   /** The oldest day in memory; earlier days can't be opened. */
   firstLoaded: string;
@@ -42,7 +42,8 @@ export function habitLevel(done: number, total: number): number {
  * One month, each day shaded by how many habits were done. Tap a day to
  * see everything from it. Steps back through the months the app has loaded.
  */
-export function MonthCalendar({ days, habitIds, today, firstLoaded, onOpenDay }: Props) {
+export function MonthCalendar({ days, habits, today, firstLoaded, onOpenDay }: Props) {
+  const { money } = useMoney();
   const [offset, setOffset] = useState(0); // 0 = this month, -1 = last month…
   useEffect(() => setOffset(0), [today]);
 
@@ -63,7 +64,7 @@ export function MonthCalendar({ days, habitIds, today, firstLoaded, onOpenDay }:
 
   // The month's figures cover the days already begun that are in memory.
   const counted = cells.filter((k): k is string => k !== null && k <= today && k >= firstLoaded);
-  const summary = monthSummary(days, counted, habitIds);
+  const summary = monthSummary(days, counted, habits);
   const monthName = monthTitle(first).split(' ')[0];
   const partial = counted.length > 0 && counted[0] > dateKey(first);
   const weeks = Array.from({ length: cells.length / 7 }, (_, w) => cells.slice(w * 7, w * 7 + 7));
@@ -94,15 +95,17 @@ export function MonthCalendar({ days, habitIds, today, firstLoaded, onOpenDay }:
             const future = key > today;
             const openable = !future && key >= firstLoaded;
             const log = days[key];
-            const done = log ? habitIds.filter((id) => log.habitsDone.includes(id)).length : 0;
-            const level = habitLevel(done, habitIds.length);
+            // Out of the habits meant for that weekday.
+            const due = habits.filter((h) => isScheduled(h, key));
+            const done = log ? due.filter((h) => log.habitsDone.includes(h.id)).length : 0;
+            const level = habitLevel(done, due.length);
             const isToday = key === today;
             const what = !openable
               ? future
                 ? 'still to come'
                 : 'not loaded'
               : done > 0
-                ? `${done} of ${habitIds.length} habits done`
+                ? `${done} of ${due.length} habits done`
                 : log && hasAnyData(log)
                   ? 'no habits done'
                   : 'nothing logged';
@@ -144,7 +147,7 @@ export function MonthCalendar({ days, habitIds, today, firstLoaded, onOpenDay }:
       <View style={styles.stats} testID="month-summary">
         {[
           { label: 'Habits done', value: summary.habitRate === null ? '—' : `${Math.round(summary.habitRate * 100)}%` },
-          { label: 'Spent', value: formatCents(summary.spentCents) },
+          { label: 'Spent', value: money(summary.spentCents) },
           { label: 'Sleep a night', value: summary.avgSleep === null ? '—' : `${summary.avgSleep.toFixed(1)} h` },
         ].map((t) => (
           <View key={t.label} style={styles.stat} accessible accessibilityLabel={`${monthName}, ${t.label}: ${t.value}`}>
