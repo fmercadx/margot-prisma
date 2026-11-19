@@ -146,7 +146,7 @@ describe('renaming a custom habit', () => {
     expect(screen.getByRole('checkbox', { name: 'Stretch for 5 minutes' })).toBeOnTheScreen();
     await waitFor(async () => expect((await loadHabits()).map((h) => h.label)).toContain('Stretch for 5 minutes'));
     // Core habits have no name field.
-    await fireEvent.press(screen.getByRole('button', { name: 'Choose days for Read 20 pages' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Edit Read 20 pages' }));
     expect(screen.queryByLabelText('Habit name')).not.toBeOnTheScreen();
   });
 });

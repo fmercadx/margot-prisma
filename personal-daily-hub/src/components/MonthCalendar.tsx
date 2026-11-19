@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ChevronLeft, ChevronRight } from '../icons';
 import { dateKey, longDate, monthTitle, parseDateKey } from '../lib/date';
-import { hasAnyData, isScheduled, type DayLog, type Habit } from '../lib/store';
+import { hasAnyData, isDue, type DayLog, type Habit } from '../lib/store';
 import { monthSummary } from '../lib/summary';
 import { colors, radius, space, tint, type } from '../theme';
 import { CategoryBars } from './CategoryBars';
@@ -95,8 +95,8 @@ export function MonthCalendar({ days, habits, today, firstLoaded, onOpenDay }: P
             const future = key > today;
             const openable = !future && key >= firstLoaded;
             const log = days[key];
-            // Out of the habits meant for that weekday.
-            const due = habits.filter((h) => isScheduled(h, key));
+            // Out of the habits meant for that weekday and not set aside.
+            const due = habits.filter((h) => isDue(h, key, log));
             const done = log ? due.filter((h) => log.habitsDone.includes(h.id)).length : 0;
             const level = habitLevel(done, due.length);
             const isToday = key === today;

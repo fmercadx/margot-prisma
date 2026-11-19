@@ -6,7 +6,7 @@
 import { CATEGORY_LABELS } from './categories';
 import { clockTime, longDate, parseDateKey, weekdayName } from './date';
 import { moodWord } from './mood';
-import { ENERGY_MAX, expenseName, isScheduled, totalCents, type DayLog, type Habit } from './store';
+import { ENERGY_MAX, expenseName, focusLabel, isDue, totalCents, type DayLog, type Habit } from './store';
 
 const sleepText = (h: number) => `${Math.floor(h)}${h % 1 ? '½' : ''} h`;
 
@@ -21,13 +21,16 @@ export function dayAsText(
   const lines = [`${weekdayName(d)}, ${longDate(d)}`];
 
   if (day.focus) lines.push(`Focus: ${day.focus}`);
+  if (day.focusMinutes > 0) lines.push(`Focused for ${focusLabel(day.focusMinutes)}`);
 
-  const due = habits.filter((h) => isScheduled(h, date));
+  const due = habits.filter((h) => isDue(h, date, day));
   const done = habits.filter((h) => day.habitsDone.includes(h.id));
   if (done.length) {
     const doneDue = due.filter((h) => day.habitsDone.includes(h.id)).length;
     lines.push(`Habits ${doneDue}/${due.length}: ${done.map((h) => h.label).join(', ')}`);
   }
+  const skipped = habits.filter((h) => day.habitsSkipped.includes(h.id));
+  if (skipped.length) lines.push(`Skipped: ${skipped.map((h) => h.label).join(', ')}`);
 
   const body = [
     day.water > 0 ? `Water ${day.water}/${waterGoal}` : '',

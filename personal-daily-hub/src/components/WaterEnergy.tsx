@@ -3,6 +3,8 @@ import { MOOD_WORDS } from '../lib/mood';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { ENERGY_MAX, ENERGY_MIN, SLEEP_MAX, SLEEP_START, SLEEP_STEP, WATER_MAX } from '../lib/store';
+import { paceWords } from '../lib/waterPace';
+import { useClock } from '../hooks/useClock';
 import { colors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
 import { IconButton } from './IconButton';
@@ -21,6 +23,8 @@ type Props = {
   /** Hours slept last night, or null. */
   sleep: number | null;
   onSetSleep: (value: number | null) => void;
+  /** Say whether today's water is keeping pace with the clock (today only). */
+  showPace?: boolean;
 };
 
 /** 7.5 -> "7½ h" */
@@ -78,13 +82,13 @@ export function WaterEnergy(props: Props) {
         </View>
 
         <View style={styles.rowBetween}>
-          <Text style={styles.hint}>
-            {water >= goal
-              ? over > 0
-                ? `Goal reached · +${over} extra`
-                : 'Goal reached'
-              : `${goal - water} to go`}
-          </Text>
+          {water < goal && props.showPace ? (
+            <PaceHint water={water} goal={goal} />
+          ) : (
+            <Text style={styles.hint} testID="water-hint">
+              {water >= goal ? (over > 0 ? `Goal reached · +${over} extra` : 'Goal reached') : `${goal - water} to go`}
+            </Text>
+          )}
           <View style={styles.stepper}>
             <IconButton
               icon={Minus}
@@ -155,6 +159,17 @@ export function WaterEnergy(props: Props) {
 
       <MoodPicker value={props.mood} onChange={props.onSetMood} />
     </Card>
+  );
+}
+
+/** "3 to go · 2 behind pace", re-read each minute here only. */
+function PaceHint({ water, goal }: { water: number; goal: number }) {
+  const now = useClock();
+  const pace = paceWords(water, goal, now);
+  return (
+    <Text style={styles.hint} testID="water-hint">
+      {goal - water} to go{pace ? ` · ${pace}` : ''}
+    </Text>
   );
 }
 

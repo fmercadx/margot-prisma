@@ -6,7 +6,7 @@
 // descriptive ("on days you…"), never causal: these are a few weeks of one
 // person's notes, not a study.
 
-import { isScheduled, hasAnyData, type DayLog, type Habit } from './store';
+import { isDue, hasAnyData, type DayLog, type Habit } from './store';
 
 /** Days each side of a comparison needs before anything is said. */
 export const MIN_DAYS = 4;
@@ -57,7 +57,7 @@ export function findInsights(days: Record<string, DayLog>, habits: Habit[], wate
   // Only the clearest one is kept, and only when the mood was higher.
   let best: Insight | null = null;
   for (const h of habits) {
-    const due = entries.filter(([date, d]) => d.mood !== null && isScheduled(h, date));
+    const due = entries.filter(([date, d]) => d.mood !== null && isDue(h, date, d));
     const c = compare(
       due.filter(([, d]) => d.habitsDone.includes(h.id)).map(([, d]) => d.mood!),
       due.filter(([, d]) => !d.habitsDone.includes(h.id)).map(([, d]) => d.mood!),

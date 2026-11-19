@@ -44,13 +44,13 @@ describe('habit schedules', () => {
     const card = screen.getByTestId('card-habits');
     expect(within(card).getByLabelText('0 of 4 habits done')).toBeOnTheScreen();
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Choose days for Move for 30 minutes' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Edit Move for 30 minutes' }));
     const picker = screen.getByTestId('day-picker');
     await fireEvent.press(within(picker).getByRole('checkbox', { name: todayName() }));
     // The habit (and its open picker) has moved down into "Not today".
     const moved = screen.getByTestId('day-picker');
     expect(within(moved).getByRole('checkbox', { name: todayName() })).not.toBeChecked();
-    await fireEvent.press(screen.getByRole('button', { name: 'Done choosing days' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Done editing habit' }));
 
     expect(within(card).getByText('Not today')).toBeOnTheScreen();
     expect(within(card).getByLabelText('0 of 3 habits done')).toBeOnTheScreen();
@@ -68,7 +68,7 @@ describe('habit schedules', () => {
 
   test('the last day left cannot be switched off', async () => {
     await launch();
-    await fireEvent.press(screen.getByRole('button', { name: 'Choose days for Read 20 pages' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Edit Read 20 pages' }));
     const picker = screen.getByTestId('day-picker');
     for (const name of DAY_NAMES.filter((n) => n !== todayName())) {
       await fireEvent.press(within(picker).getByRole('checkbox', { name }));
