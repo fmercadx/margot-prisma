@@ -4,6 +4,7 @@ import { AppState } from 'react-native';
 import { createDataCodec, destroyDataKey } from '../lib/dataCodec';
 import { lastNDays } from '../lib/date';
 import {
+  COUNTDOWNS_KEY,
   createPersister,
   dayStorageKey,
   ensureSealed,
@@ -11,6 +12,7 @@ import {
   HABITS_KEY,
   habitsForStorage,
   isEncrypted,
+  loadCountdowns,
   loadDays,
   loadHabits,
   loadSettings,
@@ -24,6 +26,7 @@ import {
   initialState,
   reducer,
   type Action,
+  type Countdown,
   type DayLog,
   type Habit,
   type HubState,
@@ -72,9 +75,15 @@ export function useDailyHub(today: string): DailyHub {
   const [saveFailed, setSaveFailed] = useState(false);
 
   // What was last handed to the persister, per key.
-  const queued = useRef<{ habits: Habit[] | null; settings: Settings | null; days: Record<string, DayLog> }>({
+  const queued = useRef<{
+    habits: Habit[] | null;
+    settings: Settings | null;
+    countdowns: Countdown[] | null;
+    days: Record<string, DayLog>;
+  }>({
     habits: null,
     settings: null,
+    countdowns: null,
     days: {},
   });
   const loadedFor = useRef<string | null>(null);
@@ -95,17 +104,19 @@ export function useDailyHub(today: string): DailyHub {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let loaded: { habits: Habit[]; days: Record<string, DayLog>; settings: Settings } | null = null;
+      let loaded: { habits: Habit[]; days: Record<string, DayLog>; settings: Settings; countdowns: Countdown[] } | null =
+        null;
       try {
         setCodec(await createDataCodec());
         const sealed = await ensureSealed();
         if (sealed > 0) console.info(`[storage] encrypted ${sealed} values saved by an earlier version`);
-        const [habits, days, settings] = await Promise.all([
+        const [habits, days, settings, countdowns] = await Promise.all([
           loadHabits(),
           loadDays(lastNDays(today, LOADED_DAYS)),
           loadSettings(),
+          loadCountdowns(),
         ]);
-        loaded = { habits, days, settings };
+        loaded = { habits, days, settings, countdowns };
       } catch (err) {
         console.warn('[storage] could not read saved data', err);
       }
@@ -115,7 +126,12 @@ export function useDailyHub(today: string): DailyHub {
         setReady(true);
         return;
       }
-      queued.current = { habits: loaded.habits, settings: loaded.settings, days: { ...loaded.days } };
+      queued.current = {
+        habits: loaded.habits,
+        settings: loaded.settings,
+        countdowns: loaded.countdowns,
+        days: { ...loaded.days },
+      };
       loadedFor.current = today;
       dispatch({ type: 'hydrate', ...loaded });
       setReady(true);
@@ -158,6 +174,10 @@ export function useDailyHub(today: string): DailyHub {
       p.schedule(SETTINGS_KEY, state.settings);
       queued.current.settings = state.settings;
     }
+    if (state.countdowns !== queued.current.countdowns) {
+      p.schedule(COUNTDOWNS_KEY, state.countdowns);
+      queued.current.countdowns = state.countdowns;
+    }
     for (const [date, day] of Object.entries(state.days)) {
       if (queued.current.days[date] !== day) {
         p.schedule(dayStorageKey(date), day);
@@ -195,8 +215,8 @@ export function useDailyHub(today: string): DailyHub {
       erasing.current = false;
     }
     // Fresh state, marked as already saved, so erasing writes nothing back.
-    const fresh = { habits: [...CORE_HABITS], days: {}, settings: DEFAULT_SETTINGS };
-    queued.current = { habits: fresh.habits, settings: fresh.settings, days: {} };
+    const fresh = { habits: [...CORE_HABITS], days: {}, settings: DEFAULT_SETTINGS, countdowns: [] as Countdown[] };
+    queued.current = { habits: fresh.habits, settings: fresh.settings, countdowns: fresh.countdowns, days: {} };
     loadedFor.current = today;
     dispatch({ type: 'hydrate', ...fresh });
     setLoadFailed(false);

@@ -7,8 +7,9 @@ export async function exportAvailable(): Promise<boolean> {
 
 export function removeOldExports(): void {}
 
-export async function shareExport(filename: string, json: string): Promise<void> {
-  const url = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+export async function shareExport(filename: string, content: string, kind: 'json' | 'csv' = 'json'): Promise<void> {
+  const type = kind === 'csv' ? 'text/csv;charset=utf-8' : 'application/json';
+  const url = URL.createObjectURL(new Blob([content], { type }));
   const a = document.createElement('a');
   a.href = url;
   a.download = filename;

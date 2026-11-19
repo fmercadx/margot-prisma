@@ -1,7 +1,7 @@
 // The export file's contents. Pure, so it is tested without a file system.
 
 import { dateKey } from './date';
-import { hasAnyData, type DayLog, type Habit, type Settings } from './store';
+import { hasAnyData, type Countdown, type DayLog, type Habit, type Settings } from './store';
 
 export const EXPORT_FILE_PREFIX = 'personal-daily-hub-';
 
@@ -11,6 +11,7 @@ export type ExportFile = {
   exportedAt: string;
   settings: Pick<Settings, 'waterGoal' | 'reminderHour'>;
   habits: Habit[];
+  countdowns: Countdown[];
   days: Record<string, DayLog>;
 };
 
@@ -24,6 +25,7 @@ export function buildExport(
   habits: Habit[],
   settings: Settings,
   now: Date = new Date(),
+  countdowns: Countdown[] = [],
 ): { filename: string; json: string } {
   const kept = Object.keys(days)
     .filter((d) => hasAnyData(days[d]))
@@ -35,6 +37,7 @@ export function buildExport(
     exportedAt: now.toISOString(),
     settings: { waterGoal: settings.waterGoal, reminderHour: settings.reminderHour },
     habits,
+    countdowns,
     days: kept,
   };
   return { filename: `${EXPORT_FILE_PREFIX}${dateKey(now)}.json`, json: JSON.stringify(file, null, 2) };

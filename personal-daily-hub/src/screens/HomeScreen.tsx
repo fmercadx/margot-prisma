@@ -11,11 +11,13 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import appConfig from '../../app.json';
+import { CountdownsCard } from '../components/CountdownsCard';
 import { DaySheet } from '../components/DaySheet';
 import { ExpenseLogger } from '../components/ExpenseLogger';
 import { HabitChecklist } from '../components/HabitChecklist';
 import { Header } from '../components/Header';
 import { HistoryCard } from '../components/HistoryCard';
+import { InsightsCard } from '../components/InsightsCard';
 import { Journal } from '../components/Journal';
 import { LockScreen } from '../components/LockScreen';
 import { MoneyVisibility } from '../components/Money';
@@ -32,9 +34,11 @@ import { HISTORY_DAYS, LOADED_DAYS, useDailyHub } from '../hooks/useDailyHub';
 import { appLockSupported, authenticate, lockAvailability } from '../lib/appLock';
 import { lastNDays, parseDateKey, weekdayName } from '../lib/date';
 import { exportAvailable, removeOldExports, shareExport } from '../lib/exportData';
+import { buildExpensesCsv } from '../lib/exportCsv';
 import { buildExport } from '../lib/exportJson';
 import { haptic, setHapticsEnabled } from '../lib/haptics';
 import { pickBackupText } from '../lib/importData';
+import { findInsights } from '../lib/insights';
 import { parseBackup, type ParsedBackup } from '../lib/importJson';
 import {
   canAddCustomHabit,
@@ -368,7 +372,7 @@ export default function HomeScreen() {
       // Memory holds the newest copy of the days it has loaded; storage has
       // everything older.
       const days = { ...(await loadAllDays()), ...state.days };
-      const { filename, json } = buildExport(days, state.habits, state.settings);
+      const { filename, json } = buildExport(days, state.habits, state.settings, undefined, state.countdowns);
       await shareExport(filename, json);
     } catch (err) {
       console.warn('[export] failed', err);
@@ -376,6 +380,26 @@ export default function HomeScreen() {
       setMessage('Couldn’t export your data. Please try again.');
     } finally {
       setExportBusy(false);
+    }
+  };
+
+  const [csvBusy, setCsvBusy] = useState(false);
+  const runCsvExport = async () => {
+    setCsvBusy(true);
+    try {
+      const { filename, csv, rows } = buildExpensesCsv({ ...(await loadAllDays()), ...state.days });
+      if (rows === 0) {
+        setSettingsOpen(false);
+        setMessage('There are no expenses to export yet.');
+        return;
+      }
+      await shareExport(filename, csv, 'csv');
+    } catch (err) {
+      console.warn('[export] csv failed', err);
+      setSettingsOpen(false);
+      setMessage('Couldn’t export your expenses. Please try again.');
+    } finally {
+      setCsvBusy(false);
     }
   };
 
@@ -394,7 +418,7 @@ export default function HomeScreen() {
         setMessage(parsed.error);
         return;
       }
-      const { stats } = mergeBackup(state, parsed.backup.habits, parsed.backup.days);
+      const { stats } = mergeBackup(state, parsed.backup.habits, parsed.backup.days, parsed.backup.countdowns);
       if (Object.values(stats).every((n) => n === 0)) {
         setSettingsOpen(false);
         setMessage('Everything in that backup is already on this phone.');
@@ -413,13 +437,31 @@ export default function HomeScreen() {
   const confirmRestore = () => {
     if (!restorePending) return;
     const { backup, stats } = restorePending;
-    dispatch({ type: 'importBackup', habits: backup.habits, days: backup.days });
+    dispatch({ type: 'importBackup', habits: backup.habits, days: backup.days, countdowns: backup.countdowns });
     setRestorePending(null);
     setSettingsOpen(false);
     haptic.success();
     const days = stats.daysAdded + stats.daysMerged;
     setMessage(`Restored ${days} ${days === 1 ? 'day' : 'days'} from your backup.`);
   };
+
+  // ---- countdowns and insights --------------------------------------------
+  const addCountdown = (label: string, date: string) => {
+    dispatch({ type: 'addCountdown', countdown: { id: newId('cd'), label, date } });
+    haptic.success();
+  };
+  const removeCountdown = (id: string) => {
+    const countdown = state.countdowns.find((c) => c.id === id);
+    if (!countdown) return;
+    dispatch({ type: 'removeCountdown', id });
+    haptic.remove();
+    setUndo({ message: `Removed “${countdown.label}”`, restore: { type: 'addCountdown', countdown } });
+  };
+  // Only worked out for Premium, who can see them.
+  const insights = useMemo(
+    () => (isPremium ? findInsights(state.days, state.habits, state.settings.waterGoal) : []),
+    [isPremium, state.days, state.habits, state.settings.waterGoal],
+  );
 
   // ---- erase everything ---------------------------------------------------
   const [eraseConfirming, setEraseConfirming] = useState(false);
@@ -562,6 +604,15 @@ export default function HomeScreen() {
               onAdd={addHabit}
               today={today}
               onSetDays={(id, days) => dispatch({ type: 'setHabitDays', id, days })}
+              onRename={(id, raw) => {
+                const label = raw.trim().slice(0, HABIT_MAX_LENGTH);
+                if (!label) return 'Give the habit a name.';
+                if (state.habits.some((h) => h.id !== id && h.label.toLowerCase() === label.toLowerCase())) {
+                  return 'You already have that habit.';
+                }
+                dispatch({ type: 'renameHabit', id, label });
+                return null;
+              }}
             />
 
             <WaterEnergy
@@ -625,6 +676,10 @@ export default function HomeScreen() {
               }}
             />
 
+            <CountdownsCard countdowns={state.countdowns} today={today} onAdd={addCountdown} onRemove={removeCountdown} />
+
+            <InsightsCard isPremium={isPremium} insights={insights} onUnlock={() => openPaywall('history')} />
+
             <HistoryCard
               isPremium={isPremium}
               waterGoal={state.settings.waterGoal}
@@ -658,6 +713,8 @@ export default function HomeScreen() {
           exportSupported={canExport}
           exportBusy={exportBusy}
           onExport={runExport}
+          csvBusy={csvBusy}
+          onExportCsv={runCsvExport}
           encrypted={encrypted}
           version={appConfig.expo.version}
           hapticsSupported={Platform.OS !== 'web'}

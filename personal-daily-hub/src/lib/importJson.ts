@@ -8,8 +8,8 @@
 // overwrites or removes anything.
 
 import { dateKey, isDateKey } from './date';
-import { sanitizeDay, sanitizeHabits } from './storage';
-import { hasAnyData, type DayLog, type Habit } from './store';
+import { sanitizeCountdowns, sanitizeDay, sanitizeHabits } from './storage';
+import { hasAnyData, type Countdown, type DayLog, type Habit } from './store';
 
 /** A year of heavy use exports to well under 1 MB. */
 export const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
@@ -19,6 +19,7 @@ export const IMPORT_MAX_DAYS = 3660;
 export type ParsedBackup = {
   habits: Habit[]; // custom habits only
   days: Record<string, DayLog>;
+  countdowns: Countdown[];
   exportedAt: string | null;
 };
 
@@ -62,6 +63,7 @@ export function parseBackup(text: string, now: Date = new Date()): ParseResult {
     backup: {
       habits: sanitizeHabits(raw.habits).filter((h) => !h.core),
       days,
+      countdowns: sanitizeCountdowns(raw.countdowns),
       exportedAt: typeof raw.exportedAt === 'string' ? raw.exportedAt.slice(0, 40) : null,
     },
   };

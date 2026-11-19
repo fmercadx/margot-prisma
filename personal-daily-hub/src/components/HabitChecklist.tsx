@@ -27,6 +27,8 @@ type Props = {
   today: string;
   /** Weekdays a habit is meant for; null = every day. */
   onSetDays: (id: string, days: number[] | null) => void;
+  /** Renames a custom habit. Returns null on success, or why not. */
+  onRename: (id: string, label: string) => string | null;
 };
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -83,7 +85,7 @@ export function HabitChecklist(props: Props) {
           <IconButton
             icon={CalendarClock}
             size={16}
-            label={`Choose days for ${habit.label}`}
+            label={habit.core ? `Choose days for ${habit.label}` : `Edit ${habit.label}`}
             onPress={() => setScheduling(open ? null : habit.id)}
             color={open || habit.days ? colors.habits : colors.textMuted}
           />
@@ -103,6 +105,7 @@ export function HabitChecklist(props: Props) {
             days={habit.days}
             onChange={(days) => props.onSetDays(habit.id, days)}
             onDone={() => setScheduling(null)}
+            onRename={habit.core ? undefined : (label) => props.onRename(habit.id, label)}
           />
         ) : null}
       </View>
@@ -180,7 +183,21 @@ function DayPicker(props: {
   days: number[] | undefined;
   onChange: (days: number[] | null) => void;
   onDone: () => void;
+  /** Custom habits can be renamed here too. */
+  onRename?: (label: string) => string | null;
 }) {
+  const [name, setName] = useState(props.label);
+  const [nameError, setNameError] = useState<string | null>(null);
+  const done = () => {
+    if (props.onRename && name.trim() !== props.label) {
+      const problem = props.onRename(name);
+      if (problem) {
+        setNameError(problem);
+        return;
+      }
+    }
+    props.onDone();
+  };
   const on = props.days ?? [0, 1, 2, 3, 4, 5, 6];
   const toggle = (d: number) => {
     const next = on.includes(d) ? on.filter((x) => x !== d) : [...on, d].sort();
@@ -189,6 +206,26 @@ function DayPicker(props: {
   };
   return (
     <View style={styles.picker} accessibilityRole="none" accessibilityLabel={`Days for ${props.label}`} testID="day-picker">
+      {props.onRename ? (
+        <View style={{ gap: space.xs }}>
+          <TextInput
+            value={name}
+            onChangeText={(t) => {
+              setName(t);
+              setNameError(null);
+            }}
+            onSubmitEditing={done}
+            {...inputColors}
+            style={styles.input}
+            maxLength={HABIT_MAX_LENGTH}
+            returnKeyType="done"
+            submitBehavior="submit"
+            accessibilityLabel="Habit name"
+            testID="habit-rename"
+          />
+          {nameError ? <Text style={styles.error}>{nameError}</Text> : null}
+        </View>
+      ) : null}
       <View style={styles.pills}>
         {DAY_NAMES.map((name, d) => {
           const selected = on.includes(d);
@@ -211,7 +248,7 @@ function DayPicker(props: {
       </View>
       <View style={styles.pickerFoot}>
         <Text style={styles.schedule}>{props.days ? weekdaysLabel(props.days) : 'Every day'}</Text>
-        <Pressable onPress={props.onDone} accessibilityRole="button" accessibilityLabel="Done choosing days" hitSlop={8}>
+        <Pressable onPress={done} accessibilityRole="button" accessibilityLabel={props.onRename ? 'Done editing habit' : 'Done choosing days'} hitSlop={8}>
           <Text style={styles.done}>Done</Text>
         </Pressable>
       </View>

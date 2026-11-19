@@ -22,6 +22,8 @@ import { isDateKey } from './date';
 import { MAX_EXPENSE_CENTS } from './money';
 import {
   CORE_HABITS,
+  COUNTDOWN_LABEL_MAX_LENGTH,
+  COUNTDOWNS_MAX,
   CUSTOM_HABITS_MAX,
   DEFAULT_SETTINGS,
   ENERGY_MAX,
@@ -39,9 +41,11 @@ import {
   REMINDER_HOUR_MIN,
   roundSleep,
   SLEEP_MAX,
+  sortCountdowns,
   WATER_GOAL_MAX,
   WATER_GOAL_MIN,
   WATER_MAX,
+  type Countdown,
   type DayLog,
   type Expense,
   type Habit,
@@ -52,6 +56,7 @@ import {
 const PREFIX = 'pdh:v1:';
 export const HABITS_KEY = `${PREFIX}habits`;
 export const SETTINGS_KEY = `${PREFIX}settings`;
+export const COUNTDOWNS_KEY = `${PREFIX}countdowns`;
 const DAY_PREFIX = `${PREFIX}day:`;
 export const dayStorageKey = (date: string) => `${DAY_PREFIX}${date}`;
 const quarantineKey = (key: string) => `${PREFIX}corrupt:${Date.now()}:${key}`;
@@ -191,6 +196,21 @@ export function sanitizeHabits(v: unknown): Habit[] {
   return [...CORE_HABITS.map((c) => withDays(c, coreDays.get(c.id))), ...custom];
 }
 
+/** Countdowns: real dates, a name, one per id, at most COUNTDOWNS_MAX, soonest first. */
+export function sanitizeCountdowns(v: unknown): Countdown[] {
+  return sortCountdowns(
+    list(
+      v,
+      (c) => {
+        if (!isObj(c) || !isId(c.id) || !isStr(c.label) || !isDateKey(c.date)) return null;
+        const label = c.label.replace(/\s+/g, ' ').trim().slice(0, COUNTDOWN_LABEL_MAX_LENGTH);
+        return label ? { id: c.id, label, date: c.date } : null;
+      },
+      COUNTDOWNS_MAX * 2,
+    ).slice(0, COUNTDOWNS_MAX),
+  );
+}
+
 // ---- the codec ------------------------------------------------------------
 
 let codec: Codec = plainCodec;
@@ -247,6 +267,11 @@ async function parse(key: string, raw: string | null): Promise<unknown> {
 export async function loadHabits(): Promise<Habit[]> {
   const raw = await AsyncStorage.getItem(HABITS_KEY);
   return sanitizeHabits(await parse(HABITS_KEY, raw));
+}
+
+export async function loadCountdowns(): Promise<Countdown[]> {
+  const raw = await AsyncStorage.getItem(COUNTDOWNS_KEY);
+  return sanitizeCountdowns(await parse(COUNTDOWNS_KEY, raw));
 }
 
 export async function loadSettings(): Promise<Settings> {
