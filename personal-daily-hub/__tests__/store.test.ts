@@ -112,7 +112,7 @@ test('mergeDays never lets older stored data replace what is in memory', () => {
 describe('settings', () => {
   test('are clamped to their ranges, and an unchanged value is a no-op', () => {
     let s = reducer(initialState, { type: 'updateSettings', patch: { waterGoal: 99, reminderHour: 2 } });
-    expect(s.settings).toEqual({ waterGoal: 16, reminderHour: 6, lockEnabled: false, haptics: true, dailyBudgetCents: null, relockAfterSec: 30 });
+    expect(s.settings).toEqual({ waterGoal: 16, reminderHour: 6, lockEnabled: false, haptics: true, dailyBudgetCents: null, relockAfterSec: 30, hideAmounts: false });
     expect(reducer(s, { type: 'updateSettings', patch: { waterGoal: 16 } })).toBe(s);
     s = reducer(s, { type: 'updateSettings', patch: { lockEnabled: true } });
     expect(s.settings.lockEnabled).toBe(true);
@@ -176,7 +176,7 @@ describe('buildExport', () => {
         '2026-11-05': EMPTY_DAY,
       },
       [...CORE_HABITS],
-      { waterGoal: 8, reminderHour: 20, lockEnabled: true, haptics: true, dailyBudgetCents: 4000, relockAfterSec: 30 },
+      { waterGoal: 8, reminderHour: 20, lockEnabled: true, haptics: true, dailyBudgetCents: 4000, relockAfterSec: 30, hideAmounts: false },
       new Date(2026, 10, 8, 12),
     );
     const file = JSON.parse(json);

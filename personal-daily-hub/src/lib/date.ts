@@ -55,6 +55,14 @@ export function weekdayName(d: Date): string {
   return DAYS[d.getDay()];
 }
 
+/** [1, 3, 5] -> "Mon, Wed, Fri"; also "Weekdays" and "Weekends". */
+export function weekdaysLabel(days: readonly number[]): string {
+  const key = [...days].sort().join();
+  if (key === '1,2,3,4,5') return 'Weekdays';
+  if (key === '0,6') return 'Weekends';
+  return [...days].sort().map((d) => DAYS[d].slice(0, 3)).join(', ');
+}
+
 export function weekdayInitial(key: string): string {
   return DAYS[parseDateKey(key).getDay()].charAt(0);
 }

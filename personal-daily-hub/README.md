@@ -8,9 +8,10 @@ A one-screen, dark-mode daily dashboard built with React Native and Expo
 | Header | Day, date and time, kept current to the minute; greeting; daily-reminder toggle; Settings |
 | Today's focus | One line for the thing that matters most today; tap to change or clear it |
 | Quick Capture | Timestamped notes and to-dos in a list that scrolls inside its card; tap to edit, tick a to-do off; unfinished to-dos from the past week can be brought over to today; search every note, focus and expense label from any day |
-| Habits | Four core habits with cross-out on completion and day streaks, with a word of congratulations at 3, 7, 14, 30 and 60 days; custom habits (Premium) |
+| Habits | Four core habits with cross-out on completion and day streaks, with a word of congratulations at 3, 7, 14, 30 and 60 days; choose the weekdays each habit is for (days off sit under "Not today" and never break a streak); custom habits (Premium) |
 | Wellbeing | Glass-by-glass progress bar toward your water goal; last night's sleep in half hours; 1–10 energy slider; five-face mood check-in |
-| Expenses | Amount, optional label and a category (food, transport, shopping, bills, fun, other); running total, what's left of an optional daily budget, and where the money went |
+| Expenses | Amount, optional label and a category (food, transport, shopping, bills, fun, other); running total, what's left of an optional daily budget, and where the money went; recent expenses one tap away; an eye button that hides every amount on screen |
+| Journal | A few lines at the end of the day, with a different question each weekday; searchable |
 | History | Weekly summary (water, sleep, energy, mood, habits done, spending, where most went), water / sleep / energy / mood / spending charts, a month calendar shaded by habits done with the month's totals and where its money went, and every past day in full (Premium) |
 | Settings | Water goal, reminder time, daily budget, haptic feedback, app lock and how soon it locks again, export and restore your data, erase everything |
 
@@ -37,6 +38,9 @@ Limits worth knowing:
 - The lock keeps people out of the app on an unlocked phone; it does not
   add to the encryption. The key opens without a fingerprint, so a lock
   change or a new fingerprint can never make the data unreadable.
+- "Hide amounts" changes only what is drawn: it shows every amount of your
+  money, in Expenses, History and day details, and in what a screen reader
+  says, as "$•••". The amounts are stored (encrypted) as before.
 - "Lock again after: at once" also locks after the share sheet or the file
   chooser, which briefly send the app to the background. The default 30 s
   grace period exists so export and restore don't ask twice.
@@ -162,9 +166,9 @@ earlier days stay saved:
 
 ```ts
 {
-  habits: [{ id, label, core }],                 // definitions carry across days
+  habits: [{ id, label, core, days? }],          // definitions carry across days; days = weekdays it is for
   days: {
-    '2026-11-08': { focus, notes, habitsDone, water, sleep, energy, mood, expenses },
+    '2026-11-08': { focus, journal, notes, habitsDone, water, sleep, energy, mood, expenses },
   },
 }
 ```
@@ -195,9 +199,16 @@ What keeps it safe (`src/hooks/useDailyHub.ts`, `src/lib/storage.ts`):
   streaks and the month calendar. Export and search read everything else
   from storage.
 - Fields added later read back with a default when older data lacks them:
-  an expense saved before 1.3 is filed under "other", a day has no focus
-  or sleep, and a note is a plain note rather than a to-do. Older backups
-  restore the same way.
+  an expense saved before 1.3 is filed under "other", a day has no focus,
+  journal or sleep, a note is a plain note rather than a to-do, and a habit
+  is for every day. Older backups restore the same way.
+- Custom habits are stored in full; a core habit is stored only as its
+  schedule (`{ id, core: true, days }`), because its name belongs to the app.
+  A 1.4 build reading that skips it, so the habit is simply every day there.
+- A habit counts only on the days it is for: in today's tally, the weekly
+  and monthly "habits done", the calendar's shading and day details. A
+  streak steps over days off, so a Mon/Wed/Fri habit done on all three has
+  a 3-day streak.
 - A to-do brought over to today is a copy with a new id; the original stays
   on its day, marked as brought over, so it is offered only once and the
   earlier day still shows what was planned.
@@ -209,8 +220,9 @@ Capture notes per day; the fourth opens a bottom-sheet paywall listing
 the three benefits — unlimited entries, historical graphs, custom habits —
 with an **Unlock Premium for $4.99** button. Custom habits and History
 (charts, summary, month calendar, past days) are gated too, since the
-paywall advertises them. Search, to-dos, sleep, categories, the budget and
-the focus line are free. To-dos brought over to today count toward the three
+paywall advertises them. Search, to-dos, sleep, the journal, habit
+schedules, categories, the budget, quick re-add, hiding amounts and the
+focus line are free. To-dos brought over to today count toward the three
 free entries, like any other.
 
 The paywall is dismissible ("Not now", the backdrop, Android back) and keeps
@@ -244,7 +256,8 @@ App.tsx                     providers + status bar
 src/screens/HomeScreen.tsx  composes the modules; owns premium, undo, settings
 src/components/             one file per module, plus Card, IconButton, StepSlider,
                             SettingsSheet, LockScreen, Toast, PaywallModal, DaySheet,
-                            TodayFocus, SearchSheet, MonthCalendar
+                            TodayFocus, SearchSheet, MonthCalendar, Journal,
+                            Money (the "Hide amounts" formatter, via context)
 src/hooks/useDailyHub.ts    reducer + key, migration, load/save
 src/hooks/useAppLock.ts     when the lock screen shows
 src/hooks/useClock.ts       minute clock and today's date key

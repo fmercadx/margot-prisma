@@ -1,9 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { CATEGORY_LABELS, type ExpenseCategory } from '../lib/categories';
-import { formatCents } from '../lib/money';
 import { colors, space, type } from '../theme';
 import { CATEGORY_ICONS } from './categoryIcons';
+import { useMoney } from './Money';
 
 type Props = {
   title: string;
@@ -18,6 +18,7 @@ type Props = {
  * single colour does and no category depends on telling hues apart.
  */
 export function CategoryBars({ title, rows, testID }: Props) {
+  const { money } = useMoney();
   const total = rows.reduce((n, r) => n + r.cents, 0);
   if (rows.length === 0 || total <= 0) return null;
   const max = rows[0].cents;
@@ -31,7 +32,7 @@ export function CategoryBars({ title, rows, testID }: Props) {
             key={category}
             style={styles.row}
             accessible
-            accessibilityLabel={`${CATEGORY_LABELS[category]}: ${formatCents(cents)}, ${Math.round((cents / total) * 100)}%`}
+            accessibilityLabel={`${CATEGORY_LABELS[category]}: ${money(cents)}, ${Math.round((cents / total) * 100)}%`}
           >
             <Icon size={14} color={colors.textSecondary} strokeWidth={2.25} />
             <Text style={styles.name} numberOfLines={1}>
@@ -40,7 +41,7 @@ export function CategoryBars({ title, rows, testID }: Props) {
             <View style={styles.track}>
               <View style={[styles.bar, { width: `${Math.max(2, (cents / max) * 100)}%` }]} />
             </View>
-            <Text style={styles.amount}>{formatCents(cents)}</Text>
+            <Text style={styles.amount}>{money(cents)}</Text>
           </View>
         );
       })}

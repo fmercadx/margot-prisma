@@ -1,9 +1,10 @@
-import { Check, CircleCheckBig, Flame, Lock, Plus, X } from '../icons';
+import { CalendarClock, Check, CircleCheckBig, Flame, Lock, Plus, X } from '../icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { HABIT_MAX_LENGTH, type Habit } from '../lib/store';
-import { colors, inputColors, HIT, radius, space, type } from '../theme';
+import { weekdaysLabel } from '../lib/date';
+import { HABIT_MAX_LENGTH, isScheduled, type Habit } from '../lib/store';
+import { colors, inputColors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
 import { IconButton } from './IconButton';
 
@@ -23,13 +24,22 @@ type Props = {
   onCloseComposer: () => void;
   /** Returns null on success, or the reason the habit was not added. */
   onAdd: (label: string) => string | null;
+  today: string;
+  /** Weekdays a habit is meant for; null = every day. */
+  onSetDays: (id: string, days: number[] | null) => void;
 };
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export function HabitChecklist(props: Props) {
   const { habits, done, isPremium, composerOpen } = props;
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const doneCount = habits.filter((h) => done.includes(h.id)).length;
+  const [scheduling, setScheduling] = useState<string | null>(null);
+  // Habits not meant for today sit apart, below the rest, and don't count.
+  const due = habits.filter((h) => isScheduled(h, props.today));
+  const resting = habits.filter((h) => !isScheduled(h, props.today));
+  const doneCount = due.filter((h) => done.includes(h.id)).length;
 
   const submit = () => {
     const problem = props.onAdd(draft);
@@ -46,50 +56,80 @@ export function HabitChecklist(props: Props) {
     props.onCloseComposer();
   };
 
+  const renderHabit = (habit: Habit, rest: boolean) => {
+    const checked = done.includes(habit.id);
+    const open = scheduling === habit.id;
+    return (
+      <View key={habit.id}>
+        <View style={[styles.row, rest && styles.resting]}>
+          <Pressable
+            onPress={() => props.onToggle(habit.id)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked }}
+            accessibilityLabel={habit.label}
+            accessibilityHint={habit.days ? `Planned for ${weekdaysLabel(habit.days)}` : undefined}
+            style={({ pressed }) => [styles.toggle, pressed && { opacity: 0.7 }]}
+            testID={`habit-${habit.id}`}
+          >
+            <View style={[styles.box, checked && styles.boxChecked]}>
+              {checked ? <Check size={15} color={colors.background} strokeWidth={3} /> : null}
+            </View>
+            <View style={styles.labelCol}>
+              <Text style={[styles.label, checked && styles.labelDone]}>{habit.label}</Text>
+              {habit.days && !open ? <Text style={styles.schedule}>{weekdaysLabel(habit.days)}</Text> : null}
+            </View>
+            <StreakChip days={props.streaks[habit.id] ?? 0} cap={props.streakCap} />
+          </Pressable>
+          <IconButton
+            icon={CalendarClock}
+            size={16}
+            label={`Choose days for ${habit.label}`}
+            onPress={() => setScheduling(open ? null : habit.id)}
+            color={open || habit.days ? colors.habits : colors.textMuted}
+          />
+          {habit.core ? null : (
+            <IconButton
+              icon={X}
+              size={16}
+              label={`Remove habit: ${habit.label}`}
+              onPress={() => props.onRemove(habit.id)}
+              color={colors.textMuted}
+            />
+          )}
+        </View>
+        {open ? (
+          <DayPicker
+            label={habit.label}
+            days={habit.days}
+            onChange={(days) => props.onSetDays(habit.id, days)}
+            onDone={() => setScheduling(null)}
+          />
+        ) : null}
+      </View>
+    );
+  };
+
   return (
     <Card
       icon={CircleCheckBig}
       accent={colors.habits}
       title="Habits"
-      subtitle={doneCount === habits.length ? 'All done — nice work' : 'Small wins, every day'}
+      subtitle={due.length > 0 && doneCount === due.length ? 'All done — nice work' : 'Small wins, every day'}
       right={
-        <Text style={styles.count} accessibilityLabel={`${doneCount} of ${habits.length} habits done`}>
-          {doneCount}/{habits.length}
+        <Text style={styles.count} accessibilityLabel={`${doneCount} of ${due.length} habits done`}>
+          {doneCount}/{due.length}
         </Text>
       }
       testID="card-habits"
     >
       <View>
-        {habits.map((habit) => {
-          const checked = done.includes(habit.id);
-          return (
-            <View key={habit.id} style={styles.row}>
-              <Pressable
-                onPress={() => props.onToggle(habit.id)}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked }}
-                accessibilityLabel={habit.label}
-                style={({ pressed }) => [styles.toggle, pressed && { opacity: 0.7 }]}
-                testID={`habit-${habit.id}`}
-              >
-                <View style={[styles.box, checked && styles.boxChecked]}>
-                  {checked ? <Check size={15} color={colors.background} strokeWidth={3} /> : null}
-                </View>
-                <Text style={[styles.label, checked && styles.labelDone]}>{habit.label}</Text>
-                <StreakChip days={props.streaks[habit.id] ?? 0} cap={props.streakCap} />
-              </Pressable>
-              {habit.core ? null : (
-                <IconButton
-                  icon={X}
-                  size={16}
-                  label={`Remove habit: ${habit.label}`}
-                  onPress={() => props.onRemove(habit.id)}
-                  color={colors.textMuted}
-                />
-              )}
-            </View>
-          );
-        })}
+        {due.map((habit) => renderHabit(habit, false))}
+        {resting.length > 0 ? (
+          <Text style={styles.restHeader} accessibilityRole="header">
+            Not today
+          </Text>
+        ) : null}
+        {resting.map((habit) => renderHabit(habit, true))}
       </View>
 
       {composerOpen ? (
@@ -134,6 +174,51 @@ export function HabitChecklist(props: Props) {
   );
 }
 
+/** Seven day toggles. At least one stays on; all seven means every day. */
+function DayPicker(props: {
+  label: string;
+  days: number[] | undefined;
+  onChange: (days: number[] | null) => void;
+  onDone: () => void;
+}) {
+  const on = props.days ?? [0, 1, 2, 3, 4, 5, 6];
+  const toggle = (d: number) => {
+    const next = on.includes(d) ? on.filter((x) => x !== d) : [...on, d].sort();
+    if (next.length === 0) return;
+    props.onChange(next.length === 7 ? null : next);
+  };
+  return (
+    <View style={styles.picker} accessibilityRole="none" accessibilityLabel={`Days for ${props.label}`} testID="day-picker">
+      <View style={styles.pills}>
+        {DAY_NAMES.map((name, d) => {
+          const selected = on.includes(d);
+          const last = selected && on.length === 1;
+          return (
+            <Pressable
+              key={d}
+              onPress={() => toggle(d)}
+              disabled={last}
+              hitSlop={4}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: selected, disabled: last }}
+              accessibilityLabel={name}
+              style={({ pressed }) => [styles.pill, selected && styles.pillOn, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={[styles.pillText, selected && styles.pillTextOn]}>{name.charAt(0)}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={styles.pickerFoot}>
+        <Text style={styles.schedule}>{props.days ? weekdaysLabel(props.days) : 'Every day'}</Text>
+        <Pressable onPress={props.onDone} accessibilityRole="button" accessibilityLabel="Done choosing days" hitSlop={8}>
+          <Text style={styles.done}>Done</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 /** Shown from two days in a row: one day is not yet a streak. */
 function StreakChip({ days, cap }: { days: number; cap: number }) {
   if (days < 2) return null;
@@ -166,7 +251,35 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   boxChecked: { backgroundColor: colors.habits, borderColor: colors.habits },
-  label: { ...type.body, color: colors.text, flex: 1 },
+  labelCol: { flex: 1, gap: 1 },
+  label: { ...type.body, color: colors.text },
+  schedule: { ...type.caption, color: colors.textSecondary },
+  restHeader: {
+    ...type.label,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginTop: space.md,
+    marginBottom: space.xs,
+  },
+  resting: { opacity: 0.6 },
+  picker: { gap: space.sm, paddingLeft: 36, paddingBottom: space.sm },
+  pills: { flexDirection: 'row', gap: 6 },
+  pill: {
+    flex: 1,
+    height: 36,
+    borderRadius: radius.sm,
+    backgroundColor: colors.cardRaised,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  pillOn: { backgroundColor: tint(colors.habits, 0.18), borderColor: colors.habits },
+  pillText: { ...type.label, color: colors.textSecondary },
+  pillTextOn: { color: colors.text, fontWeight: '700' },
+  pickerFoot: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  done: { ...type.label, color: colors.habits, fontWeight: '700' },
   streak: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,12 +1,12 @@
 // Searching everything the person has written: notes, each day's focus,
-// and expense labels. Pure; the caller supplies the days (decrypted by the
+// journal entries and expense labels. Pure; the caller supplies the days (decrypted by the
 // storage layer) and nothing leaves the phone.
 
 import type { DayLog } from './store';
 
 export type SearchHit = {
   date: string;
-  kind: 'focus' | 'note' | 'expense';
+  kind: 'focus' | 'note' | 'journal' | 'expense';
   id: string;
   text: string;
   time: number | null; // when it was written; a focus has no time
@@ -17,6 +17,18 @@ export type SearchHit = {
 
 export const SEARCH_RESULTS_MAX = 100;
 export const SEARCH_QUERY_MAX = 100;
+/** A journal match is shown with this much of its context on each side. */
+const SNIPPET_BEFORE = 40;
+const SNIPPET_AFTER = 80;
+
+/** A journal entry can be long: show the match with a little context, on one line. */
+function snippet(text: string, m: { start: number; length: number }): { text: string; start: number; length: number } {
+  const from = Math.max(0, m.start - SNIPPET_BEFORE);
+  const to = Math.min(text.length, m.start + m.length + SNIPPET_AFTER);
+  const lead = from > 0 ? '…' : '';
+  const body = (lead + text.slice(from, to) + (to < text.length ? '…' : '')).replace(/\s/g, ' ');
+  return { text: body, start: m.start - from + lead.length, length: m.length };
+}
 
 /**
  * Lower-cases and strips accents one character at a time, keeping a map
@@ -79,6 +91,8 @@ export function searchDays(
     const day = days[date];
     const f = day.focus ? match(day.focus, needle) : null;
     if (f) push({ date, kind: 'focus', id: `focus-${date}`, text: day.focus, time: null, ...f });
+    const j = day.journal ? match(day.journal, needle) : null;
+    if (j) push({ date, kind: 'journal', id: `journal-${date}`, time: null, ...snippet(day.journal, j) });
     const entries = [
       ...day.notes.map((n) => ({ kind: 'note' as const, id: n.id, text: n.text, time: n.createdAt })),
       ...day.expenses.filter((e) => e.label).map((e) => ({ kind: 'expense' as const, id: e.id, text: e.label, time: e.createdAt })),
