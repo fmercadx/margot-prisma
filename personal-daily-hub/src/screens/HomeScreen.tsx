@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   KeyboardAvoidingView,
+  Pressable,
   Platform,
   ScrollView,
   Share,
@@ -50,19 +52,24 @@ import {
   type PaywallReason,
 } from '../lib/premium';
 import {
+  cancelFocusEnd,
   disableDailyReminder,
   enableDailyReminder,
   hourLabel,
   isReminderScheduled,
   remindersSupported,
+  scheduleFocusEnd,
 } from '../lib/reminders';
 import { loadAllDays } from '../lib/storage';
 import {
   CUSTOM_HABITS_MAX,
   EDITABLE_DAYS,
   cleanFocus,
+  focusLabel,
+  focusMinutesDone,
   getDay,
   HABIT_MAX_LENGTH,
+  type HomeCard,
   type DayLog,
   habitStreak,
   isScheduled,
@@ -123,9 +130,11 @@ export default function HomeScreen() {
   };
 
   // ---- premium ------------------------------------------------------------
-  // Starts false on every launch. A real build would restore this from the
-  // App Store / Play Store entitlement here rather than from local storage.
-  const [isPremium, setIsPremium] = useState(false);
+  // The mock purchase is remembered on the phone, sealed like everything else
+  // and cleared by Erase everything, so it survives a restart, including
+  // Android closing the app in the background. A real build would restore
+  // this from the App Store / Play Store entitlement instead.
+  const isPremium = state.settings.mockPremium;
   const [paywall, setPaywall] = useState<PaywallReason | null>(null);
   // What the person was trying to do when the paywall opened, so unlocking
   // finishes it for them instead of making them do it twice.
@@ -144,7 +153,7 @@ export default function HomeScreen() {
   const unlockPremium = async () => {
     const ok = await purchasePremiumMock();
     if (!ok) return;
-    setIsPremium(true);
+    dispatch({ type: 'updateSettings', patch: { mockPremium: true } });
     setPaywall(null);
     const next = afterUnlock.current;
     afterUnlock.current = null;
@@ -183,7 +192,11 @@ export default function HomeScreen() {
       type: 'carryOver',
       to: today,
       // Newest first, like the rest of the list.
-      items: openTasks.map(({ from, note }, i) => ({ from, id: note.id, copy: { id: newId('note'), createdAt: now - i } })),
+      items: openTasks.map(({ from, note }, i) => ({
+        from,
+        id: note.id,
+        copy: { id: newId('note'), createdAt: now - i },
+      })),
     });
     haptic.success();
     const n = openTasks.length;
@@ -275,13 +288,25 @@ export default function HomeScreen() {
     const index = state.habits.findIndex((h) => h.id === id);
     const habit = state.habits[index];
     if (!habit || habit.core) return;
-    const wasDone = day.habitsDone.includes(id);
+    // Removing always unticks it today (not the day being looked at), so undo restores today's state.
+    const todayLog = getDay(state, today);
+    const wasDone = todayLog.habitsDone.includes(id);
+    const wasSkipped = todayLog.habitsSkipped.includes(id);
     dispatch({ type: 'removeHabit', date: today, id });
     haptic.remove();
     setUndo({
       message: `Removed “${habit.label}”`,
-      restore: { type: 'restoreHabit', date: today, habit, index, wasDone },
+      restore: { type: 'restoreHabit', date: today, habit, index, wasDone, wasSkipped },
     });
+  };
+
+  const skipHabit = (id: string) => {
+    const habit = state.habits.find((h) => h.id === id);
+    if (!habit) return;
+    const skipping = !day.habitsSkipped.includes(id);
+    dispatch({ type: 'skipHabit', date: activeDate, id });
+    haptic.tick();
+    if (skipping) setMessage(`Skipped “${habit.label}” ${dayWord}. Its streak carries on.`);
   };
 
   const streaks = useMemo(() => {
@@ -289,6 +314,66 @@ export default function HomeScreen() {
     for (const h of state.habits) out[h.id] = habitStreak(state, h.id, today, LOADED_DAYS);
     return out;
   }, [state, today]);
+
+  // ---- focus timer --------------------------------------------------------
+  // The session lives in state (and storage), so it survives the app being
+  // closed; a local notification marks the end when the app isn't open.
+  const focusTimer = state.focusTimer;
+  const loadedDates = useMemo(() => lastNDays(today, LOADED_DAYS), [today]);
+
+  const startFocus = async () => {
+    if (focusTimer) return;
+    const now = Date.now();
+    const minutes = state.settings.focusLength;
+    dispatch({ type: 'startFocus', date: today, now, minutes });
+    haptic.tick();
+    const result = await scheduleFocusEnd(now + minutes * 60_000, minutes);
+    if (result === 'denied') setMessage('Notifications are off, so the session will end quietly.');
+  };
+
+  const stopFocus = () => {
+    if (!focusTimer) return;
+    const done = focusMinutesDone(focusTimer, Date.now());
+    dispatch({ type: 'endFocus', now: Date.now() });
+    void cancelFocusEnd();
+    haptic.tick();
+    setMessage(done > 0 ? `Stopped early: ${focusLabel(done)} of focus kept.` : 'Focus session stopped.');
+  };
+
+  // The end: on time while open, or on the next look once the app returns.
+  useEffect(() => {
+    if (!ready || !focusTimer) return;
+    const t = focusTimer;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = () => {
+      // A session from a day no longer in memory can't be added to it
+      // without overwriting that day; it is let go instead.
+      if (!loadedDates.includes(t.date)) {
+        dispatch({ type: 'cancelFocus' });
+        return;
+      }
+      dispatch({ type: 'endFocus', now: Date.now() });
+      void cancelFocusEnd();
+      haptic.success();
+      setMessage(`Focus session done: ${focusLabel(focusMinutesDone(t, t.endsAt))}. Time for a short break.`);
+    };
+    // Checked at most half a minute apart: Android may defer long timers.
+    const check = () => {
+      const left = t.endsAt - Date.now();
+      if (left <= 0) finish();
+      else timer = setTimeout(check, Math.min(left + 50, 30_000));
+    };
+    check();
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active') return;
+      clearTimeout(timer);
+      check();
+    });
+    return () => {
+      clearTimeout(timer);
+      sub.remove();
+    };
+  }, [ready, focusTimer, loadedDates, dispatch]);
 
   // ---- expenses -----------------------------------------------------------
   const recent = useMemo(() => recentExpenses(state, today), [state, today]);
@@ -358,7 +443,10 @@ export default function HomeScreen() {
     };
   }, []);
 
-  const changeSettings = useCallback((patch: Partial<Settings>) => dispatch({ type: 'updateSettings', patch }), [dispatch]);
+  const changeSettings = useCallback(
+    (patch: Partial<Settings>) => dispatch({ type: 'updateSettings', patch }),
+    [dispatch],
+  );
 
   const toggleLock = async (next: boolean) => {
     setLockBusy(true);
@@ -532,6 +620,7 @@ export default function HomeScreen() {
       // The reminder goes first, so resetting the reminder time can't
       // reschedule it.
       await disableDailyReminder();
+      await cancelFocusEnd();
       setReminderOn(false);
       await erase();
       removeOldExports();
@@ -555,7 +644,6 @@ export default function HomeScreen() {
 
   // ---- day details --------------------------------------------------------
   const [openDay, setOpenDay] = useState<string | null>(null);
-  const loadedDates = useMemo(() => lastNDays(today, LOADED_DAYS), [today]);
   const openIndex = openDay ? loadedDates.indexOf(openDay) : -1;
 
   // ---- layout -------------------------------------------------------------
@@ -565,6 +653,182 @@ export default function HomeScreen() {
     () => lastNDays(today, HISTORY_DAYS).map((date) => ({ date, log: state.days[date] ?? null })),
     [today, state.days],
   );
+
+  // ---- the cards, in the order chosen in Settings ---------------------------
+  const cards: Record<HomeCard, ReactNode> = {
+    focus: (
+      <TodayFocus
+        key={`focus-${activeDate}`}
+        focus={day.focus}
+        onSave={saveFocus}
+        dayWord={dayWord}
+        focusMinutes={day.focusMinutes}
+        timer={
+          isToday
+            ? {
+                running: focusTimer,
+                length: state.settings.focusLength,
+                onStart: () => void startFocus(),
+                onStop: stopFocus,
+              }
+            : undefined
+        }
+      />
+    ),
+    notes: (
+      <QuickCapture
+        notes={day.notes}
+        isPremium={isPremium}
+        draft={noteDraft}
+        onDraftChange={setNoteDraft}
+        onSubmit={submitNote}
+        onDelete={deleteNote}
+        onEdit={editNote}
+        onSearch={openSearch}
+        taskMode={taskMode}
+        onTaskModeChange={setTaskMode}
+        onToggleTask={toggleTask}
+        carry={
+          isToday && openTasks.length > 0 && carryDismissedOn !== today
+            ? { count: openTasks.length, from: carryFrom }
+            : null
+        }
+        dayWord={dayWord}
+        onCarry={carryOver}
+        onDismissCarry={() => setCarryDismissedOn(today)}
+      />
+    ),
+    habits: (
+      <HabitChecklist
+        habits={state.habits}
+        done={day.habitsDone}
+        skipped={day.habitsSkipped}
+        onSkip={skipHabit}
+        onMove={(id, nextTo, where) => {
+          dispatch({ type: 'moveHabit', id, nextTo, where });
+          haptic.tick();
+        }}
+        streaks={isToday ? streaks : {}}
+        streakCap={LOADED_DAYS}
+        isPremium={isPremium}
+        composerOpen={habitComposerOpen}
+        onToggle={(id) => {
+          const ticking = !day.habitsDone.includes(id);
+          dispatch({ type: 'toggleHabit', date: activeDate, id });
+          // Not ticked yet today, the streak counts up to yesterday; this tick adds today.
+          const reached = (streaks[id] ?? 0) + 1;
+          const habit = state.habits.find((h) => h.id === id);
+          // A tick on a day off doesn't add to the streak, so it is no milestone.
+          if (isToday && ticking && habit && isScheduled(habit, today) && STREAK_MILESTONES.includes(reached)) {
+            haptic.success();
+            setMessage(`${reached}-day streak on “${habit.label}”. Keep it going!`);
+          } else {
+            haptic.tick();
+          }
+        }}
+        onRemove={removeHabit}
+        onRequestAdd={requestAddHabit}
+        onCloseComposer={() => setHabitComposerOpen(false)}
+        onAdd={addHabit}
+        today={activeDate}
+        isToday={isToday}
+        onSetDays={(id, days) => dispatch({ type: 'setHabitDays', id, days })}
+        onRename={(id, raw) => {
+          const label = raw.trim().slice(0, HABIT_MAX_LENGTH);
+          if (!label) return 'Give the habit a name.';
+          if (state.habits.some((h) => h.id !== id && h.label.toLowerCase() === label.toLowerCase())) {
+            return 'You already have that habit.';
+          }
+          dispatch({ type: 'renameHabit', id, label });
+          return null;
+        }}
+      />
+    ),
+    wellbeing: (
+      <WaterEnergy
+        water={day.water}
+        showPace={isToday}
+        goal={state.settings.waterGoal}
+        energy={day.energy}
+        onAdjustWater={(delta) => {
+          dispatch({ type: 'adjustWater', date: activeDate, delta });
+          haptic.tick();
+        }}
+        onSetEnergy={(value) => {
+          dispatch({ type: 'setEnergy', date: activeDate, value });
+          haptic.tick();
+        }}
+        onDragStateChange={(dragging) => setScrollEnabled(!dragging)}
+        mood={day.mood}
+        onSetMood={(value) => {
+          dispatch({ type: 'setMood', date: activeDate, value });
+          haptic.tick();
+        }}
+        sleep={day.sleep}
+        onSetSleep={(value) => {
+          dispatch({ type: 'setSleep', date: activeDate, value });
+          haptic.tick();
+        }}
+      />
+    ),
+    expenses: (
+      <ExpenseLogger
+        expenses={day.expenses}
+        totalCents={totalCents(day)}
+        budgetCents={state.settings.dailyBudgetCents}
+        onAdd={(cents, label, category) => {
+          dispatch({
+            type: 'addExpense',
+            date: activeDate,
+            expense: { id: newId('exp'), cents, label, category, createdAt: Date.now() },
+          });
+          haptic.success();
+        }}
+        onDelete={deleteExpense}
+        dayWord={dayWord}
+        recent={recent}
+        onRepeat={(e) => {
+          dispatch({
+            type: 'addExpense',
+            date: activeDate,
+            expense: { id: newId('exp'), cents: e.cents, label: e.label, category: e.category, createdAt: Date.now() },
+          });
+          haptic.success();
+        }}
+        hidden={state.settings.hideAmounts}
+        onToggleHidden={() => changeSettings({ hideAmounts: !state.settings.hideAmounts })}
+      />
+    ),
+    journal: (
+      <Journal
+        key={`journal-${activeDate}`}
+        date={activeDate}
+        entry={day.journal}
+        onSave={(text) => {
+          dispatch({ type: 'setJournal', date: activeDate, text });
+          haptic.success();
+        }}
+      />
+    ),
+    countdowns: (
+      <CountdownsCard countdowns={state.countdowns} today={today} onAdd={addCountdown} onRemove={removeCountdown} />
+    ),
+    insights: <InsightsCard isPremium={isPremium} insights={insights} onUnlock={() => openPaywall('history')} />,
+    history: (
+      <HistoryCard
+        isPremium={isPremium}
+        waterGoal={state.settings.waterGoal}
+        habits={state.habits}
+        days={history}
+        allDays={state.days}
+        firstLoaded={loadedDates[0]}
+        onUnlock={() => openPaywall('history')}
+        onOpenDay={setOpenDay}
+      />
+    ),
+  };
+  const hiddenCards = state.settings.homeHidden;
+  const visibleCards = state.settings.homeOrder.filter((id) => !hiddenCards.includes(id));
 
   if (!ready) {
     return (
@@ -608,7 +872,12 @@ export default function HomeScreen() {
               onSettingsPress={() => setSettingsOpen(true)}
               message={message}
               logging={{
-                label: daysBack === 1 ? 'yesterday' : daysBack === EDITABLE_DAYS ? `last ${weekdayName(parseDateKey(activeDate))}` : weekdayName(parseDateKey(activeDate)),
+                label:
+                  daysBack === 1
+                    ? 'yesterday'
+                    : daysBack === EDITABLE_DAYS
+                      ? `last ${weekdayName(parseDateKey(activeDate))}`
+                      : weekdayName(parseDateKey(activeDate)),
                 fullDate: `${weekdayName(parseDateKey(activeDate))}, ${longDate(parseDateKey(activeDate))}`,
                 isToday,
                 canBack: daysBack < EDITABLE_DAYS,
@@ -627,145 +896,10 @@ export default function HomeScreen() {
               <Banner text="Changes aren’t being saved right now. We’ll keep trying." />
             ) : null}
 
-            <TodayFocus key={`focus-${activeDate}`} focus={day.focus} onSave={saveFocus} dayWord={dayWord} />
-
-            <QuickCapture
-              notes={day.notes}
-              isPremium={isPremium}
-              draft={noteDraft}
-              onDraftChange={setNoteDraft}
-              onSubmit={submitNote}
-              onDelete={deleteNote}
-              onEdit={editNote}
-              onSearch={openSearch}
-              taskMode={taskMode}
-              onTaskModeChange={setTaskMode}
-              onToggleTask={toggleTask}
-              carry={
-                isToday && openTasks.length > 0 && carryDismissedOn !== today
-                  ? { count: openTasks.length, from: carryFrom }
-                  : null
-              }
-              dayWord={dayWord}
-              onCarry={carryOver}
-              onDismissCarry={() => setCarryDismissedOn(today)}
-            />
-
-            <HabitChecklist
-              habits={state.habits}
-              done={day.habitsDone}
-              streaks={isToday ? streaks : {}}
-              streakCap={LOADED_DAYS}
-              isPremium={isPremium}
-              composerOpen={habitComposerOpen}
-              onToggle={(id) => {
-                const ticking = !day.habitsDone.includes(id);
-                dispatch({ type: 'toggleHabit', date: activeDate, id });
-                // Not ticked yet today, the streak counts up to yesterday; this tick adds today.
-                const reached = (streaks[id] ?? 0) + 1;
-                const habit = state.habits.find((h) => h.id === id);
-                // A tick on a day off doesn't add to the streak, so it is no milestone.
-                if (isToday && ticking && habit && isScheduled(habit, today) && STREAK_MILESTONES.includes(reached)) {
-                  haptic.success();
-                  setMessage(`${reached}-day streak on “${habit.label}”. Keep it going!`);
-                } else {
-                  haptic.tick();
-                }
-              }}
-              onRemove={removeHabit}
-              onRequestAdd={requestAddHabit}
-              onCloseComposer={() => setHabitComposerOpen(false)}
-              onAdd={addHabit}
-              today={activeDate}
-              isToday={isToday}
-              onSetDays={(id, days) => dispatch({ type: 'setHabitDays', id, days })}
-              onRename={(id, raw) => {
-                const label = raw.trim().slice(0, HABIT_MAX_LENGTH);
-                if (!label) return 'Give the habit a name.';
-                if (state.habits.some((h) => h.id !== id && h.label.toLowerCase() === label.toLowerCase())) {
-                  return 'You already have that habit.';
-                }
-                dispatch({ type: 'renameHabit', id, label });
-                return null;
-              }}
-            />
-
-            <WaterEnergy
-              water={day.water}
-              goal={state.settings.waterGoal}
-              energy={day.energy}
-              onAdjustWater={(delta) => {
-                dispatch({ type: 'adjustWater', date: activeDate, delta });
-                haptic.tick();
-              }}
-              onSetEnergy={(value) => {
-                dispatch({ type: 'setEnergy', date: activeDate, value });
-                haptic.tick();
-              }}
-              onDragStateChange={(dragging) => setScrollEnabled(!dragging)}
-              mood={day.mood}
-              onSetMood={(value) => {
-                dispatch({ type: 'setMood', date: activeDate, value });
-                haptic.tick();
-              }}
-              sleep={day.sleep}
-              onSetSleep={(value) => {
-                dispatch({ type: 'setSleep', date: activeDate, value });
-                haptic.tick();
-              }}
-            />
-
-            <ExpenseLogger
-              expenses={day.expenses}
-              totalCents={totalCents(day)}
-              budgetCents={state.settings.dailyBudgetCents}
-              onAdd={(cents, label, category) => {
-                dispatch({
-                  type: 'addExpense',
-                  date: activeDate,
-                  expense: { id: newId('exp'), cents, label, category, createdAt: Date.now() },
-                });
-                haptic.success();
-              }}
-              onDelete={deleteExpense}
-              dayWord={dayWord}
-              recent={recent}
-              onRepeat={(e) => {
-                dispatch({
-                  type: 'addExpense',
-                  date: activeDate,
-                  expense: { id: newId('exp'), cents: e.cents, label: e.label, category: e.category, createdAt: Date.now() },
-                });
-                haptic.success();
-              }}
-              hidden={state.settings.hideAmounts}
-              onToggleHidden={() => changeSettings({ hideAmounts: !state.settings.hideAmounts })}
-            />
-
-            <Journal
-              key={`journal-${activeDate}`}
-              date={activeDate}
-              entry={day.journal}
-              onSave={(text) => {
-                dispatch({ type: 'setJournal', date: activeDate, text });
-                haptic.success();
-              }}
-            />
-
-            <CountdownsCard countdowns={state.countdowns} today={today} onAdd={addCountdown} onRemove={removeCountdown} />
-
-            <InsightsCard isPremium={isPremium} insights={insights} onUnlock={() => openPaywall('history')} />
-
-            <HistoryCard
-              isPremium={isPremium}
-              waterGoal={state.settings.waterGoal}
-              habits={state.habits}
-              days={history}
-              allDays={state.days}
-              firstLoaded={loadedDates[0]}
-              onUnlock={() => openPaywall('history')}
-              onOpenDay={setOpenDay}
-            />
+            {visibleCards.length === 0 ? <AllHidden onOpenSettings={() => setSettingsOpen(true)} /> : null}
+            {visibleCards.map((id) => (
+              <Fragment key={id}>{cards[id]}</Fragment>
+            ))}
           </View>
         </ScrollView>
 
@@ -842,6 +976,23 @@ export default function HomeScreen() {
   );
 }
 
+/** Every card switched off: say so, and where to bring them back. */
+function AllHidden({ onOpenSettings }: { onOpenSettings: () => void }) {
+  return (
+    <View style={styles.allHidden} testID="all-hidden">
+      <Text style={styles.allHiddenText}>Every card is switched off.</Text>
+      <Pressable
+        onPress={onOpenSettings}
+        accessibilityRole="button"
+        accessibilityLabel="Choose cards in Settings"
+        style={({ pressed }) => [styles.allHiddenButton, pressed && { opacity: 0.7 }]}
+      >
+        <Text style={styles.allHiddenButtonText}>Choose cards in Settings</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 function Banner({ text }: { text: string }) {
   return (
     <View style={styles.banner} accessibilityRole="alert">
@@ -862,4 +1013,22 @@ const styles = StyleSheet.create({
     padding: space.md,
   },
   bannerText: { ...type.label, color: colors.text },
+  allHidden: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    padding: space.xl,
+    alignItems: 'center',
+    gap: space.md,
+  },
+  allHiddenText: { ...type.body, color: colors.textSecondary },
+  allHiddenButton: {
+    minHeight: 44,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.cardRaised,
+    justifyContent: 'center',
+  },
+  allHiddenButtonText: { ...type.label, color: colors.text, fontWeight: '700' },
 });

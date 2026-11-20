@@ -1,23 +1,58 @@
-import { useState, type ReactNode } from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { useEffect, useState, type ReactNode } from 'react';
+import {
+  ActivityIndicator,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { FileDown, FileSpreadsheet, FileUp, KeyRound, Minus, Plus, ShieldCheck, Trash2, X } from '../icons';
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronRight,
+  FileDown,
+  FileSpreadsheet,
+  FileUp,
+  KeyRound,
+  Minus,
+  Plus,
+  ShieldCheck,
+  Trash2,
+  X,
+} from '../icons';
 import { PASSPHRASE_MIN_LENGTH } from '../lib/backupCrypto';
 import { stepBudget } from '../lib/categories';
 import { formatCents } from '../lib/money';
 import { hourLabel } from '../lib/reminders';
 import type { MergeStats } from '../lib/store';
 import {
+  FOCUS_LENGTHS,
+  HOME_CARDS,
   RELOCK_CHOICES_SEC,
   REMINDER_HOUR_MAX,
   REMINDER_HOUR_MIN,
   WATER_GOAL_MAX,
   WATER_GOAL_MIN,
+  type HomeCard,
   type Settings,
 } from '../lib/store';
 import { colors, inputColors, radius, space, type } from '../theme';
+import { HOME_CARD_LABELS } from './homeCards';
 import { IconButton } from './IconButton';
+
+const SWITCH_COLORS = {
+  trackColor: { false: colors.hairline, true: colors.notes },
+  thumbColor: colors.text,
+  // react-native-web colours the "on" thumb with its own prop (teal by default).
+  ...(Platform.OS === 'web' ? { activeThumbColor: colors.text } : {}),
+};
 
 type Props = {
   visible: boolean;
@@ -62,6 +97,11 @@ type Props = {
 export function SettingsSheet(p: Props) {
   const insets = useSafeAreaInsets();
   const s = p.settings;
+  const [arranging, setArranging] = useState(false);
+  // The sheet stays mounted while hidden; open it fresh each time.
+  useEffect(() => {
+    if (!p.visible) setArranging(false);
+  }, [p.visible]);
 
   return (
     <Modal
@@ -73,8 +113,17 @@ export function SettingsSheet(p: Props) {
       navigationBarTranslucent={Platform.OS === 'android'}
     >
       <View style={styles.root}>
-        <Pressable style={styles.backdrop} onPress={p.onClose} accessibilityRole="button" accessibilityLabel="Dismiss settings" />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]} accessibilityViewIsModal testID="settings">
+        <Pressable
+          style={styles.backdrop}
+          onPress={p.onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss settings"
+        />
+        <View
+          style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]}
+          accessibilityViewIsModal
+          testID="settings"
+        >
           <View style={styles.head}>
             <Text style={styles.title} accessibilityRole="header">
               Settings
@@ -95,10 +144,7 @@ export function SettingsSheet(p: Props) {
                   testID="water-goal"
                 />
               </Row>
-              <Row
-                title="Reminder time"
-                subtitle={p.reminderOn ? 'Daily reminder is on' : 'Turn it on with the bell'}
-              >
+              <Row title="Reminder time" subtitle={p.reminderOn ? 'Daily reminder is on' : 'Turn it on with the bell'}>
                 <Stepper
                   value={hourLabel(s.reminderHour)}
                   label="reminder time"
@@ -123,18 +169,80 @@ export function SettingsSheet(p: Props) {
                   testID="daily-budget"
                 />
               </Row>
+              <Row title="Focus session" subtitle="Length of one session on the focus timer">
+                <Stepper
+                  value={`${s.focusLength} min`}
+                  label="focus session length"
+                  onDown={() => p.onChange({ focusLength: stepChoice(FOCUS_LENGTHS, s.focusLength, -1) })}
+                  onUp={() => p.onChange({ focusLength: stepChoice(FOCUS_LENGTHS, s.focusLength, 1) })}
+                  canDown={stepChoice(FOCUS_LENGTHS, s.focusLength, -1) !== s.focusLength}
+                  canUp={stepChoice(FOCUS_LENGTHS, s.focusLength, 1) !== s.focusLength}
+                  testID="focus-length"
+                />
+              </Row>
               {p.hapticsSupported ? (
                 <Row title="Haptic feedback" subtitle="A light tap when you tick, step or save">
                   <Switch
                     value={s.haptics}
                     onValueChange={(haptics) => p.onChange({ haptics })}
-                    trackColor={{ false: colors.hairline, true: colors.notes }}
-                    thumbColor={colors.text}
+                    {...SWITCH_COLORS}
                     accessibilityLabel="Haptic feedback"
                     testID="haptics-switch"
                   />
                 </Row>
               ) : null}
+            </Section>
+
+            {s.mockPremium ? (
+              <Section title="Premium">
+                <Pressable
+                  onPress={() => p.onChange({ mockPremium: false })}
+                  accessibilityRole="button"
+                  accessibilityLabel="Turn off Premium"
+                  accessibilityHint="Goes back to the free version, to try it again. Your data stays."
+                  style={({ pressed }) => [styles.exportRow, styles.lastRow, pressed && { opacity: 0.7 }]}
+                  testID="premium-off"
+                >
+                  <View style={styles.rowText}>
+                    <Text style={styles.rowTitle}>Premium is on</Text>
+                    <Text style={styles.rowSubtitle}>
+                      Unlocked with the test purchase: no money moved. Turn it off to try the free version again;
+                      your data stays.
+                    </Text>
+                  </View>
+                  <Text style={styles.turnOff}>Turn off</Text>
+                </Pressable>
+              </Section>
+            ) : null}
+
+            <Section title="Home screen">
+              {arranging ? (
+                <ArrangePanel
+                  order={s.homeOrder}
+                  hidden={s.homeHidden}
+                  onChange={p.onChange}
+                  onDone={() => setArranging(false)}
+                />
+              ) : (
+                <Pressable
+                  onPress={() => setArranging(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Arrange the home screen"
+                  accessibilityHint="Choose which cards show, and in what order"
+                  style={({ pressed }) => [styles.exportRow, styles.lastRow, pressed && { opacity: 0.7 }]}
+                  testID="arrange-home"
+                >
+                  <View style={styles.rowText}>
+                    <Text style={styles.rowTitle}>Arrange cards</Text>
+                    <Text style={styles.rowSubtitle}>
+                      {s.homeHidden.length === 0
+                        ? 'Every card is showing. Choose which ones and their order.'
+                        : `${HOME_CARDS.length - s.homeHidden.length} of ${HOME_CARDS.length} cards showing.`}
+                    </Text>
+                  </View>
+                  <ChevronRight size={20} color={colors.textSecondary} />
+                </Pressable>
+              )}
             </Section>
 
             <Section title="Privacy & security">
@@ -149,8 +257,7 @@ export function SettingsSheet(p: Props) {
                     <Switch
                       value={s.lockEnabled}
                       onValueChange={p.onToggleLock}
-                      trackColor={{ false: colors.hairline, true: colors.notes }}
-                      thumbColor={colors.text}
+                      {...SWITCH_COLORS}
                       accessibilityLabel="App lock"
                       testID="lock-switch"
                     />
@@ -384,7 +491,12 @@ function ExportPanel(props: { busy: boolean; onExport: (passphrase: string | nul
         accessibilityRole="button"
         accessibilityLabel="Export protected"
         accessibilityState={{ disabled: !canProtect, busy: props.busy }}
-        style={({ pressed }) => [styles.previewButton, styles.previewConfirm, !canProtect && styles.off, pressed && { opacity: 0.85 }]}
+        style={({ pressed }) => [
+          styles.previewButton,
+          styles.previewConfirm,
+          !canProtect && styles.off,
+          pressed && { opacity: 0.85 },
+        ]}
         testID="export-protected"
       >
         {props.busy ? (
@@ -422,7 +534,12 @@ function ExportPanel(props: { busy: boolean; onExport: (passphrase: string | nul
 }
 
 /** A protected backup was picked: ask for its passphrase. */
-function UnlockPanel(props: { busy: boolean; error: string | null; onUnlock: (passphrase: string) => void; onCancel: () => void }) {
+function UnlockPanel(props: {
+  busy: boolean;
+  error: string | null;
+  onUnlock: (passphrase: string) => void;
+  onCancel: () => void;
+}) {
   const [pass, setPass] = useState('');
   const can = pass.length > 0 && !props.busy;
   return (
@@ -464,7 +581,12 @@ function UnlockPanel(props: { busy: boolean; error: string | null; onUnlock: (pa
           accessibilityRole="button"
           accessibilityLabel="Open backup"
           accessibilityState={{ disabled: !can, busy: props.busy }}
-          style={({ pressed }) => [styles.previewButton, styles.previewConfirm, !can && styles.off, pressed && { opacity: 0.85 }]}
+          style={({ pressed }) => [
+            styles.previewButton,
+            styles.previewConfirm,
+            !can && styles.off,
+            pressed && { opacity: 0.85 },
+          ]}
           testID="restore-unlock-confirm"
         >
           {props.busy ? (
@@ -476,6 +598,87 @@ function UnlockPanel(props: { busy: boolean; error: string | null; onUnlock: (pa
       </View>
     </View>
   );
+}
+
+/** Every card with a switch to show it and arrows to move it. Changes apply at once. */
+function ArrangePanel(props: {
+  order: HomeCard[];
+  hidden: HomeCard[];
+  onChange: (patch: Partial<Settings>) => void;
+  onDone: () => void;
+}) {
+  const { order, hidden } = props;
+  const move = (i: number, dir: -1 | 1) => {
+    const next = [...order];
+    [next[i], next[i + dir]] = [next[i + dir], next[i]];
+    props.onChange({ homeOrder: next });
+  };
+  const changed = hidden.length > 0 || order.join() !== HOME_CARDS.join();
+  return (
+    <View style={styles.arrange} testID="arrange-panel">
+      {order.map((card, i) => {
+        const label = HOME_CARD_LABELS[card];
+        const shown = !hidden.includes(card);
+        return (
+          <View key={card} style={styles.arrangeRow}>
+            <Text style={[styles.arrangeLabel, !shown && styles.arrangeOff]} numberOfLines={1}>
+              {label}
+            </Text>
+            <IconButton
+              icon={ArrowUp}
+              size={16}
+              label={`Move ${label} up`}
+              onPress={() => move(i, -1)}
+              disabled={i === 0}
+            />
+            <IconButton
+              icon={ArrowDown}
+              size={16}
+              label={`Move ${label} down`}
+              onPress={() => move(i, 1)}
+              disabled={i === order.length - 1}
+            />
+            <Switch
+              value={shown}
+              onValueChange={(on) =>
+                props.onChange({ homeHidden: on ? hidden.filter((c) => c !== card) : [...hidden, card] })
+              }
+              {...SWITCH_COLORS}
+              accessibilityLabel={`Show ${label}`}
+              testID={`show-${card}`}
+            />
+          </View>
+        );
+      })}
+      <View style={styles.previewButtons}>
+        <Pressable
+          onPress={() => props.onChange({ homeOrder: [...HOME_CARDS], homeHidden: [] })}
+          disabled={!changed}
+          accessibilityRole="button"
+          accessibilityLabel="Reset the home screen"
+          accessibilityState={{ disabled: !changed }}
+          style={({ pressed }) => [styles.previewButton, pressed && { opacity: 0.7 }]}
+        >
+          <Text style={[styles.previewCancel, !changed && styles.offText]}>Reset</Text>
+        </Pressable>
+        <Pressable
+          onPress={props.onDone}
+          accessibilityRole="button"
+          accessibilityLabel="Done arranging"
+          style={({ pressed }) => [styles.previewButton, styles.previewConfirm, pressed && { opacity: 0.85 }]}
+        >
+          <Text style={styles.previewConfirmText}>Done</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/** The next choice up or down a fixed list, staying put at either end. */
+function stepChoice(choices: readonly number[], current: number, dir: 1 | -1): number {
+  const i = choices.indexOf(current);
+  if (i === -1) return choices[0];
+  return choices[Math.min(choices.length - 1, Math.max(0, i + dir))];
 }
 
 export function relockLabel(sec: number): string {
@@ -579,7 +782,14 @@ function Stepper(props: {
       <Text style={styles.stepValue} testID={`${props.testID}-value`}>
         {props.value}
       </Text>
-      <IconButton icon={Plus} label={`Increase ${props.label}`} onPress={props.onUp} disabled={!props.canUp} size={16} filled />
+      <IconButton
+        icon={Plus}
+        label={`Increase ${props.label}`}
+        onPress={props.onUp}
+        disabled={!props.canUp}
+        size={16}
+        filled
+      />
     </View>
   );
 }
@@ -625,7 +835,14 @@ const styles = StyleSheet.create({
   rowTitle: { ...type.body, color: colors.text, fontWeight: '600' },
   rowSubtitle: { ...type.caption, color: colors.textSecondary },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: space.xs },
-  stepValue: { ...type.body, color: colors.text, fontWeight: '600', minWidth: 52, textAlign: 'center', fontVariant: ['tabular-nums'] },
+  stepValue: {
+    ...type.body,
+    color: colors.text,
+    fontWeight: '600',
+    minWidth: 52,
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
+  },
   exportRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -642,6 +859,12 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.hairline,
   },
   previewText: { ...type.label, fontWeight: '400', color: colors.text },
+  lastRow: { borderBottomWidth: 0 },
+  turnOff: { ...type.label, color: colors.notes, fontWeight: '700' },
+  arrange: { paddingVertical: space.sm, gap: 2 },
+  arrangeRow: { flexDirection: 'row', alignItems: 'center', gap: space.xs, minHeight: 48 },
+  arrangeLabel: { ...type.body, color: colors.text, flex: 1 },
+  arrangeOff: { color: colors.textMuted },
   previewButtons: { flexDirection: 'row', gap: space.sm, marginTop: space.xs },
   previewButton: {
     flex: 1,

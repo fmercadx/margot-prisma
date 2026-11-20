@@ -25,7 +25,7 @@ jest.mock('expo-notifications', () => {
     }),
     getAllScheduledNotificationsAsync: jest.fn(async () => [...scheduled.values()]),
     AndroidImportance: { DEFAULT: 3 },
-    SchedulableTriggerInputTypes: { DAILY: 'daily' },
+    SchedulableTriggerInputTypes: { DAILY: 'daily', DATE: 'date' },
   };
 });
 

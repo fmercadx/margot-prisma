@@ -9,9 +9,10 @@ import { lastNDays, parseDateKey } from './date';
 // morning while every earlier day stays where it was:
 //
 //   {
-//     habits: [ { id, label, core } ],            // definitions, carried across days
+//     habits: [ { id, label, core, days? } ],     // definitions in the order shown, carried across days
 //     days: {
-//       '2026-11-07': { focus, notes, habitsDone, water, energy, mood, expenses },
+//       '2026-11-07': { focus, journal, notes, habitsDone, habitsSkipped, water, energy, mood, sleep,
+//                       expenses, focusMinutes },
 //       '2026-11-08': { ... },                     // today
 //     },
 //   }
@@ -44,11 +45,13 @@ export type DayLog = {
   journal: string; // a few lines at the end of the day; '' until written
   notes: Note[]; // newest first
   habitsDone: string[]; // ids of habits ticked that day
+  habitsSkipped: string[]; // ids of habits set aside that day: they neither count nor break a streak
   water: number; // glasses
   energy: number | null; // 1–10, null until logged
   mood: number | null; // 1–5, null until logged
   sleep: number | null; // hours slept the night before, in half hours; null until logged
   expenses: Expense[]; // newest first
+  focusMinutes: number; // minutes of focus sessions finished that day
 };
 
 export type Settings = {
@@ -59,7 +62,31 @@ export type Settings = {
   dailyBudgetCents: number | null; // spending limit for a day; null = no budget
   relockAfterSec: number; // with app lock on: time in the background before it locks again
   hideAmounts: boolean; // show every amount of money as "$•••", for using the app in company
+  focusLength: number; // minutes in one focus session
+  homeOrder: HomeCard[]; // the home screen's cards, top to bottom
+  homeHidden: HomeCard[]; // cards switched off on the home screen
+  // Premium unlocked with the mock purchase (premium.ts). Kept so it survives
+  // restarts; a real build restores the entitlement from the store instead.
+  mockPremium: boolean;
 };
+
+/** The cards on the home screen, in their default order. */
+export const HOME_CARDS = [
+  'focus',
+  'notes',
+  'habits',
+  'wellbeing',
+  'expenses',
+  'journal',
+  'countdowns',
+  'insights',
+  'history',
+] as const;
+export type HomeCard = (typeof HOME_CARDS)[number];
+export const isHomeCard = (v: unknown): v is HomeCard => typeof v === 'string' && (HOME_CARDS as readonly string[]).includes(v);
+
+/** A focus session that is running: it belongs to the day it was started on. */
+export type FocusTimer = { date: string; startedAt: number; endsAt: number };
 
 /** A date worth counting down to. */
 export type Countdown = { id: string; label: string; date: string };
@@ -69,6 +96,7 @@ export type HubState = {
   days: Record<string, DayLog>;
   settings: Settings;
   countdowns: Countdown[]; // soonest first
+  focusTimer: FocusTimer | null; // the focus session under way, if any
 };
 
 export const WATER_GOAL_MIN = 4;
@@ -83,7 +111,16 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   dailyBudgetCents: null,
   relockAfterSec: 30,
   hideAmounts: false,
+  focusLength: 25,
+  homeOrder: [...HOME_CARDS],
+  homeHidden: [],
+  mockPremium: false,
 });
+
+/** The lengths a focus session can be set to, in minutes. */
+export const FOCUS_LENGTHS: readonly number[] = [15, 25, 45, 60];
+/** No day holds more focus than it has minutes. */
+export const FOCUS_MINUTES_MAX = 24 * 60;
 
 /** The choices for how long the app may sit in the background before locking again. */
 export const RELOCK_CHOICES_SEC: readonly number[] = [0, 30, 60, 300];
@@ -129,24 +166,44 @@ export const EMPTY_DAY: DayLog = Object.freeze({
   journal: '',
   notes: [],
   habitsDone: [],
+  habitsSkipped: [],
   water: 0,
   energy: null,
   mood: null,
   sleep: null,
   expenses: [],
+  focusMinutes: 0,
 }) as DayLog;
 
-export const initialState: HubState = { habits: [...CORE_HABITS], days: {}, settings: DEFAULT_SETTINGS, countdowns: [] };
+export const initialState: HubState = {
+  habits: [...CORE_HABITS],
+  days: {},
+  settings: DEFAULT_SETTINGS,
+  countdowns: [],
+  focusTimer: null,
+};
 
 export type Action =
-  | { type: 'hydrate'; habits: Habit[]; days: Record<string, DayLog>; settings: Settings; countdowns?: Countdown[] }
+  | {
+      type: 'hydrate';
+      habits: Habit[];
+      days: Record<string, DayLog>;
+      settings: Settings;
+      countdowns?: Countdown[];
+      focusTimer?: FocusTimer | null;
+    }
+  | { type: 'skipHabit'; date: string; id: string }
+  | { type: 'moveHabit'; id: string; nextTo: string; where: 'before' | 'after' }
+  | { type: 'startFocus'; date: string; now: number; minutes: number }
+  | { type: 'endFocus'; now: number }
+  | { type: 'cancelFocus' }
   | { type: 'addCountdown'; countdown: Countdown }
   | { type: 'removeCountdown'; id: string }
   | { type: 'renameHabit'; id: string; label: string }
   | { type: 'updateSettings'; patch: Partial<Settings> }
   | { type: 'restoreNote'; date: string; note: Note }
   | { type: 'restoreExpense'; date: string; expense: Expense }
-  | { type: 'restoreHabit'; date: string; habit: Habit; index: number; wasDone: boolean }
+  | { type: 'restoreHabit'; date: string; habit: Habit; index: number; wasDone: boolean; wasSkipped?: boolean }
   | { type: 'mergeDays'; days: Record<string, DayLog> }
   | { type: 'addNote'; date: string; note: Note }
   | { type: 'deleteNote'; date: string; id: string }
@@ -188,7 +245,50 @@ export function reducer(state: HubState, action: Action): HubState {
         days: action.days,
         settings: action.settings,
         countdowns: action.countdowns ?? [],
+        focusTimer: action.focusTimer ?? null,
       };
+
+    case 'skipHabit': {
+      if (!state.habits.some((h) => h.id === action.id)) return state;
+      return updateDay(state, action.date, (d) =>
+        d.habitsSkipped.includes(action.id)
+          ? { ...d, habitsSkipped: d.habitsSkipped.filter((id) => id !== action.id) }
+          : // Set aside, so not done either.
+            { ...d, habitsSkipped: [...d.habitsSkipped, action.id], habitsDone: d.habitsDone.filter((id) => id !== action.id) },
+      );
+    }
+
+    case 'moveHabit': {
+      const habit = state.habits.find((h) => h.id === action.id);
+      if (!habit || action.id === action.nextTo) return state;
+      const rest = state.habits.filter((h) => h.id !== action.id);
+      const at = rest.findIndex((h) => h.id === action.nextTo);
+      if (at === -1) return state;
+      const habits = [...rest];
+      habits.splice(action.where === 'before' ? at : at + 1, 0, habit);
+      return habits.every((h, i) => h === state.habits[i]) ? state : { ...state, habits };
+    }
+
+    case 'startFocus': {
+      if (state.focusTimer || !FOCUS_LENGTHS.includes(action.minutes)) return state;
+      return {
+        ...state,
+        focusTimer: { date: action.date, startedAt: action.now, endsAt: action.now + action.minutes * 60_000 },
+      };
+    }
+
+    // Finished, or stopped early: the whole minutes done go to the day it was started on.
+    case 'endFocus': {
+      const t = state.focusTimer;
+      if (!t) return state;
+      const minutes = focusMinutesDone(t, action.now);
+      const next = { ...state, focusTimer: null };
+      if (minutes === 0) return next;
+      return updateDay(next, t.date, (d) => ({ ...d, focusMinutes: Math.min(FOCUS_MINUTES_MAX, d.focusMinutes + minutes) }));
+    }
+
+    case 'cancelFocus':
+      return state.focusTimer ? { ...state, focusTimer: null } : state;
 
     case 'addCountdown': {
       const label = action.countdown.label.trim().slice(0, COUNTDOWN_LABEL_MAX_LENGTH);
@@ -235,6 +335,11 @@ export function reducer(state: HubState, action: Action): HubState {
             ? p.relockAfterSec
             : cur.relockAfterSec,
         hideAmounts: p.hideAmounts === undefined ? cur.hideAmounts : p.hideAmounts === true,
+        focusLength:
+          p.focusLength !== undefined && FOCUS_LENGTHS.includes(p.focusLength) ? p.focusLength : cur.focusLength,
+        homeOrder: p.homeOrder === undefined ? cur.homeOrder : normalizeHomeOrder(p.homeOrder),
+        homeHidden: p.homeHidden === undefined ? cur.homeHidden : normalizeHomeHidden(p.homeHidden),
+        mockPremium: p.mockPremium === undefined ? cur.mockPremium : p.mockPremium === true,
       };
       const same =
         next.waterGoal === cur.waterGoal &&
@@ -243,7 +348,11 @@ export function reducer(state: HubState, action: Action): HubState {
         next.haptics === cur.haptics &&
         next.dailyBudgetCents === cur.dailyBudgetCents &&
         next.relockAfterSec === cur.relockAfterSec &&
-        next.hideAmounts === cur.hideAmounts;
+        next.hideAmounts === cur.hideAmounts &&
+        next.focusLength === cur.focusLength &&
+        next.homeOrder.join() === cur.homeOrder.join() &&
+        next.homeHidden.join() === cur.homeHidden.join() &&
+        next.mockPremium === cur.mockPremium;
       return same ? state : { ...state, settings: next };
     }
 
@@ -266,11 +375,12 @@ export function reducer(state: HubState, action: Action): HubState {
     case 'restoreHabit': {
       if (state.habits.some((h) => h.id === action.habit.id)) return state;
       const habits = [...state.habits];
-      habits.splice(clamp(action.index, CORE_HABITS.length, habits.length), 0, action.habit);
+      habits.splice(clamp(action.index, 0, habits.length), 0, action.habit);
       const next = { ...state, habits };
-      return action.wasDone
-        ? updateDay(next, action.date, (d) => ({ ...d, habitsDone: [...d.habitsDone, action.habit.id] }))
-        : next;
+      const id = action.habit.id;
+      if (action.wasDone) return updateDay(next, action.date, (d) => ({ ...d, habitsDone: [...d.habitsDone, id] }));
+      if (action.wasSkipped) return updateDay(next, action.date, (d) => ({ ...d, habitsSkipped: [...d.habitsSkipped, id] }));
+      return next;
     }
 
     case 'mergeDays': {
@@ -308,12 +418,12 @@ export function reducer(state: HubState, action: Action): HubState {
 
     case 'toggleHabit': {
       if (!state.habits.some((h) => h.id === action.id)) return state;
-      return updateDay(state, action.date, (d) => ({
-        ...d,
-        habitsDone: d.habitsDone.includes(action.id)
-          ? d.habitsDone.filter((id) => id !== action.id)
-          : [...d.habitsDone, action.id],
-      }));
+      return updateDay(state, action.date, (d) =>
+        d.habitsDone.includes(action.id)
+          ? { ...d, habitsDone: d.habitsDone.filter((id) => id !== action.id) }
+          : // Ticking a habit that was set aside takes it back.
+            { ...d, habitsDone: [...d.habitsDone, action.id], habitsSkipped: d.habitsSkipped.filter((id) => id !== action.id) },
+      );
     }
 
     case 'addHabit': {
@@ -330,8 +440,12 @@ export function reducer(state: HubState, action: Action): HubState {
       const next = { ...state, habits: state.habits.filter((h) => h.id !== action.id) };
       // Untick it today. Earlier days keep their record of having done it.
       return updateDay(next, action.date, (d) =>
-        d.habitsDone.includes(action.id)
-          ? { ...d, habitsDone: d.habitsDone.filter((id) => id !== action.id) }
+        d.habitsDone.includes(action.id) || d.habitsSkipped.includes(action.id)
+          ? {
+              ...d,
+              habitsDone: d.habitsDone.filter((id) => id !== action.id),
+              habitsSkipped: d.habitsSkipped.filter((id) => id !== action.id),
+            }
           : d,
       );
     }
@@ -511,16 +625,20 @@ export function mergeBackup(
       const notes = unionById(mine.notes, theirs.notes);
       const expenses = unionById(mine.expenses, theirs.expenses);
       const habitsDone = [...new Set([...mine.habitsDone, ...theirs.habitsDone])];
+      // Done on either wins over set aside on the other.
+      const skipped = [...new Set([...mine.habitsSkipped, ...theirs.habitsSkipped])].filter((id) => !habitsDone.includes(id));
       const candidate: DayLog = {
         focus: mine.focus || theirs.focus,
         journal: mine.journal || theirs.journal,
         notes: notes.list,
         expenses: expenses.list,
         habitsDone: habitsDone.length === mine.habitsDone.length ? mine.habitsDone : habitsDone,
+        habitsSkipped: skipped.join() === mine.habitsSkipped.join() ? mine.habitsSkipped : skipped,
         water: Math.max(mine.water, theirs.water),
         energy: mine.energy ?? theirs.energy,
         mood: mine.mood ?? theirs.mood,
         sleep: mine.sleep ?? theirs.sleep,
+        focusMinutes: Math.max(mine.focusMinutes, theirs.focusMinutes),
       };
       const changed =
         candidate.focus !== mine.focus ||
@@ -528,6 +646,8 @@ export function mergeBackup(
         candidate.notes !== mine.notes ||
         candidate.expenses !== mine.expenses ||
         candidate.habitsDone !== mine.habitsDone ||
+        candidate.habitsSkipped !== mine.habitsSkipped ||
+        candidate.focusMinutes !== mine.focusMinutes ||
         candidate.water !== mine.water ||
         candidate.energy !== mine.energy ||
         candidate.mood !== mine.mood ||
@@ -571,6 +691,45 @@ function sameDays(a: number[] | undefined, b: number[] | undefined): boolean {
 /** Whether the habit is meant for that date. */
 export function isScheduled(habit: Pick<Habit, 'days'>, date: string): boolean {
   return !habit.days || habit.days.includes(parseDateKey(date).getDay());
+}
+
+/**
+ * Whether the habit counts on that day: meant for it, and not set aside.
+ * A day off and a skipped day both leave a streak as it was.
+ */
+export function isDue(habit: Pick<Habit, 'id' | 'days'>, date: string, day: Pick<DayLog, 'habitsSkipped'> | null | undefined): boolean {
+  return isScheduled(habit, date) && !(day?.habitsSkipped.includes(habit.id) ?? false);
+}
+
+/** Whole minutes of a focus session done by `now`, never more than its length. */
+export function focusMinutesDone(t: FocusTimer, now: number): number {
+  const length = Math.round((t.endsAt - t.startedAt) / 60_000);
+  return Math.max(0, Math.min(length, Math.floor((now - t.startedAt) / 60_000)));
+}
+
+/** "1 h 15 min", "45 min" */
+export function focusLabel(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h === 0 ? `${m} min` : m === 0 ? `${h} h` : `${h} h ${m} min`;
+}
+
+/** Every card exactly once: unknown ones dropped, missing ones added at their default place. */
+export function normalizeHomeOrder(list: readonly unknown[]): HomeCard[] {
+  const known = [...new Set(list.filter(isHomeCard))];
+  for (const card of HOME_CARDS) {
+    if (known.includes(card)) continue;
+    // A card this build added: it goes after the card it follows by default.
+    const i = HOME_CARDS.indexOf(card);
+    const after = i === 0 ? -1 : known.indexOf(HOME_CARDS[i - 1]);
+    known.splice(after + 1, 0, card);
+  }
+  return known;
+}
+
+/** Known cards, once each, in default order. */
+export function normalizeHomeHidden(list: readonly unknown[]): HomeCard[] {
+  return HOME_CARDS.filter((c) => list.includes(c));
 }
 
 /** Half-hour steps between 0 and SLEEP_MAX. */
@@ -627,14 +786,15 @@ function insertByTime<T extends { createdAt: number }>(list: T[], item: T): T[] 
  * history the app has loaded.
  */
 export function habitStreak(state: HubState, habitId: string, today: string, maxDays: number): number {
-  const habit = state.habits.find((h) => h.id === habitId) ?? { days: undefined };
+  const habit = state.habits.find((h) => h.id === habitId) ?? { id: habitId, days: undefined };
   const days = lastNDays(today, maxDays + 1).reverse(); // today first
   const doneOn = (date: string) => state.days[date]?.habitsDone.includes(habitId) ?? false;
-  // Days the habit isn't meant for are stepped over: they neither count nor break it.
-  let i = doneOn(days[0]) && isScheduled(habit, days[0]) ? 0 : 1;
+  const due = (date: string) => isDue(habit, date, state.days[date]);
+  // Days off and skipped days are stepped over: they neither count nor break it.
+  let i = doneOn(days[0]) && due(days[0]) ? 0 : 1;
   let streak = 0;
   for (; i < days.length && streak < maxDays; i++) {
-    if (!isScheduled(habit, days[i])) continue;
+    if (!due(days[i])) continue;
     if (!doneOn(days[i])) break;
     streak++;
   }
@@ -682,6 +842,8 @@ export function hasAnyData(day: DayLog): boolean {
     day.journal !== '' ||
     day.notes.length > 0 ||
     day.habitsDone.length > 0 ||
+    day.habitsSkipped.length > 0 ||
+    day.focusMinutes > 0 ||
     day.water > 0 ||
     day.energy !== null ||
     day.mood !== null ||

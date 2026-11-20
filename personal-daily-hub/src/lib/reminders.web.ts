@@ -22,3 +22,9 @@ export async function enableDailyReminder(_hour: number): Promise<EnableResult> 
 }
 
 export async function disableDailyReminder(): Promise<void> {}
+
+export async function scheduleFocusEnd(_endsAt: number, _minutes: number): Promise<EnableResult> {
+  return 'unsupported';
+}
+
+export async function cancelFocusEnd(): Promise<void> {}

@@ -2,12 +2,12 @@ import type { ReactNode } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Check, ChevronLeft, ChevronRight, Circle, CircleCheck, Forward, Share2, Target, X } from '../icons';
+import { Check, ChevronLeft, ChevronRight, Circle, CircleCheck, Forward, Share2, SkipForward, Target, Timer, X } from '../icons';
 import { dayAsText } from '../lib/dayText';
 import { CATEGORY_LABELS } from '../lib/categories';
 import { clockTime, longDate, parseDateKey, weekdayName } from '../lib/date';
 import { moodWord } from '../lib/mood';
-import { ENERGY_MAX, EMPTY_DAY, expenseName, isScheduled, totalCents, type DayLog, type Habit } from '../lib/store';
+import { ENERGY_MAX, EMPTY_DAY, expenseName, focusLabel, isDue, totalCents, type DayLog, type Habit } from '../lib/store';
 import { colors, radius, space, type } from '../theme';
 import { CATEGORY_ICONS } from './categoryIcons';
 import { IconButton } from './IconButton';
@@ -39,8 +39,9 @@ export function DaySheet(p: Props) {
   const day = p.log ?? EMPTY_DAY;
   const date = p.date ? parseDateKey(p.date) : null;
   const done = p.habits.filter((h) => day.habitsDone.includes(h.id));
-  // Out of the habits meant for that weekday; one done on a day off still shows.
-  const due = p.date ? p.habits.filter((h) => isScheduled(h, p.date!)) : p.habits;
+  const skipped = p.habits.filter((h) => day.habitsSkipped.includes(h.id));
+  // Out of the habits meant for that weekday and not set aside; one done on a day off still shows.
+  const due = p.date ? p.habits.filter((h) => isDue(h, p.date!, day)) : p.habits;
   const doneDue = due.filter((h) => day.habitsDone.includes(h.id)).length;
   const nothing =
     !day.focus &&
@@ -48,6 +49,8 @@ export function DaySheet(p: Props) {
     day.notes.length === 0 &&
     day.expenses.length === 0 &&
     done.length === 0 &&
+    skipped.length === 0 &&
+    day.focusMinutes === 0 &&
     day.water === 0 &&
     day.energy === null &&
     day.mood === null &&
@@ -101,12 +104,25 @@ export function DaySheet(p: Props) {
               </View>
             ) : null}
 
-            {done.length > 0 ? (
+            {day.focusMinutes > 0 ? (
+              <View style={styles.focus} accessible accessibilityLabel={`Focused for ${focusLabel(day.focusMinutes)}`}>
+                <Timer size={16} color={colors.focus} strokeWidth={2.25} />
+                <Text style={styles.focusText}>Focused for {focusLabel(day.focusMinutes)}</Text>
+              </View>
+            ) : null}
+
+            {done.length > 0 || skipped.length > 0 ? (
               <Section title={`Habits · ${doneDue}/${due.length}`}>
                 {done.map((h) => (
                   <View key={h.id} style={styles.line}>
                     <Check size={16} color={colors.habits} strokeWidth={3} />
                     <Text style={styles.lineText}>{h.label}</Text>
+                  </View>
+                ))}
+                {skipped.map((h) => (
+                  <View key={h.id} style={styles.line} accessible accessibilityLabel={`${h.label}, skipped`}>
+                    <SkipForward size={16} color={colors.textMuted} strokeWidth={2.5} />
+                    <Text style={[styles.lineText, styles.muted]}>{h.label} · skipped</Text>
                   </View>
                 ))}
               </Section>
@@ -249,6 +265,7 @@ const styles = StyleSheet.create({
   itemText: { flex: 1, gap: 2 },
   done: { color: colors.textMuted, textDecorationLine: 'line-through' },
   lineText: { ...type.body, color: colors.text, flexShrink: 1 },
+  muted: { color: colors.textMuted },
   meta: { ...type.caption, color: colors.textMuted, fontVariant: ['tabular-nums'] },
   amount: { ...type.body, color: colors.text, fontWeight: '600', fontVariant: ['tabular-nums'] },
   journal: { paddingVertical: space.sm, lineHeight: 22 },

@@ -84,13 +84,16 @@ describe('habit schedules', () => {
     expect(monthSummary(days, [ago(1), WED], habits).habitRate).toBeCloseTo(2 / 3);
   });
 
-  test('stored: a core habit keeps only its schedule; a custom one keeps everything', () => {
+  test('stored: a core habit keeps only its id and schedule; a custom one keeps everything', () => {
     let s = reducer(initialState, { type: 'setHabitDays', id: 'core-read', days: [1, 2] });
     s = reducer(s, { type: 'addHabit', habit: { id: 'c1', label: 'Stretch', core: false } });
     s = reducer(s, { type: 'setHabitDays', id: 'c1', days: [6] });
     const stored = habitsForStorage(s.habits);
     expect(stored).toEqual([
+      { id: 'core-move', core: true },
       { id: 'core-read', core: true, days: [1, 2] },
+      { id: 'core-mindful', core: true },
+      { id: 'core-plan', core: true },
       { id: 'c1', label: 'Stretch', core: false, days: [6] },
     ]);
     expect(sanitizeHabits(JSON.parse(JSON.stringify(stored)))).toEqual(s.habits);

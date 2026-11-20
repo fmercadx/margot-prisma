@@ -1,6 +1,7 @@
 import { buildExport } from '../src/lib/exportJson';
 import {
   CORE_HABITS,
+  DEFAULT_SETTINGS,
   EMPTY_DAY,
   getDay,
   habitsDoneCount,
@@ -112,7 +113,7 @@ test('mergeDays never lets older stored data replace what is in memory', () => {
 describe('settings', () => {
   test('are clamped to their ranges, and an unchanged value is a no-op', () => {
     let s = reducer(initialState, { type: 'updateSettings', patch: { waterGoal: 99, reminderHour: 2 } });
-    expect(s.settings).toEqual({ waterGoal: 16, reminderHour: 6, lockEnabled: false, haptics: true, dailyBudgetCents: null, relockAfterSec: 30, hideAmounts: false });
+    expect(s.settings).toEqual({ ...DEFAULT_SETTINGS, waterGoal: 16, reminderHour: 6 });
     expect(reducer(s, { type: 'updateSettings', patch: { waterGoal: 16 } })).toBe(s);
     s = reducer(s, { type: 'updateSettings', patch: { lockEnabled: true } });
     expect(s.settings.lockEnabled).toBe(true);
@@ -131,7 +132,7 @@ describe('undo restores', () => {
     expect(reducer(s, { type: 'restoreNote', date: TODAY, note: n('b', 2) })).toBe(s);
   });
 
-  test('a habit goes back to its old position, never above the core four', () => {
+  test('a habit goes back to its old position, wherever that was', () => {
     let s = run(
       { type: 'addHabit', habit: { id: 'x', label: 'X', core: false } },
       { type: 'addHabit', habit: { id: 'y', label: 'Y', core: false } },
@@ -142,7 +143,7 @@ describe('undo restores', () => {
     expect(s.habits.map((h) => h.id).slice(4)).toEqual(['x', 'y']);
     expect(getDay(s, TODAY).habitsDone).toEqual(['x']);
     const s2 = reducer(s, { type: 'restoreHabit', date: TODAY, habit: { ...x, id: 'z' }, index: 0, wasDone: false });
-    expect(s2.habits[4].id).toBe('z');
+    expect(s2.habits[0].id).toBe('z');
   });
 });
 
@@ -176,7 +177,7 @@ describe('buildExport', () => {
         '2026-11-05': EMPTY_DAY,
       },
       [...CORE_HABITS],
-      { waterGoal: 8, reminderHour: 20, lockEnabled: true, haptics: true, dailyBudgetCents: 4000, relockAfterSec: 30, hideAmounts: false },
+      { ...DEFAULT_SETTINGS, lockEnabled: true, dailyBudgetCents: 4000 },
       new Date(2026, 10, 8, 12),
     );
     const file = JSON.parse(json);

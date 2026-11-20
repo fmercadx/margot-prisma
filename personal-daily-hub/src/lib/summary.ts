@@ -1,7 +1,7 @@
 // The week at a glance, for the history card. Pure.
 
 import { categoryTotals, type ExpenseCategory } from './categories';
-import { isScheduled, type DayLog, type Habit } from './store';
+import { isDue, type DayLog, type Habit } from './store';
 
 /** Habits as the summaries need them: an id, and the weekdays it is meant for. */
 export type HabitPlan = Pick<Habit, 'id' | 'days'>;
@@ -10,14 +10,15 @@ const plans = (habits: readonly (HabitPlan | string)[]): HabitPlan[] =>
 
 /**
  * Habits done out of habits due, over the given days. A habit counts only
- * on the days it is meant for; a day without a date counts every habit.
+ * on the days it is meant for and wasn't set aside; a day without a date
+ * counts every habit.
  */
 function habitShare(days: { date?: string; log: DayLog | null }[], habits: HabitPlan[]): number | null {
   let due = 0;
   let done = 0;
   for (const { date, log } of days) {
     for (const h of habits) {
-      if (date !== undefined && !isScheduled(h, date)) continue;
+      if (date !== undefined && !isDue(h, date, log)) continue;
       due++;
       if (log?.habitsDone.includes(h.id)) done++;
     }

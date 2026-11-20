@@ -29,10 +29,15 @@ import {
   ENERGY_MAX,
   ENERGY_MIN,
   EXPENSE_LABEL_MAX_LENGTH,
+  FOCUS_LENGTHS,
   FOCUS_MAX_LENGTH,
+  FOCUS_MINUTES_MAX,
+  HOME_CARDS,
   HABIT_MAX_LENGTH,
   JOURNAL_MAX_LENGTH,
   normalizeDays,
+  normalizeHomeHidden,
+  normalizeHomeOrder,
   MOOD_MAX,
   MOOD_MIN,
   NOTE_MAX_LENGTH,
@@ -48,6 +53,7 @@ import {
   type Countdown,
   type DayLog,
   type Expense,
+  type FocusTimer,
   type Habit,
   type Note,
   type Settings,
@@ -57,6 +63,7 @@ const PREFIX = 'pdh:v1:';
 export const HABITS_KEY = `${PREFIX}habits`;
 export const SETTINGS_KEY = `${PREFIX}settings`;
 export const COUNTDOWNS_KEY = `${PREFIX}countdowns`;
+export const FOCUS_TIMER_KEY = `${PREFIX}focus-timer`;
 const DAY_PREFIX = `${PREFIX}day:`;
 export const dayStorageKey = (date: string) => `${DAY_PREFIX}${date}`;
 const quarantineKey = (key: string) => `${PREFIX}corrupt:${Date.now()}:${key}`;
@@ -126,6 +133,9 @@ const inRange = (v: unknown, lo: number, hi: number): number | null =>
 
 export function sanitizeDay(v: unknown): DayLog {
   const o = isObj(v) ? v : {};
+  const habitIds = (x: unknown) =>
+    Array.isArray(x) ? [...new Set(x.slice(0, CUSTOM_HABITS_MAX + CORE_HABITS.length).filter(isId))] : [];
+  const habitsDone = habitIds(o.habitsDone);
   const water = isNum(o.water) ? Math.min(WATER_MAX, Math.max(0, Math.round(o.water))) : 0;
   const focus = isStr(o.focus) ? o.focus.slice(0, FOCUS_MAX_LENGTH * 4).replace(/\s+/g, ' ').trim().slice(0, FOCUS_MAX_LENGTH) : '';
   const journal = isStr(o.journal) ? o.journal.slice(0, JOURNAL_MAX_LENGTH * 2).replace(/\r\n?/g, '\n').trim().slice(0, JOURNAL_MAX_LENGTH) : '';
@@ -133,14 +143,15 @@ export function sanitizeDay(v: unknown): DayLog {
     focus,
     journal,
     notes: list(o.notes, sanitizeNote),
-    habitsDone: Array.isArray(o.habitsDone)
-      ? [...new Set(o.habitsDone.slice(0, CUSTOM_HABITS_MAX + CORE_HABITS.length).filter(isId))]
-      : [],
+    habitsDone,
+    // A habit is done or set aside, not both; done wins.
+    habitsSkipped: habitIds(o.habitsSkipped).filter((id) => !habitsDone.includes(id)),
     water,
     energy: inRange(o.energy, ENERGY_MIN, ENERGY_MAX),
     mood: inRange(o.mood, MOOD_MIN, MOOD_MAX),
     sleep: isNum(o.sleep) && o.sleep >= 0 && o.sleep <= SLEEP_MAX ? roundSleep(o.sleep) : null,
     expenses: list(o.expenses, sanitizeExpense),
+    focusMinutes: isNum(o.focusMinutes) ? Math.min(FOCUS_MINUTES_MAX, Math.max(0, Math.round(o.focusMinutes))) : 0,
   };
 }
 
@@ -159,7 +170,19 @@ export function sanitizeSettings(v: unknown): Settings {
         ? o.relockAfterSec
         : DEFAULT_SETTINGS.relockAfterSec,
     hideAmounts: o.hideAmounts === true,
+    focusLength: isNum(o.focusLength) && FOCUS_LENGTHS.includes(o.focusLength) ? o.focusLength : DEFAULT_SETTINGS.focusLength,
+    homeOrder: Array.isArray(o.homeOrder) ? normalizeHomeOrder(o.homeOrder.slice(0, HOME_CARDS.length * 2)) : [...HOME_CARDS],
+    homeHidden: Array.isArray(o.homeHidden) ? normalizeHomeHidden(o.homeHidden.slice(0, HOME_CARDS.length * 2)) : [],
+    mockPremium: o.mockPremium === true,
   };
+}
+
+/** A running focus session: a real day, and no longer than the longest session. */
+export function sanitizeFocusTimer(v: unknown): FocusTimer | null {
+  if (!isObj(v) || !isDateKey(v.date) || !isTime(v.startedAt) || !isTime(v.endsAt)) return null;
+  const length = v.endsAt - v.startedAt;
+  if (length <= 0 || length > Math.max(...FOCUS_LENGTHS) * 60_000) return null;
+  return { date: v.date, startedAt: v.startedAt, endsAt: v.endsAt };
 }
 
 /** A stored schedule, or undefined for every day (and for anything invalid). */
@@ -172,16 +195,16 @@ const withDays = (h: Habit, days: number[] | undefined): Habit => (days ? { ...h
 
 /**
  * Custom habits from storage, with the four core habits always present.
- * A core habit is stored only as `{ id, core: true, days }` when it has a
- * schedule; its name is the app's.
+ * A core habit is stored as `{ id, core: true, days? }`; its name is the
+ * app's. Since 1.8 all four are stored, in the order the person chose;
+ * before that only scheduled ones were, and the core four came first.
  */
 export function sanitizeHabits(v: unknown): Habit[] {
   const raw = Array.isArray(v) ? v.slice(0, CUSTOM_HABITS_MAX * 2 + CORE_HABITS.length) : [];
-  const coreDays = new Map<string, number[]>();
+  const coreDays = new Map<string, number[] | undefined>();
   for (const h of raw) {
     if (!isObj(h) || h.core !== true || !isId(h.id) || coreDays.has(h.id)) continue;
-    const days = sanitizeDays(h.days);
-    if (days && CORE_HABITS.some((c) => c.id === h.id)) coreDays.set(h.id, days);
+    if (CORE_HABITS.some((c) => c.id === h.id)) coreDays.set(h.id, sanitizeDays(h.days));
   }
   const custom = list(
     raw,
@@ -193,7 +216,23 @@ export function sanitizeHabits(v: unknown): Habit[] {
   )
     .filter((h) => !CORE_HABITS.some((c) => c.id === h.id))
     .slice(0, CUSTOM_HABITS_MAX);
-  return [...CORE_HABITS.map((c) => withDays(c, coreDays.get(c.id))), ...custom];
+  const core = (id: string) => {
+    const c = CORE_HABITS.find((x) => x.id === id)!;
+    return withDays(c, coreDays.get(c.id));
+  };
+  if (coreDays.size < CORE_HABITS.length) return [...CORE_HABITS.map((c) => core(c.id)), ...custom];
+  // Saved in order: keep it.
+  const keep = new Set(custom.map((h) => h.id));
+  const out: Habit[] = [];
+  const placed = new Set<string>();
+  for (const h of raw) {
+    if (!isObj(h) || !isId(h.id) || placed.has(h.id)) continue;
+    if (h.core === true && coreDays.has(h.id)) out.push(core(h.id));
+    else if (keep.has(h.id)) out.push(custom.find((c) => c.id === h.id)!);
+    else continue;
+    placed.add(h.id);
+  }
+  return out;
 }
 
 /** Countdowns: real dates, a name, one per id, at most COUNTDOWNS_MAX, soonest first. */
@@ -272,6 +311,11 @@ export async function loadHabits(): Promise<Habit[]> {
 export async function loadCountdowns(): Promise<Countdown[]> {
   const raw = await AsyncStorage.getItem(COUNTDOWNS_KEY);
   return sanitizeCountdowns(await parse(COUNTDOWNS_KEY, raw));
+}
+
+export async function loadFocusTimer(): Promise<FocusTimer | null> {
+  const raw = await AsyncStorage.getItem(FOCUS_TIMER_KEY);
+  return sanitizeFocusTimer(await parse(FOCUS_TIMER_KEY, raw));
 }
 
 export async function loadSettings(): Promise<Settings> {
@@ -399,11 +443,11 @@ export function createPersister(
 }
 
 /**
- * Custom habits in full; a core habit only for its schedule, since its
- * name and id are part of the app.
+ * Every habit in the order shown: custom habits in full, a core habit as
+ * its id and schedule, since its name is part of the app.
  */
-type StoredHabit = Habit | { id: string; core: true; days: number[] };
+type StoredHabit = Habit | { id: string; core: true; days?: number[] };
 
 export function habitsForStorage(habits: Habit[]): StoredHabit[] {
-  return habits.flatMap((h): StoredHabit[] => (!h.core ? [h] : h.days ? [{ id: h.id, core: true, days: h.days }] : []));
+  return habits.map((h): StoredHabit => (!h.core ? h : h.days ? { id: h.id, core: true, days: h.days } : { id: h.id, core: true }));
 }

@@ -1,9 +1,9 @@
-import { CalendarClock, Check, CircleCheckBig, Flame, Lock, Plus, X } from '../icons';
+import { ArrowDown, ArrowUp, CalendarClock, Check, CircleCheckBig, Flame, Lock, Plus, SkipForward, X } from '../icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { weekdaysLabel } from '../lib/date';
-import { HABIT_MAX_LENGTH, isScheduled, type Habit } from '../lib/store';
+import { HABIT_MAX_LENGTH, isDue, isScheduled, type Habit } from '../lib/store';
 import { colors, inputColors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
 import { IconButton } from './IconButton';
@@ -11,6 +11,11 @@ import { IconButton } from './IconButton';
 type Props = {
   habits: Habit[];
   done: string[];
+  /** Habits set aside for the day: they don't count, and streaks carry over them. */
+  skipped: string[];
+  onSkip: (id: string) => void;
+  /** Moves a habit next to another one. */
+  onMove: (id: string, nextTo: string, where: 'before' | 'after') => void;
   /** Days in a row each habit has been done, by habit id. */
   streaks: Record<string, number>;
   /** The most days a streak can show (the history that is loaded). */
@@ -36,14 +41,16 @@ type Props = {
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export function HabitChecklist(props: Props) {
-  const { habits, done, isPremium, composerOpen } = props;
+  const { habits, done, skipped, isPremium, composerOpen } = props;
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [scheduling, setScheduling] = useState<string | null>(null);
-  // Habits not meant for today sit apart, below the rest, and don't count.
-  const due = habits.filter((h) => isScheduled(h, props.today));
-  const resting = habits.filter((h) => !isScheduled(h, props.today));
+  // Habits not meant for today, or set aside, sit apart, below the rest, and don't count.
+  const day = { habitsSkipped: skipped };
+  const due = habits.filter((h) => isDue(h, props.today, day));
+  const resting = habits.filter((h) => !isDue(h, props.today, day));
   const doneCount = due.filter((h) => done.includes(h.id)).length;
+  const dayWord = props.isToday === false ? 'that day' : 'today';
 
   const submit = () => {
     const problem = props.onAdd(draft);
@@ -60,8 +67,9 @@ export function HabitChecklist(props: Props) {
     props.onCloseComposer();
   };
 
-  const renderHabit = (habit: Habit, rest: boolean) => {
+  const renderHabit = (habit: Habit, rest: boolean, group: Habit[], i: number) => {
     const checked = done.includes(habit.id);
+    const isSkipped = skipped.includes(habit.id);
     const open = scheduling === habit.id;
     return (
       <View key={habit.id}>
@@ -70,24 +78,35 @@ export function HabitChecklist(props: Props) {
             onPress={() => props.onToggle(habit.id)}
             accessibilityRole="checkbox"
             accessibilityState={{ checked }}
-            accessibilityLabel={habit.label}
-            accessibilityHint={habit.days ? `Planned for ${weekdaysLabel(habit.days)}` : undefined}
+            accessibilityLabel={isSkipped ? `${habit.label}, skipped ${dayWord}` : habit.label}
+            accessibilityHint={
+              isSkipped
+                ? 'Ticking it takes it back'
+                : habit.days
+                  ? `Planned for ${weekdaysLabel(habit.days)}`
+                  : undefined
+            }
             style={({ pressed }) => [styles.toggle, pressed && { opacity: 0.7 }]}
             testID={`habit-${habit.id}`}
           >
-            <View style={[styles.box, checked && styles.boxChecked]}>
+            <View style={[styles.box, checked && styles.boxChecked, isSkipped && styles.boxSkipped]}>
               {checked ? <Check size={15} color={colors.background} strokeWidth={3} /> : null}
+              {isSkipped ? <SkipForward size={13} color={colors.textMuted} strokeWidth={2.5} /> : null}
             </View>
             <View style={styles.labelCol}>
               <Text style={[styles.label, checked && styles.labelDone]}>{habit.label}</Text>
-              {habit.days && !open ? <Text style={styles.schedule}>{weekdaysLabel(habit.days)}</Text> : null}
+              {isSkipped ? (
+                <Text style={styles.schedule}>Skipped {dayWord} · the streak carries on</Text>
+              ) : habit.days && !open ? (
+                <Text style={styles.schedule}>{weekdaysLabel(habit.days)}</Text>
+              ) : null}
             </View>
             <StreakChip days={props.streaks[habit.id] ?? 0} cap={props.streakCap} />
           </Pressable>
           <IconButton
             icon={CalendarClock}
             size={16}
-            label={habit.core ? `Choose days for ${habit.label}` : `Edit ${habit.label}`}
+            label={`Edit ${habit.label}`}
             onPress={() => setScheduling(open ? null : habit.id)}
             color={open || habit.days ? colors.habits : colors.textMuted}
           />
@@ -108,6 +127,14 @@ export function HabitChecklist(props: Props) {
             onChange={(days) => props.onSetDays(habit.id, days)}
             onDone={() => setScheduling(null)}
             onRename={habit.core ? undefined : (label) => props.onRename(habit.id, label)}
+            onUp={i > 0 ? () => props.onMove(habit.id, group[i - 1].id, 'before') : undefined}
+            onDown={i < group.length - 1 ? () => props.onMove(habit.id, group[i + 1].id, 'after') : undefined}
+            skip={
+              // Only a habit meant for the day can be set aside.
+              isScheduled(habit, props.today)
+                ? { skipped: isSkipped, dayWord, onToggle: () => props.onSkip(habit.id) }
+                : undefined
+            }
           />
         ) : null}
       </View>
@@ -128,13 +155,13 @@ export function HabitChecklist(props: Props) {
       testID="card-habits"
     >
       <View>
-        {due.map((habit) => renderHabit(habit, false))}
+        {due.map((habit, i) => renderHabit(habit, false, due, i))}
         {resting.length > 0 ? (
           <Text style={styles.restHeader} accessibilityRole="header">
             {props.isToday === false ? 'Not planned that day' : 'Not today'}
           </Text>
         ) : null}
-        {resting.map((habit) => renderHabit(habit, true))}
+        {resting.map((habit, i) => renderHabit(habit, true, resting, i))}
       </View>
 
       {composerOpen ? (
@@ -187,6 +214,11 @@ function DayPicker(props: {
   onDone: () => void;
   /** Custom habits can be renamed here too. */
   onRename?: (label: string) => string | null;
+  /** Move it up or down its group; absent at either end. */
+  onUp?: () => void;
+  onDown?: () => void;
+  /** Set it aside for the day, or take it back. Absent on a day it isn't meant for. */
+  skip?: { skipped: boolean; dayWord: string; onToggle: () => void };
 }) {
   const [name, setName] = useState(props.label);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -207,7 +239,12 @@ function DayPicker(props: {
     props.onChange(next.length === 7 ? null : next);
   };
   return (
-    <View style={styles.picker} accessibilityRole="none" accessibilityLabel={`Days for ${props.label}`} testID="day-picker">
+    <View
+      style={styles.picker}
+      accessibilityRole="none"
+      accessibilityLabel={`Editing ${props.label}`}
+      testID="day-picker"
+    >
       {props.onRename ? (
         <View style={{ gap: space.xs }}>
           <TextInput
@@ -248,9 +285,48 @@ function DayPicker(props: {
           );
         })}
       </View>
+      <View style={styles.actions}>
+        <IconButton
+          icon={ArrowUp}
+          size={16}
+          label={`Move ${props.label} up`}
+          onPress={() => props.onUp?.()}
+          disabled={!props.onUp}
+          filled
+        />
+        <IconButton
+          icon={ArrowDown}
+          size={16}
+          label={`Move ${props.label} down`}
+          onPress={() => props.onDown?.()}
+          disabled={!props.onDown}
+          filled
+        />
+        {props.skip ? (
+          <Pressable
+            onPress={props.skip.onToggle}
+            accessibilityRole="button"
+            accessibilityLabel={
+              props.skip.skipped ? `Don’t skip ${props.label}` : `Skip ${props.label} ${props.skip.dayWord}`
+            }
+            accessibilityHint={props.skip.skipped ? undefined : 'It won’t count, and its streak carries on'}
+            style={({ pressed }) => [
+              styles.skipButton,
+              props.skip!.skipped && styles.skipOn,
+              pressed && { opacity: 0.7 },
+            ]}
+            testID="habit-skip"
+          >
+            <SkipForward size={14} color={props.skip.skipped ? colors.text : colors.textSecondary} strokeWidth={2.5} />
+            <Text style={[styles.skipText, props.skip.skipped && { color: colors.text }]}>
+              {props.skip.skipped ? 'Don’t skip' : `Skip ${props.skip.dayWord}`}
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
       <View style={styles.pickerFoot}>
         <Text style={styles.schedule}>{props.days ? weekdaysLabel(props.days) : 'Every day'}</Text>
-        <Pressable onPress={done} accessibilityRole="button" accessibilityLabel={props.onRename ? 'Done editing habit' : 'Done choosing days'} hitSlop={8}>
+        <Pressable onPress={done} accessibilityRole="button" accessibilityLabel="Done editing habit" hitSlop={8}>
           <Text style={styles.done}>Done</Text>
         </Pressable>
       </View>
@@ -290,6 +366,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   boxChecked: { backgroundColor: colors.habits, borderColor: colors.habits },
+  boxSkipped: { borderStyle: 'dashed' },
   labelCol: { flex: 1, gap: 1 },
   label: { ...type.body, color: colors.text },
   schedule: { ...type.caption, color: colors.textSecondary },
@@ -318,6 +395,21 @@ const styles = StyleSheet.create({
   pillText: { ...type.label, color: colors.textSecondary },
   pillTextOn: { color: colors.text, fontWeight: '700' },
   pickerFoot: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  skipButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: HIT,
+    paddingHorizontal: space.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.cardRaised,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    marginLeft: 'auto',
+  },
+  skipOn: { borderColor: colors.textMuted },
+  skipText: { ...type.label, color: colors.textSecondary },
   done: { ...type.label, color: colors.habits, fontWeight: '700' },
   streak: {
     flexDirection: 'row',

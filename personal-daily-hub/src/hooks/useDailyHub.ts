@@ -9,11 +9,13 @@ import {
   dayStorageKey,
   ensureSealed,
   eraseStoredData,
+  FOCUS_TIMER_KEY,
   HABITS_KEY,
   habitsForStorage,
   isEncrypted,
   loadCountdowns,
   loadDays,
+  loadFocusTimer,
   loadHabits,
   loadSettings,
   setCodec,
@@ -28,6 +30,7 @@ import {
   type Action,
   type Countdown,
   type DayLog,
+  type FocusTimer,
   type Habit,
   type HubState,
   type Settings,
@@ -79,11 +82,13 @@ export function useDailyHub(today: string): DailyHub {
     habits: Habit[] | null;
     settings: Settings | null;
     countdowns: Countdown[] | null;
+    focusTimer: FocusTimer | null | undefined; // undefined: nothing queued yet
     days: Record<string, DayLog>;
   }>({
     habits: null,
     settings: null,
     countdowns: null,
+    focusTimer: undefined,
     days: {},
   });
   const loadedFor = useRef<string | null>(null);
@@ -104,19 +109,25 @@ export function useDailyHub(today: string): DailyHub {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let loaded: { habits: Habit[]; days: Record<string, DayLog>; settings: Settings; countdowns: Countdown[] } | null =
-        null;
+      let loaded: {
+        habits: Habit[];
+        days: Record<string, DayLog>;
+        settings: Settings;
+        countdowns: Countdown[];
+        focusTimer: FocusTimer | null;
+      } | null = null;
       try {
         setCodec(await createDataCodec());
         const sealed = await ensureSealed();
         if (sealed > 0) console.info(`[storage] encrypted ${sealed} values saved by an earlier version`);
-        const [habits, days, settings, countdowns] = await Promise.all([
+        const [habits, days, settings, countdowns, focusTimer] = await Promise.all([
           loadHabits(),
           loadDays(lastNDays(today, LOADED_DAYS)),
           loadSettings(),
           loadCountdowns(),
+          loadFocusTimer(),
         ]);
-        loaded = { habits, days, settings, countdowns };
+        loaded = { habits, days, settings, countdowns, focusTimer };
       } catch (err) {
         console.warn('[storage] could not read saved data', err);
       }
@@ -130,6 +141,7 @@ export function useDailyHub(today: string): DailyHub {
         habits: loaded.habits,
         settings: loaded.settings,
         countdowns: loaded.countdowns,
+        focusTimer: loaded.focusTimer,
         days: { ...loaded.days },
       };
       loadedFor.current = today;
@@ -178,6 +190,10 @@ export function useDailyHub(today: string): DailyHub {
       p.schedule(COUNTDOWNS_KEY, state.countdowns);
       queued.current.countdowns = state.countdowns;
     }
+    if (state.focusTimer !== queued.current.focusTimer) {
+      p.schedule(FOCUS_TIMER_KEY, state.focusTimer);
+      queued.current.focusTimer = state.focusTimer;
+    }
     for (const [date, day] of Object.entries(state.days)) {
       if (queued.current.days[date] !== day) {
         p.schedule(dayStorageKey(date), day);
@@ -215,8 +231,20 @@ export function useDailyHub(today: string): DailyHub {
       erasing.current = false;
     }
     // Fresh state, marked as already saved, so erasing writes nothing back.
-    const fresh = { habits: [...CORE_HABITS], days: {}, settings: DEFAULT_SETTINGS, countdowns: [] as Countdown[] };
-    queued.current = { habits: fresh.habits, settings: fresh.settings, countdowns: fresh.countdowns, days: {} };
+    const fresh = {
+      habits: [...CORE_HABITS],
+      days: {},
+      settings: DEFAULT_SETTINGS,
+      countdowns: [] as Countdown[],
+      focusTimer: null,
+    };
+    queued.current = {
+      habits: fresh.habits,
+      settings: fresh.settings,
+      countdowns: fresh.countdowns,
+      focusTimer: null,
+      days: {},
+    };
     loadedFor.current = today;
     dispatch({ type: 'hydrate', ...fresh });
     setLoadFailed(false);
