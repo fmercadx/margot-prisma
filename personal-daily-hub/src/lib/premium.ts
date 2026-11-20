@@ -24,7 +24,9 @@ export const PAYWALL_HEADLINES: Record<PaywallReason, string> = {
 
 /**
  * MOCK purchase. No store is contacted and no money moves; it resolves
- * true after a short pause so the button's busy state is visible.
+ * true after a short pause so the button's busy state is visible. The
+ * unlock is then remembered in Settings (`mockPremium`), so it lasts until
+ * it is turned off in Settings or everything is erased.
  *
  * This is the one function to replace for a real release. Digital
  * unlocks inside an iOS or Android app must go through the platform's

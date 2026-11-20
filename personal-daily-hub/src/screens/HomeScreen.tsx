@@ -130,9 +130,11 @@ export default function HomeScreen() {
   };
 
   // ---- premium ------------------------------------------------------------
-  // Starts false on every launch. A real build would restore this from the
-  // App Store / Play Store entitlement here rather than from local storage.
-  const [isPremium, setIsPremium] = useState(false);
+  // The mock purchase is remembered on the phone, sealed like everything else
+  // and cleared by Erase everything, so it survives a restart, including
+  // Android closing the app in the background. A real build would restore
+  // this from the App Store / Play Store entitlement instead.
+  const isPremium = state.settings.mockPremium;
   const [paywall, setPaywall] = useState<PaywallReason | null>(null);
   // What the person was trying to do when the paywall opened, so unlocking
   // finishes it for them instead of making them do it twice.
@@ -151,7 +153,7 @@ export default function HomeScreen() {
   const unlockPremium = async () => {
     const ok = await purchasePremiumMock();
     if (!ok) return;
-    setIsPremium(true);
+    dispatch({ type: 'updateSettings', patch: { mockPremium: true } });
     setPaywall(null);
     const next = afterUnlock.current;
     afterUnlock.current = null;

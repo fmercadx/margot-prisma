@@ -65,6 +65,9 @@ export type Settings = {
   focusLength: number; // minutes in one focus session
   homeOrder: HomeCard[]; // the home screen's cards, top to bottom
   homeHidden: HomeCard[]; // cards switched off on the home screen
+  // Premium unlocked with the mock purchase (premium.ts). Kept so it survives
+  // restarts; a real build restores the entitlement from the store instead.
+  mockPremium: boolean;
 };
 
 /** The cards on the home screen, in their default order. */
@@ -111,6 +114,7 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   focusLength: 25,
   homeOrder: [...HOME_CARDS],
   homeHidden: [],
+  mockPremium: false,
 });
 
 /** The lengths a focus session can be set to, in minutes. */
@@ -335,6 +339,7 @@ export function reducer(state: HubState, action: Action): HubState {
           p.focusLength !== undefined && FOCUS_LENGTHS.includes(p.focusLength) ? p.focusLength : cur.focusLength,
         homeOrder: p.homeOrder === undefined ? cur.homeOrder : normalizeHomeOrder(p.homeOrder),
         homeHidden: p.homeHidden === undefined ? cur.homeHidden : normalizeHomeHidden(p.homeHidden),
+        mockPremium: p.mockPremium === undefined ? cur.mockPremium : p.mockPremium === true,
       };
       const same =
         next.waterGoal === cur.waterGoal &&
@@ -346,7 +351,8 @@ export function reducer(state: HubState, action: Action): HubState {
         next.hideAmounts === cur.hideAmounts &&
         next.focusLength === cur.focusLength &&
         next.homeOrder.join() === cur.homeOrder.join() &&
-        next.homeHidden.join() === cur.homeHidden.join();
+        next.homeHidden.join() === cur.homeHidden.join() &&
+        next.mockPremium === cur.mockPremium;
       return same ? state : { ...state, settings: next };
     }
 

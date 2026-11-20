@@ -251,7 +251,13 @@ What keeps it safe (`src/hooks/useDailyHub.ts`, `src/lib/storage.ts`):
 
 ## Premium (mock)
 
-`isPremium` starts `false` on every launch. Free users get three Quick
+Unlocking is a mock: the button says "Demo build — no payment is taken",
+waits a moment and unlocks. The unlock is then remembered on the phone (in
+settings, sealed like everything else), so it lasts through restarts,
+including Android closing the app in the background, until Settings →
+Premium → Turn off or Erase everything. A real build would instead restore
+the entitlement from Google Play / the App Store at launch, and that needs
+the network: see the INTERNET note under Security. Free users get three Quick
 Capture notes per day; the fourth opens a bottom-sheet paywall listing
 the three benefits — unlimited entries, historical graphs, custom habits —
 with an **Unlock Premium for $4.99** button. Custom habits and History

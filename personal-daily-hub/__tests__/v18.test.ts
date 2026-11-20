@@ -273,6 +273,16 @@ describe('the focus timer', () => {
 });
 
 describe('settings for 1.8', () => {
+  test('the test Premium unlock is a plain yes or no, off unless stored as exactly true', () => {
+    const s = reducer(initialState, { type: 'updateSettings', patch: { mockPremium: true } });
+    expect(s.settings.mockPremium).toBe(true);
+    expect(reducer(s, { type: 'updateSettings', patch: { mockPremium: true } })).toBe(s);
+    expect(reducer(s, { type: 'updateSettings', patch: { mockPremium: false } }).settings.mockPremium).toBe(false);
+    expect(sanitizeSettings({ mockPremium: true }).mockPremium).toBe(true);
+    expect(sanitizeSettings({ mockPremium: 'yes' }).mockPremium).toBe(false);
+    expect(sanitizeSettings({}).mockPremium).toBe(false);
+  });
+
   test('focus length is one of the choices', () => {
     expect(reducer(initialState, { type: 'updateSettings', patch: { focusLength: 45 } }).settings.focusLength).toBe(45);
     expect(reducer(initialState, { type: 'updateSettings', patch: { focusLength: 44 } })).toBe(initialState);

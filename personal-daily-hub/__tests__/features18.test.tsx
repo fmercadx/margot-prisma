@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { act, fireEvent, render, screen, within } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { isSealed } from '../src/lib/codec';
 import { FOCUS_TIMER_KEY, HABITS_KEY, loadDays, loadHabits } from '../src/lib/storage';
@@ -217,5 +217,53 @@ describe('water pace', () => {
     // Not for an earlier day: the clock says nothing about it.
     await fireEvent.press(screen.getByRole('button', { name: 'Log the day before' }));
     expect(screen.getByTestId('water-hint')).toHaveTextContent(/^8 to go$/);
+  });
+});
+
+describe('Premium is remembered', () => {
+  // The real clock here: the mock purchase and the paywall's animation wait on it.
+  beforeEach(() => jest.useRealTimers());
+
+  async function unlock() {
+    await fireEvent.press(screen.getByRole('button', { name: 'Go Premium' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Unlock Premium for $4.99' }));
+    expect(await screen.findByLabelText('Premium is active')).toBeOnTheScreen();
+  }
+
+  test('an unlock survives the app being closed, and is stored sealed', async () => {
+    const first = await launch();
+    await unlock();
+    await waitFor(async () => {
+      const stored = await AsyncStorage.getItem('pdh:v1:settings');
+      expect(stored && isSealed(stored)).toBe(true);
+    });
+    await first.unmount();
+
+    await launch();
+    expect(screen.getByLabelText('Premium is active')).toBeOnTheScreen();
+    expect(screen.queryByRole('button', { name: 'Go Premium' })).not.toBeOnTheScreen();
+  });
+
+  test('Settings can turn it off, to try the free version again', async () => {
+    await launch();
+    await openSettings();
+    expect(screen.queryByTestId('premium-off')).not.toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('button', { name: 'Close settings' }));
+    await unlock();
+    await openSettings();
+    await fireEvent.press(screen.getByRole('button', { name: 'Turn off Premium' }));
+    expect(screen.queryByTestId('premium-off')).not.toBeOnTheScreen();
+    await fireEvent.press(screen.getByRole('button', { name: 'Close settings' }));
+    expect(screen.getByRole('button', { name: 'Go Premium' })).toBeOnTheScreen();
+  });
+
+  test('Erase everything clears it', async () => {
+    await launch();
+    await unlock();
+    await openSettings();
+    await fireEvent.press(screen.getByRole('button', { name: 'Erase all data' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Erase everything' }));
+    expect(await screen.findByText('Everything on this phone has been erased.')).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Go Premium' })).toBeOnTheScreen();
   });
 });

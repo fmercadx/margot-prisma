@@ -193,6 +193,28 @@ export function SettingsSheet(p: Props) {
               ) : null}
             </Section>
 
+            {s.mockPremium ? (
+              <Section title="Premium">
+                <Pressable
+                  onPress={() => p.onChange({ mockPremium: false })}
+                  accessibilityRole="button"
+                  accessibilityLabel="Turn off Premium"
+                  accessibilityHint="Goes back to the free version, to try it again. Your data stays."
+                  style={({ pressed }) => [styles.exportRow, styles.lastRow, pressed && { opacity: 0.7 }]}
+                  testID="premium-off"
+                >
+                  <View style={styles.rowText}>
+                    <Text style={styles.rowTitle}>Premium is on</Text>
+                    <Text style={styles.rowSubtitle}>
+                      Unlocked with the test purchase: no money moved. Turn it off to try the free version again;
+                      your data stays.
+                    </Text>
+                  </View>
+                  <Text style={styles.turnOff}>Turn off</Text>
+                </Pressable>
+              </Section>
+            ) : null}
+
             <Section title="Home screen">
               {arranging ? (
                 <ArrangePanel
@@ -838,6 +860,7 @@ const styles = StyleSheet.create({
   },
   previewText: { ...type.label, fontWeight: '400', color: colors.text },
   lastRow: { borderBottomWidth: 0 },
+  turnOff: { ...type.label, color: colors.notes, fontWeight: '700' },
   arrange: { paddingVertical: space.sm, gap: 2 },
   arrangeRow: { flexDirection: 'row', alignItems: 'center', gap: space.xs, minHeight: 48 },
   arrangeLabel: { ...type.body, color: colors.text, flex: 1 },

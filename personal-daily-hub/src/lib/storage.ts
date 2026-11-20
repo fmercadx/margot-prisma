@@ -173,6 +173,7 @@ export function sanitizeSettings(v: unknown): Settings {
     focusLength: isNum(o.focusLength) && FOCUS_LENGTHS.includes(o.focusLength) ? o.focusLength : DEFAULT_SETTINGS.focusLength,
     homeOrder: Array.isArray(o.homeOrder) ? normalizeHomeOrder(o.homeOrder.slice(0, HOME_CARDS.length * 2)) : [...HOME_CARDS],
     homeHidden: Array.isArray(o.homeHidden) ? normalizeHomeHidden(o.homeHidden.slice(0, HOME_CARDS.length * 2)) : [],
+    mockPremium: o.mockPremium === true,
   };
 }
 

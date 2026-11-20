@@ -22,7 +22,7 @@ const BENEFITS: { icon: LucideIcon; title: string; body: string }[] = [
   {
     icon: ChartColumnBig,
     title: 'Historical graphs',
-    body: 'Seven-day trends for water, energy and spending.',
+    body: 'Trends, a month calendar, every past day, and insights from your own logs.',
   },
   {
     icon: ListPlus,
