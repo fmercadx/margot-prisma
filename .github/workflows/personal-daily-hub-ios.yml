@@ -45,7 +45,10 @@ jobs:
 
       - name: Toolchain
         run: |
+          ls -d /Applications/Xcode*.app
+          xcode-select -p
           xcodebuild -version
+          swift --version
           pod --version
           xcrun simctl list runtimes
 
@@ -80,6 +83,15 @@ jobs:
           echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
           xcrun simctl list devices | grep "$udid"
 
+      # Separately, so a package that won't resolve says why in full.
+      - name: Resolve Swift packages
+        working-directory: personal-daily-hub/ios
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -workspace PersonalDailyHub.xcworkspace \
+            -scheme PersonalDailyHub \
+            -derivedDataPath build
+
       - name: Build for the iOS Simulator
         working-directory: personal-daily-hub/ios
         run: |
@@ -92,9 +104,16 @@ jobs:
             -derivedDataPath build \
             ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO \
-            build | tee xcodebuild.log | grep -E '^(\*\*|error:|warning: .*deprecated)|error:' || true
-          test -d build/Build/Products/Release-iphonesimulator/PersonalDailyHub.app \
-            || { echo "::error::The build produced no app"; tail -80 xcodebuild.log; exit 1; }
+            build > xcodebuild.log 2>&1 && ok=1 || ok=0
+          grep -E '^\*\* ' xcodebuild.log || true
+          if [ "$ok" != 1 ] || [ ! -f build/Build/Products/Release-iphonesimulator/PersonalDailyHub.app/Info.plist ]; then
+            echo "::error::The iOS build failed"
+            echo "----- errors, with context -----"
+            grep -n -B3 -A25 -E 'error:|Could not resolve|PhaseScriptExecution failed|Command PhaseScriptExecution' xcodebuild.log | head -400
+            echo "----- last 120 lines -----"
+            tail -120 xcodebuild.log
+            exit 1
+          fi
 
       - name: Check the app is the one we meant to build
         run: |
