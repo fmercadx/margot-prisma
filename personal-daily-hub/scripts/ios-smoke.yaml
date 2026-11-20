@@ -1,0 +1,23 @@
+# The Maestro flow scripts/ios_smoke.py runs in the iOS Simulator.
+# Adds a note, closes the app, opens it again and expects the note back:
+# storage, the Keychain key and decryption all working on iOS.
+appId: com.fmercadx.personaldailyhub
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Quick Capture"
+    timeout: 120000
+- takeScreenshot: ${OUT}/1-home
+- tapOn:
+    id: "note-input"
+- inputText: "Simulator check"
+- tapOn:
+    id: "note-submit"
+- assertVisible: "Simulator check"
+- takeScreenshot: ${OUT}/2-note
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Simulator check"
+    timeout: 120000
+- takeScreenshot: ${OUT}/3-restarted
