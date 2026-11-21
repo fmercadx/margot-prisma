@@ -28,7 +28,7 @@ import {
   X,
 } from '../icons';
 import { PASSPHRASE_MIN_LENGTH } from '../lib/backupCrypto';
-import { stepBudget } from '../lib/categories';
+import { MONTHLY_BUDGET_STEPS_CENTS, stepBudget } from '../lib/categories';
 import { formatCents } from '../lib/money';
 import { hourLabel } from '../lib/reminders';
 import type { MergeStats } from '../lib/store';
@@ -60,6 +60,8 @@ type Props = {
   settings: Settings;
   onChange: (patch: Partial<Settings>) => void;
   reminderOn: boolean;
+  /** Water reminders need local notifications, which the web build lacks. */
+  waterReminders: { supported: boolean; busy: boolean; onToggle: (next: boolean) => void };
   lockSupported: boolean;
   lockBusy: boolean;
   onToggleLock: (next: boolean) => void;
@@ -169,6 +171,41 @@ export function SettingsSheet(p: Props) {
                   testID="daily-budget"
                 />
               </Row>
+              <Row
+                title="Monthly budget"
+                subtitle={
+                  s.monthlyBudgetCents === null ? 'Off' : 'Shows the month so far, and what each day left can take'
+                }
+              >
+                <Stepper
+                  value={s.monthlyBudgetCents === null ? 'Off' : formatCents(s.monthlyBudgetCents).replace(/\.00$/, '')}
+                  label="monthly budget"
+                  onDown={() =>
+                    p.onChange({ monthlyBudgetCents: stepBudget(s.monthlyBudgetCents, -1, MONTHLY_BUDGET_STEPS_CENTS) })
+                  }
+                  onUp={() =>
+                    p.onChange({ monthlyBudgetCents: stepBudget(s.monthlyBudgetCents, 1, MONTHLY_BUDGET_STEPS_CENTS) })
+                  }
+                  canDown={s.monthlyBudgetCents !== null}
+                  canUp={stepBudget(s.monthlyBudgetCents, 1, MONTHLY_BUDGET_STEPS_CENTS) !== s.monthlyBudgetCents}
+                  testID="monthly-budget"
+                />
+              </Row>
+              {p.waterReminders.supported ? (
+                <Row title="Water reminders" subtitle="Every two hours, 10 AM to 6 PM, until you reach your goal">
+                  {p.waterReminders.busy ? (
+                    <ActivityIndicator color={colors.textSecondary} />
+                  ) : (
+                    <Switch
+                      value={s.waterReminders}
+                      onValueChange={p.waterReminders.onToggle}
+                      {...SWITCH_COLORS}
+                      accessibilityLabel="Water reminders"
+                      testID="water-reminders-switch"
+                    />
+                  )}
+                </Row>
+              ) : null}
               <Row title="Focus session" subtitle="Length of one session on the focus timer">
                 <Stepper
                   value={`${s.focusLength} min`}
@@ -206,8 +243,8 @@ export function SettingsSheet(p: Props) {
                   <View style={styles.rowText}>
                     <Text style={styles.rowTitle}>Premium is on</Text>
                     <Text style={styles.rowSubtitle}>
-                      Unlocked with the test purchase: no money moved. Turn it off to try the free version again;
-                      your data stays.
+                      Unlocked with the test purchase: no money moved. Turn it off to try the free version again; your
+                      data stays.
                     </Text>
                   </View>
                   <Text style={styles.turnOff}>Turn off</Text>

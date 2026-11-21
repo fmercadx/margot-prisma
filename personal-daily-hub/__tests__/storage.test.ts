@@ -20,6 +20,7 @@ test('sanitizeDay turns anything into a valid day', () => {
   expect(sanitizeDay(null)).toEqual({
     focus: '',
     journal: '',
+    gratitude: [],
     notes: [],
     habitsDone: [],
     habitsSkipped: [],
@@ -42,6 +43,7 @@ test('sanitizeDay turns anything into a valid day', () => {
   ).toEqual({
     focus: '',
     journal: '',
+    gratitude: [],
     notes: [{ id: 'n', text: 'ok', createdAt: 1 }],
     habitsDone: ['a'],
     habitsSkipped: [],

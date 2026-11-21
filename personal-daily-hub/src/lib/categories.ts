@@ -27,7 +27,9 @@ export function categoryTotals(expenses: readonly Spend[]): { category: ExpenseC
   for (const e of expenses) sums.set(e.category, (sums.get(e.category) ?? 0) + e.cents);
   return [...sums.entries()]
     .map(([category, cents]) => ({ category, cents }))
-    .sort((a, b) => b.cents - a.cents || EXPENSE_CATEGORIES.indexOf(a.category) - EXPENSE_CATEGORIES.indexOf(b.category));
+    .sort(
+      (a, b) => b.cents - a.cents || EXPENSE_CATEGORIES.indexOf(a.category) - EXPENSE_CATEGORIES.indexOf(b.category),
+    );
 }
 
 // ---- daily budget ---------------------------------------------------------
@@ -43,14 +45,23 @@ export const BUDGET_STEPS_CENTS: readonly number[] = [
  * A value between steps (from an older build or a backup) moves to the
  * nearest step in that direction.
  */
-export function stepBudget(current: number | null, dir: 1 | -1): number | null {
-  const steps = BUDGET_STEPS_CENTS;
+export function stepBudget(
+  current: number | null,
+  dir: 1 | -1,
+  steps: readonly number[] = BUDGET_STEPS_CENTS,
+): number | null {
   if (current === null) return dir === 1 ? steps[0] : null;
   if (dir === 1) return steps.find((s) => s > current) ?? steps[steps.length - 1];
   const lower = [...steps].reverse().find((s) => s < current);
   return lower ?? null;
 }
 
-export function isBudget(v: unknown): v is number {
-  return typeof v === 'number' && Number.isInteger(v) && v >= BUDGET_STEPS_CENTS[0] && v <= BUDGET_STEPS_CENTS[BUDGET_STEPS_CENTS.length - 1];
+export function isBudget(v: unknown, steps: readonly number[] = BUDGET_STEPS_CENTS): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= steps[0] && v <= steps[steps.length - 1];
 }
+
+/** Monthly budget choices, $100 to $10,000. */
+export const MONTHLY_BUDGET_STEPS_CENTS: readonly number[] = [
+  10000, 20000, 30000, 40000, 50000, 75000, 100000, 125000, 150000, 200000, 250000, 300000, 400000, 500000, 750000,
+  1000000,
+];

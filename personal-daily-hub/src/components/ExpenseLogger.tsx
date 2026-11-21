@@ -11,6 +11,7 @@ import {
 } from '../lib/categories';
 import { clockTime } from '../lib/date';
 import { parseAmountToCents } from '../lib/money';
+import type { MonthToDate } from '../lib/monthBudget';
 import { expenseName, EXPENSE_LABEL_MAX_LENGTH, type Expense } from '../lib/store';
 import { colors, inputColors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
@@ -34,6 +35,8 @@ type Props = {
   onToggleHidden: () => void;
   /** "today", "yesterday" or "on Tuesday": the day being logged. */
   dayWord?: string;
+  /** This month so far against the monthly budget, or null for none. */
+  month?: (MonthToDate & { budgetCents: number }) | null;
 };
 
 export function ExpenseLogger(props: Props) {
@@ -82,6 +85,7 @@ export function ExpenseLogger(props: Props) {
           {money(totalCents)}
         </Text>
         {budgetCents !== null ? <Budget spent={totalCents} budget={budgetCents} /> : null}
+        {props.month ? <MonthBudget {...props.month} /> : null}
       </View>
 
       <View style={styles.form}>
@@ -235,15 +239,51 @@ function Budget({ spent, budget }: { spent: number; budget: number }) {
     <View style={styles.budget} testID="budget" accessible accessibilityLabel={text}>
       <View style={styles.track}>
         <View
-          style={[
-            styles.fill,
-            { width: `${share * 100}%`, backgroundColor: over ? colors.warning : colors.expenses },
-          ]}
+          style={[styles.fill, { width: `${share * 100}%`, backgroundColor: over ? colors.warning : colors.expenses }]}
         />
       </View>
       <View style={styles.budgetLine}>
         {over ? <TriangleAlert size={14} color={colors.warning} strokeWidth={2.5} /> : null}
         <Text style={[styles.budgetText, over && styles.overText]} testID="budget-text">
+          {text}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/** This month so far against the monthly budget: what each remaining day can take, or how far over. */
+function MonthBudget({
+  spentCents,
+  budgetCents,
+  daysLeft,
+  perDayCents,
+  overCents,
+}: MonthToDate & { budgetCents: number }) {
+  const { money } = useMoney();
+  const over = overCents > 0;
+  const share = Math.min(1, spentCents / budgetCents);
+  const days = daysLeft === 1 ? 'today, the last day' : `each of the ${daysLeft} days left`;
+  const text = over
+    ? `${money(overCents)} over your ${money(budgetCents)} monthly budget`
+    : `${money(spentCents)} of ${money(budgetCents)} this month · ${money(perDayCents)} for ${days}`;
+  return (
+    <View style={[styles.budget, styles.monthBudget]} testID="month-budget" accessible accessibilityLabel={text}>
+      <View style={styles.track}>
+        <View
+          style={[
+            styles.fill,
+            {
+              width: `${share * 100}%`,
+              backgroundColor: over ? colors.warning : colors.expenses,
+              opacity: over ? 1 : 0.6,
+            },
+          ]}
+        />
+      </View>
+      <View style={styles.budgetLine}>
+        {over ? <TriangleAlert size={14} color={colors.warning} strokeWidth={2.5} /> : null}
+        <Text style={[styles.budgetText, over && styles.overText]} testID="month-budget-text">
           {text}
         </Text>
       </View>
@@ -263,10 +303,11 @@ const styles = StyleSheet.create({
   totals: { gap: 2 },
   totalLabel: { ...type.caption, color: colors.textSecondary },
   budget: { gap: space.xs, marginTop: space.xs },
+  monthBudget: { marginTop: space.sm },
   track: { height: 6, borderRadius: 3, backgroundColor: colors.cardRaised, overflow: 'hidden' },
   fill: { height: 6, borderRadius: 3 },
   budgetLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  budgetText: { ...type.caption, color: colors.textSecondary },
+  budgetText: { ...type.caption, color: colors.textSecondary, flexShrink: 1 },
   overText: { color: colors.text, fontWeight: '600' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: -space.xs },
   chip: {

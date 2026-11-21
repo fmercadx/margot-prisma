@@ -55,6 +55,8 @@ export function dayAsText(
     }
   }
 
+  if (day.gratitude.length) lines.push('Three good things', ...day.gratitude.map((g, i) => `  ${i + 1}. ${g}`));
+
   if (day.journal) lines.push('Journal', ...day.journal.split('\n').map((l) => `  ${l}`));
 
   if (lines.length === 1) lines.push('Nothing logged.');

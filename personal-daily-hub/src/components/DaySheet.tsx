@@ -2,12 +2,33 @@ import type { ReactNode } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Check, ChevronLeft, ChevronRight, Circle, CircleCheck, Forward, Share2, SkipForward, Target, Timer, X } from '../icons';
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Circle,
+  CircleCheck,
+  Forward,
+  Share2,
+  SkipForward,
+  Target,
+  Timer,
+  X,
+} from '../icons';
 import { dayAsText } from '../lib/dayText';
 import { CATEGORY_LABELS } from '../lib/categories';
 import { clockTime, longDate, parseDateKey, weekdayName } from '../lib/date';
 import { moodWord } from '../lib/mood';
-import { ENERGY_MAX, EMPTY_DAY, expenseName, focusLabel, isDue, totalCents, type DayLog, type Habit } from '../lib/store';
+import {
+  ENERGY_MAX,
+  EMPTY_DAY,
+  expenseName,
+  focusLabel,
+  isDue,
+  totalCents,
+  type DayLog,
+  type Habit,
+} from '../lib/store';
 import { colors, radius, space, type } from '../theme';
 import { CATEGORY_ICONS } from './categoryIcons';
 import { IconButton } from './IconButton';
@@ -46,6 +67,7 @@ export function DaySheet(p: Props) {
   const nothing =
     !day.focus &&
     !day.journal &&
+    day.gratitude.length === 0 &&
     day.notes.length === 0 &&
     day.expenses.length === 0 &&
     done.length === 0 &&
@@ -66,8 +88,17 @@ export function DaySheet(p: Props) {
       navigationBarTranslucent={Platform.OS === 'android'}
     >
       <View style={styles.root}>
-        <Pressable style={styles.backdrop} onPress={p.onClose} accessibilityRole="button" accessibilityLabel="Dismiss day" />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]} accessibilityViewIsModal testID="day-sheet">
+        <Pressable
+          style={styles.backdrop}
+          onPress={p.onClose}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss day"
+        />
+        <View
+          style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]}
+          accessibilityViewIsModal
+          testID="day-sheet"
+        >
           <View style={styles.head}>
             <IconButton icon={ChevronLeft} label="Previous day" onPress={p.onPrev} disabled={!p.canPrev} filled />
             <View style={styles.titles}>
@@ -168,6 +199,17 @@ export function DaySheet(p: Props) {
               </Section>
             ) : null}
 
+            {day.gratitude.length > 0 ? (
+              <Section title="Three good things">
+                {day.gratitude.map((g, i) => (
+                  <View key={i} style={styles.line}>
+                    <Text style={styles.goodNumber}>{i + 1}</Text>
+                    <Text style={styles.lineText}>{g}</Text>
+                  </View>
+                ))}
+              </Section>
+            ) : null}
+
             {day.journal ? (
               <Section title="Journal">
                 <Text style={[styles.lineText, styles.journal]} testID="day-journal">
@@ -235,14 +277,27 @@ const styles = StyleSheet.create({
     maxHeight: '88%',
     alignSelf: 'center',
   },
-  head: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingHorizontal: space.lg, paddingBottom: space.md },
+  head: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingHorizontal: space.lg,
+    paddingBottom: space.md,
+  },
   titles: { flex: 1, alignItems: 'center' },
   title: { fontSize: 20, fontWeight: '700', color: colors.text },
   subtitle: { ...type.caption, color: colors.textSecondary },
   scroll: { flexGrow: 0 },
   body: { paddingHorizontal: space.xl, paddingBottom: space.sm, gap: space.lg },
   stats: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  stat: { flexGrow: 1, flexBasis: '30%', backgroundColor: colors.cardRaised, borderRadius: radius.md, padding: space.md, gap: 2 },
+  stat: {
+    flexGrow: 1,
+    flexBasis: '30%',
+    backgroundColor: colors.cardRaised,
+    borderRadius: radius.md,
+    padding: space.md,
+    gap: 2,
+  },
   statLabel: { ...type.caption, color: colors.textSecondary },
   statValue: { ...type.body, fontWeight: '700', color: colors.text },
   empty: { ...type.body, color: colors.textMuted, textAlign: 'center', paddingVertical: space.lg },
@@ -257,7 +312,12 @@ const styles = StyleSheet.create({
   focusText: { ...type.body, fontWeight: '600', color: colors.text, flex: 1 },
   section: { gap: space.sm },
   sectionTitle: { ...type.label, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 },
-  group: { backgroundColor: colors.cardRaised, borderRadius: radius.md, paddingHorizontal: space.lg, paddingVertical: space.sm },
+  group: {
+    backgroundColor: colors.cardRaised,
+    borderRadius: radius.md,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm,
+  },
   line: { flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.sm },
   spread: { justifyContent: 'space-between' },
   item: { paddingVertical: space.sm, gap: 2 },
@@ -269,4 +329,5 @@ const styles = StyleSheet.create({
   meta: { ...type.caption, color: colors.textMuted, fontVariant: ['tabular-nums'] },
   amount: { ...type.body, color: colors.text, fontWeight: '600', fontVariant: ['tabular-nums'] },
   journal: { paddingVertical: space.sm, lineHeight: 22 },
+  goodNumber: { ...type.label, color: colors.journal, width: 16, textAlign: 'center', fontVariant: ['tabular-nums'] },
 });
