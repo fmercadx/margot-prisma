@@ -298,6 +298,7 @@ describe('settings for 1.8', () => {
       'wellbeing',
       'expenses',
       'journal',
+      'onThisDay',
       'countdowns',
       'insights',
     ]);

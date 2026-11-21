@@ -1,4 +1,4 @@
-import { Eye, EyeOff, Plus, Repeat, TriangleAlert, Wallet, X } from '../icons';
+import { CalendarSync, Eye, EyeOff, Plus, Repeat, TriangleAlert, Wallet, X } from '../icons';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
@@ -12,7 +12,7 @@ import {
 import { clockTime } from '../lib/date';
 import { parseAmountToCents } from '../lib/money';
 import type { MonthToDate } from '../lib/monthBudget';
-import { expenseName, EXPENSE_LABEL_MAX_LENGTH, type Expense } from '../lib/store';
+import { expenseName, EXPENSE_LABEL_MAX_LENGTH, ordinal, type Expense } from '../lib/store';
 import { colors, inputColors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
 import { CategoryBars } from './CategoryBars';
@@ -25,7 +25,10 @@ type Props = {
   totalCents: number;
   /** The daily budget in cents, or null for none. */
   budgetCents: number | null;
-  onAdd: (cents: number, label: string, category: ExpenseCategory) => void;
+  /** `monthly`: it also comes back on this day every month. */
+  onAdd: (cents: number, label: string, category: ExpenseCategory, monthly?: boolean) => void;
+  /** The day of the month a repeating expense would come back on; absent hides the option. */
+  repeatDay?: number;
   onDelete: (id: string) => void;
   /** Recent distinct expenses, offered to add again with one tap. */
   recent: Expense[];
@@ -48,6 +51,7 @@ export function ExpenseLogger(props: Props) {
   // Kept after adding: several expenses in a row are often the same kind.
   const [category, setCategory] = useState<ExpenseCategory>(DEFAULT_CATEGORY);
   const [error, setError] = useState<string | null>(null);
+  const [monthly, setMonthly] = useState(false);
 
   const submit = () => {
     const cents = parseAmountToCents(amount);
@@ -55,9 +59,10 @@ export function ExpenseLogger(props: Props) {
       setError('Enter an amount like 12.50');
       return;
     }
-    onAdd(cents, label, category);
+    onAdd(cents, label, category, monthly);
     setAmount('');
     setLabel('');
+    setMonthly(false);
     setError(null);
   };
 
@@ -156,6 +161,22 @@ export function ExpenseLogger(props: Props) {
           );
         })}
       </View>
+
+      {props.repeatDay !== undefined ? (
+        <Pressable
+          onPress={() => setMonthly((m) => !m)}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: monthly }}
+          accessibilityLabel={`Repeat on the ${ordinal(props.repeatDay)} of every month`}
+          style={({ pressed }) => [styles.repeat, monthly && styles.repeatOn, pressed && { opacity: 0.75 }]}
+          testID="expense-monthly"
+        >
+          <CalendarSync size={14} color={monthly ? colors.text : colors.textSecondary} strokeWidth={2.25} />
+          <Text style={[styles.chipText, monthly && styles.chipTextOn]}>
+            {monthly ? `Every month on the ${ordinal(props.repeatDay)}` : 'Repeat monthly'}
+          </Text>
+        </Pressable>
+      ) : null}
 
       {recent.length > 0 ? (
         <View style={styles.recent} testID="recent-expenses">
@@ -322,6 +343,19 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   chipOn: { backgroundColor: tint(colors.expenses, 0.16), borderColor: colors.expenses },
+  repeat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: space.md,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.hairline,
+  },
+  repeatOn: { borderStyle: 'solid', borderColor: colors.expenses, backgroundColor: tint(colors.expenses, 0.16) },
   chipText: { ...type.label, color: colors.textSecondary },
   chipTextOn: { color: colors.text, fontWeight: '600' },
   recent: { gap: space.sm },

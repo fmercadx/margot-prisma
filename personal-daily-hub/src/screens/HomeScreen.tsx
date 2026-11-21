@@ -24,6 +24,7 @@ import { InsightsCard } from '../components/InsightsCard';
 import { Journal } from '../components/Journal';
 import { LockScreen } from '../components/LockScreen';
 import { MoneyVisibility } from '../components/Money';
+import { OnThisDay } from '../components/OnThisDay';
 import { PaywallModal } from '../components/PaywallModal';
 import { QuickCapture } from '../components/QuickCapture';
 import { SearchSheet } from '../components/SearchSheet';
@@ -44,6 +45,8 @@ import { haptic, setHapticsEnabled } from '../lib/haptics';
 import { pickBackupText } from '../lib/importData';
 import { findInsights } from '../lib/insights';
 import { monthToDate } from '../lib/monthBudget';
+import { memoryDates, memoryOf } from '../lib/onThisDay';
+import { CATEGORY_LABELS, type ExpenseCategory } from '../lib/categories';
 import { parseBackup, type ParsedBackup } from '../lib/importJson';
 import {
   canAddCustomHabit,
@@ -63,9 +66,13 @@ import {
   scheduleFocusEnd,
   scheduleWaterReminders,
 } from '../lib/reminders';
-import { loadAllDays } from '../lib/storage';
+import { loadAllDays, loadDays } from '../lib/storage';
 import {
+  billDueDate,
+  BILLS_MAX,
   CUSTOM_HABITS_MAX,
+  ordinal,
+  PINNED_MAX,
   EDITABLE_DAYS,
   cleanFocus,
   focusLabel,
@@ -242,6 +249,34 @@ export default function HomeScreen() {
     setUndo({ message: 'Note deleted', restore: { type: 'restoreNote', date: activeDate, note } });
   };
 
+  // ---- pinned notes -------------------------------------------------------
+  const pinNote = (id: string) => {
+    if (state.pinned.length >= PINNED_MAX) {
+      setMessage(`You can pin up to ${PINNED_MAX} notes. Unpin one first.`);
+      return;
+    }
+    dispatch({ type: 'pinNote', date: activeDate, id, now: Date.now() });
+    haptic.success();
+  };
+
+  // Back into the day being looked at, where it counts as one of its notes.
+  const unpinNote = (id: string) => {
+    const doUnpin = () => {
+      dispatch({ type: 'unpinNote', id, date: activeDate, now: Date.now() });
+      haptic.tick();
+    };
+    if (!canAddNote(day.notes.length, isPremium)) openPaywall('notes', doUnpin);
+    else doUnpin();
+  };
+
+  const deletePinned = (id: string) => {
+    const pinned = state.pinned.find((p) => p.id === id);
+    if (!pinned) return;
+    dispatch({ type: 'deletePinned', id });
+    haptic.remove();
+    setUndo({ message: 'Pinned note deleted', restore: { type: 'restorePinned', pinned } });
+  };
+
   // ---- today's focus ------------------------------------------------------
   const saveFocus = (text: string) => {
     if (cleanFocus(text) === day.focus) return;
@@ -380,6 +415,69 @@ export default function HomeScreen() {
 
   // ---- expenses -----------------------------------------------------------
   const recent = useMemo(() => recentExpenses(state, today), [state, today]);
+
+  // Monthly bills due by today and not yet posted this month go to their day.
+  useEffect(() => {
+    if (!ready) return;
+    const month = today.slice(0, 7);
+    const due = state.bills.filter((b) => b.lastPosted !== month && billDueDate(b, today) <= today);
+    if (due.length === 0) return;
+    dispatch({ type: 'postBills', today });
+    setMessage(
+      due.length === 1
+        ? `Added this month’s “${due[0].label}” to your expenses.`
+        : `Added ${due.length} monthly bills to your expenses.`,
+    );
+  }, [ready, today, state.bills, dispatch]);
+
+  const addRepeating = (cents: number, label: string, category: ExpenseCategory) => {
+    if (state.bills.length >= BILLS_MAX) {
+      setMessage(`You can have up to ${BILLS_MAX} monthly bills.`);
+      return;
+    }
+    const name = label.trim() || (category === 'other' ? 'Bill' : CATEGORY_LABELS[category]);
+    const dayOfMonth = parseDateKey(activeDate).getDate();
+    // Already added for this month: the first repeat is next month's.
+    dispatch({
+      type: 'addBill',
+      bill: { id: newId('bill'), label: name, cents, category, day: dayOfMonth, lastPosted: activeDate.slice(0, 7) },
+    });
+    setMessage(`“${name}” will be added on the ${ordinal(dayOfMonth)} of every month.`);
+  };
+
+  const removeBill = (id: string) => {
+    const bill = state.bills.find((b) => b.id === id);
+    if (!bill) return;
+    dispatch({ type: 'removeBill', id });
+    haptic.remove();
+    setUndo({ message: `“${bill.label}” won’t repeat`, restore: { type: 'addBill', bill } });
+  };
+
+  // ---- on this day ---------------------------------------------------------
+  // A week and a month ago are in memory; a year ago is read from storage.
+  const [olderDays, setOlderDays] = useState<Record<string, DayLog>>({});
+  useEffect(() => {
+    if (!ready || loadFailed) return;
+    const missing = memoryDates(today)
+      .map((m) => m.date)
+      .filter((d) => !lastNDays(today, LOADED_DAYS).includes(d));
+    if (missing.length === 0) return;
+    let live = true;
+    loadDays(missing)
+      .then((days) => live && setOlderDays(days))
+      .catch((err) => console.warn('[on this day] could not read older days', err));
+    return () => {
+      live = false;
+    };
+  }, [ready, loadFailed, today]);
+  const memories = useMemo(
+    () =>
+      memoryDates(today).flatMap((m) => {
+        const memory = memoryOf(m.label, m.date, state.days[m.date] ?? olderDays[m.date]);
+        return memory ? [memory] : [];
+      }),
+    [today, state.days, olderDays],
+  );
   const monthlyBudget = state.settings.monthlyBudgetCents;
   const month = useMemo(
     () =>
@@ -519,7 +617,15 @@ export default function HomeScreen() {
       // Memory holds the newest copy of the days it has loaded; storage has
       // everything older.
       const days = { ...(await loadAllDays()), ...state.days };
-      const { filename, json } = buildExport(days, state.habits, state.settings, undefined, state.countdowns);
+      const { filename, json } = buildExport(
+        days,
+        state.habits,
+        state.settings,
+        undefined,
+        state.countdowns,
+        state.pinned,
+        state.bills,
+      );
       if (passphrase) await shareExport(protectedFilename(filename), await sealBackup(json, passphrase));
       else await shareExport(filename, json);
       setExportOpen(false);
@@ -567,7 +673,8 @@ export default function HomeScreen() {
       setMessage(parsed.error);
       return;
     }
-    const { stats } = mergeBackup(state, parsed.backup.habits, parsed.backup.days, parsed.backup.countdowns);
+    const { habits, days, countdowns, pinned, bills } = parsed.backup;
+    const { stats } = mergeBackup(state, habits, days, countdowns, pinned, bills);
     if (Object.values(stats).every((n) => n === 0)) {
       setSettingsOpen(false);
       setMessage('Everything in that backup is already on this phone.');
@@ -627,7 +734,14 @@ export default function HomeScreen() {
   const confirmRestore = () => {
     if (!restorePending) return;
     const { backup, stats } = restorePending;
-    dispatch({ type: 'importBackup', habits: backup.habits, days: backup.days, countdowns: backup.countdowns });
+    dispatch({
+      type: 'importBackup',
+      habits: backup.habits,
+      days: backup.days,
+      countdowns: backup.countdowns,
+      pinned: backup.pinned,
+      bills: backup.bills,
+    });
     setRestorePending(null);
     setSettingsOpen(false);
     haptic.success();
@@ -675,6 +789,7 @@ export default function HomeScreen() {
       setRestorePending(null);
       setHabitComposerOpen(false);
       setOpenDay(null);
+      setOlderDays({});
       setEraseConfirming(false);
       setSettingsOpen(false);
       setMessage('Everything on this phone has been erased.');
@@ -724,6 +839,11 @@ export default function HomeScreen() {
     notes: (
       <QuickCapture
         notes={day.notes}
+        pinned={state.pinned}
+        canPin={state.pinned.length < PINNED_MAX}
+        onPin={pinNote}
+        onUnpin={unpinNote}
+        onDeletePinned={deletePinned}
         isPremium={isPremium}
         draft={noteDraft}
         onDraftChange={setNoteDraft}
@@ -822,14 +942,16 @@ export default function HomeScreen() {
         expenses={day.expenses}
         totalCents={totalCents(day)}
         budgetCents={state.settings.dailyBudgetCents}
-        onAdd={(cents, label, category) => {
+        onAdd={(cents, label, category, monthly) => {
           dispatch({
             type: 'addExpense',
             date: activeDate,
             expense: { id: newId('exp'), cents, label, category, createdAt: Date.now() },
           });
           haptic.success();
+          if (monthly) addRepeating(cents, label, category);
         }}
+        repeatDay={parseDateKey(activeDate).getDate()}
         onDelete={deleteExpense}
         dayWord={dayWord}
         recent={recent}
@@ -862,6 +984,7 @@ export default function HomeScreen() {
         }}
       />
     ),
+    onThisDay: <OnThisDay memories={memories} canOpen={(d) => loadedDates.includes(d)} onOpen={setOpenDay} />,
     countdowns: (
       <CountdownsCard countdowns={state.countdowns} today={today} onAdd={addCountdown} onRemove={removeCountdown} />
     ),
@@ -1004,9 +1127,18 @@ export default function HomeScreen() {
           onRequestErase={() => setEraseConfirming(true)}
           onConfirmErase={eraseEverything}
           onCancelErase={() => setEraseConfirming(false)}
+          bills={state.bills}
+          onSetBillDay={(id, d) => dispatch({ type: 'setBillDay', id, day: d })}
+          onRemoveBill={removeBill}
         />
 
-        <SearchSheet visible={searchOpen} days={searchDays} today={today} onClose={() => setSearchOpen(false)} />
+        <SearchSheet
+          visible={searchOpen}
+          days={searchDays}
+          pinned={state.pinned}
+          today={today}
+          onClose={() => setSearchOpen(false)}
+        />
 
         <DaySheet
           date={openDay}

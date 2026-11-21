@@ -2,11 +2,12 @@
 // journal entries, good things and expense labels. Pure; the caller supplies the days (decrypted by the
 // storage layer) and nothing leaves the phone.
 
-import type { DayLog } from './store';
+import { dateKey } from './date';
+import type { DayLog, Pinned } from './store';
 
 export type SearchHit = {
   date: string;
-  kind: 'focus' | 'note' | 'journal' | 'good' | 'expense';
+  kind: 'focus' | 'note' | 'journal' | 'good' | 'expense' | 'pinned';
   id: string;
   text: string;
   time: number | null; // when it was written; a focus has no time
@@ -78,6 +79,7 @@ export function searchDays(
   days: Record<string, DayLog>,
   query: string,
   limit = SEARCH_RESULTS_MAX,
+  pinned: Pinned[] = [],
 ): { hits: SearchHit[]; total: number } {
   const needle = foldQuery(query);
   if (!needle) return { hits: [], total: 0 };
@@ -87,6 +89,11 @@ export function searchDays(
     total++;
     if (hits.length < limit) hits.push(h);
   };
+  // Pinned notes belong to no day; they come first, dated by when they were written.
+  for (const p of pinned) {
+    const m = match(p.text, needle);
+    if (m) push({ date: dateKey(new Date(p.createdAt)), kind: 'pinned', id: p.id, text: p.text, time: p.createdAt, ...m });
+  }
   for (const date of Object.keys(days).sort().reverse()) {
     const day = days[date];
     const f = day.focus ? match(day.focus, needle) : null;

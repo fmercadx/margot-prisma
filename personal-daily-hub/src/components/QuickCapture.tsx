@@ -1,11 +1,24 @@
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { ArrowUp, Check, Circle, CircleCheck, Forward, ListTodo, Lock, NotebookPen, Search, X } from '../icons';
+import {
+  ArrowUp,
+  Check,
+  Circle,
+  CircleCheck,
+  Forward,
+  ListTodo,
+  Lock,
+  NotebookPen,
+  Pin,
+  PinOff,
+  Search,
+  X,
+} from '../icons';
 
 import { clockTime, parseDateKey, weekdayName } from '../lib/date';
 import { FREE_NOTES_PER_DAY } from '../lib/premium';
-import { NOTE_MAX_LENGTH, type Note } from '../lib/store';
+import { NOTE_MAX_LENGTH, type Note, type Pinned } from '../lib/store';
 import { colors, inputColors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
 import { IconButton } from './IconButton';
@@ -31,9 +44,18 @@ type Props = {
   onDismissCarry: () => void;
   /** "today", "yesterday" or "on Tuesday": the day being logged. */
   dayWord?: string;
+  /** Notes kept at the top every day. */
+  pinned?: Pinned[];
+  /** Another note can be pinned (fewer than the most there can be). */
+  canPin?: boolean;
+  onPin?: (id: string) => void;
+  /** Back into the day's notes. */
+  onUnpin?: (id: string) => void;
+  onDeletePinned?: (id: string) => void;
 };
 
 export function QuickCapture(p: Props) {
+  const pinned = p.pinned ?? [];
   const { notes, isPremium, draft, onDraftChange, onSubmit, onDelete, onEdit, onSearch } = p;
   // One note at a time is open for editing.
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
@@ -133,6 +155,35 @@ export function QuickCapture(p: Props) {
         </Pressable>
       </View>
 
+      {pinned.length > 0 ? (
+        <View style={styles.pinned} testID="pinned">
+          {pinned.map((n) => (
+            <View key={n.id} style={styles.pinnedRow}>
+              <Pin size={14} color={colors.notes} strokeWidth={2.5} />
+              <Text style={styles.pinnedText}>{n.text}</Text>
+              {p.onUnpin ? (
+                <IconButton
+                  icon={PinOff}
+                  size={16}
+                  label={`Unpin: ${n.text}`}
+                  onPress={() => p.onUnpin!(n.id)}
+                  color={colors.textMuted}
+                />
+              ) : null}
+              {p.onDeletePinned ? (
+                <IconButton
+                  icon={X}
+                  size={16}
+                  label={`Delete pinned note: ${n.text}`}
+                  onPress={() => p.onDeletePinned!(n.id)}
+                  color={colors.textMuted}
+                />
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
+
       {notes.length === 0 ? (
         <Text style={styles.empty}>
           {!p.dayWord || p.dayWord === 'today' ? 'Nothing captured yet today.' : `Nothing captured ${p.dayWord}.`}
@@ -140,12 +191,7 @@ export function QuickCapture(p: Props) {
       ) : (
         // A nested, natively scrolling list: it grows to a few rows, then
         // scrolls inside the card instead of pushing the rest of the page down.
-        <ScrollView
-          style={styles.list}
-          nestedScrollEnabled
-          keyboardShouldPersistTaps="handled"
-          testID="note-list"
-        >
+        <ScrollView style={styles.list} nestedScrollEnabled keyboardShouldPersistTaps="handled" testID="note-list">
           {notes.map((note, i) =>
             editing?.id === note.id ? (
               <View key={note.id} style={[styles.note, styles.editRow, i > 0 && styles.divider]}>
@@ -206,6 +252,15 @@ export function QuickCapture(p: Props) {
                     {note.carriedFrom ? ` · from ${weekdayName(parseDateKey(note.carriedFrom))}` : ''}
                   </Text>
                 </Pressable>
+                {!note.task && p.onPin && p.canPin !== false ? (
+                  <IconButton
+                    icon={Pin}
+                    size={16}
+                    label={`Pin to every day: ${note.text}`}
+                    onPress={() => p.onPin!(note.id)}
+                    color={colors.textMuted}
+                  />
+                ) : null}
                 <IconButton
                   icon={X}
                   size={16}
@@ -236,6 +291,17 @@ const styles = StyleSheet.create({
   },
   pillText: { ...type.caption, color: colors.textSecondary, fontWeight: '600', fontVariant: ['tabular-nums'] },
   inputRow: { flexDirection: 'row', gap: space.sm, alignItems: 'center' },
+  pinned: {
+    gap: 2,
+    padding: space.sm,
+    paddingLeft: space.md,
+    borderRadius: radius.md,
+    backgroundColor: tint(colors.notes, 0.08),
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: tint(colors.notes, 0.3),
+  },
+  pinnedRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: HIT - 4 },
+  pinnedText: { ...type.body, color: colors.text, flex: 1 },
   mode: {
     width: HIT,
     height: HIT + 4,

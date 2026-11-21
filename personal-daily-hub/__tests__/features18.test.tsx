@@ -194,11 +194,11 @@ describe('arranging the home screen', () => {
     await launch();
     await openSettings();
     await fireEvent.press(screen.getByRole('button', { name: 'Arrange the home screen' }));
-    for (const label of ['Today’s focus', 'Quick Capture', 'Habits', 'Wellbeing', 'Expenses', 'Journal', 'Coming up', 'Insights', 'History']) {
+    for (const label of ['Today’s focus', 'Quick Capture', 'Habits', 'Wellbeing', 'Expenses', 'Journal', 'On this day', 'Coming up', 'Insights', 'History']) {
       await fireEvent(screen.getByLabelText(`Show ${label}`), 'valueChange', false);
     }
     await fireEvent.press(screen.getByRole('button', { name: 'Done arranging' }));
-    expect(screen.getByTestId('arrange-home')).toHaveTextContent(/0 of 9 cards showing/);
+    expect(screen.getByTestId('arrange-home')).toHaveTextContent(/0 of 10 cards showing/);
     await fireEvent.press(screen.getByRole('button', { name: 'Close settings' }));
     expect(screen.getByText('Every card is switched off.')).toBeOnTheScreen();
     expect(screen.queryAllByTestId(/^card-/)).toHaveLength(0);

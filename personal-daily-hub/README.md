@@ -7,15 +7,16 @@ A one-screen, dark-mode daily dashboard built with React Native and Expo
 | --- | --- |
 | Header | Day, date and time, kept current to the minute; greeting; daily-reminder toggle; Settings; step back up to a week to fill in a day you forgot to log |
 | Today's focus | One line for the thing that matters most today; tap to change or clear it. A focus timer (15, 25, 45 or 60 minutes) counts down beside it, keeps running if the app is closed, rings with a local notification at the end, and adds the minutes to the day; stopping early keeps the whole minutes done |
-| Quick Capture | Timestamped notes and to-dos in a list that scrolls inside its card; tap to edit, tick a to-do off; unfinished to-dos from the past week can be brought over to today; search every note, focus and expense label from any day |
+| Quick Capture | Timestamped notes and to-dos in a list that scrolls inside its card; tap to edit, tick a to-do off; pin up to five notes to the top of every day (a door code, a reminder) and unpin them back into a day; unfinished to-dos from the past week can be brought over to today; search every note, focus and expense label from any day |
 | Habits | Four core habits with cross-out on completion and day streaks, with a word of congratulations at 3, 7, 14, 30 and 60 days; choose the weekdays each habit is for (days off sit under "Not today" and never break a streak); skip a habit for a day when life gets in the way (it stops counting and its streak carries on); put habits in any order; custom habits, which can be renamed (Premium) |
 | Wellbeing | Glass-by-glass progress bar toward your water goal, with whether today is on pace for it (spread evenly from 8 AM to 8 PM), and optional reminders every two hours from 10 AM to 6 PM that stop for the day once the goal is reached; last night's sleep in half hours; 1–10 energy slider; five-face mood check-in |
-| Expenses | Amount, optional label and a category (food, transport, shopping, bills, fun, other); running total, what's left of an optional daily budget, the month so far against an optional monthly budget (with what each day left can take), and where the money went; recent expenses one tap away; an eye button that hides every amount on screen |
+| Expenses | Amount, optional label and a category (food, transport, shopping, bills, fun, other); running total, what's left of an optional daily budget, the month so far against an optional monthly budget (with what each day left can take), and where the money went; recent expenses one tap away; "Repeat monthly" turns an expense into a monthly bill that is added again on the same day each month; an eye button that hides every amount on screen |
 | Journal | A few lines at the end of the day, with a different question each weekday, and "three good things", a short gratitude list; both searchable |
+| On this day | What you wrote a week, a month and a year ago: focus, good things, the first line of the journal (or a note). Hidden when there's nothing to show |
 | Coming up | Countdowns to the dates you're looking forward to: a trip, a birthday, a deadline |
 | Insights | Patterns in your own logs: energy and mood after more sleep or less, mood on days you did a habit, energy when you reached your water goal, the weekday you spend most (Premium) |
 | History | Day details can be shared as plain text through the share sheet. Weekly summary (water, sleep, energy, mood, habits done, spending, where most went), water / sleep / energy / mood / spending charts, a month calendar shaded by habits done with the month's totals and where its money went, and every past day in full (Premium) |
-| Settings | Water goal, water reminders, reminder time, daily and monthly budgets, focus session length, haptic feedback, which home-screen cards show and in what order, app lock and how soon it locks again, export (optionally protected with a passphrase) and restore your data, expenses as a spreadsheet (CSV), erase everything |
+| Settings | Water goal, water reminders, monthly bills (change the day, or stop one), reminder time, daily and monthly budgets, focus session length, haptic feedback, which home-screen cards show and in what order, app lock and how soon it locks again, export (optionally protected with a passphrase) and restore your data, expenses as a spreadsheet (CSV), erase everything |
 
 Deleting a note, an expense or a custom habit shows **Undo** for five
 seconds.
@@ -51,8 +52,8 @@ Limits worth knowing:
   chooser, which briefly send the app to the background. The default 30 s
   grace period exists so export and restore don't ask twice.
 - Restore merges rather than replaces. Where the backup and the phone
-  both have a value, the phone's wins; notes and expenses are combined by
-  id; water takes the larger count. Restoring the same file twice adds
+  both have a value, the phone's wins; notes, expenses, pinned notes, bills
+  and countdowns are combined by id; water takes the larger count. Restoring the same file twice adds
   nothing the second time. The preview says exactly what will be added
   before anything is written.
 - An exported file is plain JSON unless you give it a passphrase (it is
@@ -212,12 +213,14 @@ earlier days stay saved:
                     expenses, focusMinutes },
   },
   focusTimer: { date, startedAt, endsAt } | null,  // the focus session under way
+  pinned: [{ id, text, createdAt, pinnedAt }],      // at the top of every day, up to 5
+  bills: [{ id, label, cents, category, day, lastPosted? }],  // monthly, up to 20
 }
 ```
 
 On disk (AsyncStorage) every day has its own key, `pdh:v1:day:YYYY-MM-DD`,
 plus `pdh:v1:habits` (every habit, in order), `pdh:v1:settings`,
-`pdh:v1:countdowns` and `pdh:v1:focus-timer`. Each value is
+`pdh:v1:countdowns`, `pdh:v1:focus-timer`, `pdh:v1:pinned` and `pdh:v1:bills`. Each value is
 stored sealed: `pdh1:` + base64(nonce ‖ ciphertext ‖ tag). Data saved by
 version 1.0 as plain JSON is encrypted in place at the first launch of 1.1. One key per day keeps each write
 small, means a corrupt value costs one day rather than the whole history,
@@ -261,6 +264,20 @@ What keeps it safe (`src/hooks/useDailyHub.ts`, `src/lib/storage.ts`):
   next opens after the end, the minutes are added then. A session from a
   day no longer in memory (60 days) is let go rather than added, since
   writing that day from memory would overwrite what storage holds for it.
+- A pinned note leaves its day while pinned and belongs to no day; search
+  shows it as "Pinned". Unpinning puts it back into the day you're looking
+  at as a note written now, so it counts toward that day's three free
+  notes like any other.
+- A monthly bill is posted on its day (or the month's last day, for the
+  29th to 31st in a shorter month) the first time the app is open on or after
+  it. The expense's id is the bill's id plus the month, so it can never be
+  added twice: not by opening the app again, and not by restoring a backup
+  that already holds it. A bill made today starts next month; today's
+  expense is the one you just added. Bills are restored by id, like
+  countdowns.
+- "On this day" reads a week and a month ago from memory and a year ago
+  from storage (one day, decrypted on the phone). A day in memory opens in
+  full; the year-old one is shown but not opened.
 - The home screen's card order and hidden cards live in Settings. Stored
   values are checked: unknown cards are dropped, and a card missing from a
   saved order (one a later version adds) is put back after the card it
@@ -334,7 +351,7 @@ src/components/             one file per module, plus Card, IconButton, StepSlid
                             SettingsSheet, LockScreen, Toast, PaywallModal, DaySheet,
                             TodayFocus, SearchSheet, MonthCalendar, Journal,
                             Money (the "Hide amounts" formatter, via context),
-                            CountdownsCard, InsightsCard
+                            CountdownsCard, InsightsCard, OnThisDay
 src/hooks/useDailyHub.ts    reducer + key, migration, load/save
 src/hooks/useAppLock.ts     when the lock screen shows
 src/hooks/useClock.ts       minute clock and today's date key
@@ -359,6 +376,7 @@ src/lib/mood.ts             the five mood words
 src/lib/reminders.ts        daily local reminder and the focus timer's end (reminders.web.ts stubs them)
 src/lib/waterPace.ts        how today's water compares with the clock (pure)
 src/lib/monthBudget.ts      the month so far against a monthly budget (pure)
+src/lib/onThisDay.ts        which days "On this day" looks back to, and what to show (pure)
 src/components/homeCards.ts the home-screen cards' names, for arranging them
 src/lib/premium.ts          free limits, paywall copy, the mock purchase
 src/lib/utf8.ts             UTF-8 for the cipher, independent of Hermes
