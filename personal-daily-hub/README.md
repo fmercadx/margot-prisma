@@ -156,7 +156,7 @@ file the way Android does, so every route goes through Apple:
 | --- | --- | --- |
 | **Expo Go** | A computer on the same Wi-Fi running `npx expo start`, and the Expo Go app from the App Store (with SDK 58 support) | Trying it today, free |
 | **TestFlight** | An Apple Developer Program membership ($99/year) and a free Expo account. Then `npx eas-cli build -p ios --profile production` and `npx eas-cli submit -p ios`: EAS builds and signs it in the cloud, no Mac needed, and TestFlight installs it | Using it day to day, and sharing it with testers |
-| **Xcode on a Mac** | A Mac with Xcode; a free Apple ID works | A build on your own phone; with a free Apple ID it must be reinstalled every 7 days |
+| **Xcode on a Mac** | A Mac with Xcode 26 or later (Expo SDK 58 needs Swift 6.2); a free Apple ID works | A build on your own phone; with a free Apple ID it must be reinstalled every 7 days |
 
 `eas.json` holds the build profiles. Its production profile builds Android
 without the INTERNET permission too, as the APK workflow does. App Store

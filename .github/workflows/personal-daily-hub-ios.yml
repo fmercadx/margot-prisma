@@ -43,6 +43,14 @@ jobs:
           cache: npm
           cache-dependency-path: personal-daily-hub/package-lock.json
 
+      # Expo SDK 58's ExpoModulesJSI is a Swift 6.2 package, which needs Xcode 26;
+      # the runner's default Xcode can be older.
+      - name: Use Xcode 26
+        run: |
+          xcode=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$xcode" ]; then echo "::error::No Xcode 26 on this runner"; ls -d /Applications/Xcode*.app; exit 1; fi
+          sudo xcode-select -s "$xcode"
+
       - name: Toolchain
         run: |
           ls -d /Applications/Xcode*.app
