@@ -184,7 +184,8 @@ rendered screen, the app lock, export, and platform branches such as
 Android's notification channel.
 
 `personal-daily-hub-ios.yml` does the same for iPhone on a macOS runner: it
-builds the app for the iOS Simulator (no signing needed), checks the built
+builds the app for the iOS Simulator (signed ad hoc, so no Apple account; an
+unsigned build gets no Keychain, and the app then turns saving off), checks the built
 app's bundle id, version, Face ID prompt, privacy manifest and that it asks
 for no push entitlement, then drives it with Maestro: launch, add a note,
 close and reopen, the note is still there, the app's data container holds

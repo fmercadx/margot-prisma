@@ -3,8 +3,10 @@ name: personal-daily-hub iOS
 # Builds the app for the iOS Simulator on a Mac and runs it there, so the
 # iPhone version is checked on every push the way the Android one is.
 # `expo prebuild` generates ios/ from app.json (it is never committed), then
-# CocoaPods and Xcode build it. A Simulator build needs no Apple account or
-# signing; putting the app on an iPhone does, which is EAS's job (eas.json,
+# CocoaPods and Xcode build it. A Simulator build needs no Apple account: it is
+# signed ad hoc, which it must be, since an unsigned app gets no Keychain and
+# the app then (rightly) refuses to save. Putting the app on an iPhone needs a
+# real signature, which is EAS's job (eas.json,
 # and "On an iPhone" in the README).
 #
 # The `simulator` job checks the built app's Info.plist, entitlements and
@@ -112,7 +114,9 @@ jobs:
             -destination "id=$SIM_UDID" \
             -derivedDataPath build \
             ONLY_ACTIVE_ARCH=YES \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= \
             build > xcodebuild.log 2>&1 && ok=1 || ok=0
           grep -E '^\*\* ' xcodebuild.log || true
           if [ "$ok" != 1 ] || [ ! -f build/Build/Products/Release-iphonesimulator/PersonalDailyHub.app/Info.plist ]; then
@@ -141,6 +145,14 @@ jobs:
           # background mode (a free Apple ID can't sign push, and the app never uses it).
           if grep -q aps-environment ios/PersonalDailyHub/PersonalDailyHub.entitlements; then
             echo "::error::The app asks for the push entitlement"; exit 1
+          fi
+
+          # Signed (ad hoc), or the Keychain is closed to it; and the signature
+          # carries no push entitlement either.
+          codesign --verify "$app" || { echo "::error::The app is not signed"; exit 1; }
+          codesign -dv "$app" 2>&1 | grep -E '^(Identifier|Signature)='
+          if codesign -d --entitlements - "$app" 2>/dev/null | grep -q aps-environment; then
+            echo "::error::The signed app carries the push entitlement"; exit 1
           fi
           if get UIBackgroundModes 2>/dev/null | grep -q remote-notification; then
             echo "::error::The app declares remote-notification background mode"; exit 1

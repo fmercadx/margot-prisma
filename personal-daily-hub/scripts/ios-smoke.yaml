@@ -8,6 +8,9 @@ appId: com.fmercadx.personaldailyhub
 - extendedWaitUntil:
     visible: "Quick Capture"
     timeout: 120000
+# The banner the app shows when it can't open its saved data (no Keychain,
+# for instance); saving is off while it shows.
+- assertNotVisible: "Couldn.t read your saved data.*"
 - takeScreenshot: 1-home
 - tapOn:
     id: "note-input"

@@ -29,7 +29,8 @@ car-mirror since it left `main`, since GitHub runs path-filtered workflows on ne
 branches and force-pushes anyway. `personal-daily-hub-android.yml` also builds
 on branch pushes, but only uploads artifacts (the APK, and screenshots from
 running it on an emulator); it publishes nothing. `personal-daily-hub-ios.yml`
-does the same for iOS on a macOS runner: a Simulator build (no signing),
+does the same for iOS on a macOS runner: a Simulator build (signed ad hoc, no
+Apple account; unsigned, it gets no Keychain and the app refuses to save),
 driven with Maestro, uploaded as artifacts.
 
 **`car-mirror/` network exposure is deliberate.** Its VPN covers only the app
