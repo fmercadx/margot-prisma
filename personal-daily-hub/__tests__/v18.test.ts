@@ -293,6 +293,7 @@ describe('settings for 1.8', () => {
     expect(normalizeHomeOrder(['history', 'history', 'nope', 'focus'])).toEqual([
       'history',
       'focus',
+      'week',
       'notes',
       'habits',
       'wellbeing',

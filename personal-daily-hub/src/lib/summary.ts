@@ -62,6 +62,7 @@ export type MonthSummary = {
   habitRate: number | null; // 0–1 over the covered days
   spentCents: number;
   avgSleep: number | null;
+  avgMood: number | null; // 1–5, over days mood was logged
   categories: { category: ExpenseCategory; cents: number }[];
 };
 
@@ -80,6 +81,7 @@ export function monthSummary(
     habitRate: habitShare(dates.map((date) => ({ date, log: days[date] ?? null })), plans(habits)),
     spentCents: logs.reduce((n, l) => n + l.expenses.reduce((m, e) => m + e.cents, 0), 0),
     avgSleep: mean(logs.flatMap((l) => (l.sleep === null ? [] : [l.sleep]))),
+    avgMood: mean(logs.flatMap((l) => (l.mood === null ? [] : [l.mood]))),
     categories: categoryTotals(logs.flatMap((l) => l.expenses)),
   };
 }

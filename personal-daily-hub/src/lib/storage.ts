@@ -23,7 +23,12 @@ import { MAX_EXPENSE_CENTS } from './money';
 import {
   BILLS_MAX,
   cleanBill,
+  cleanGoal,
   CORE_HABITS,
+  GOALS_STORED_MAX,
+  sortGoals,
+  WEEK_GOALS_MAX,
+  type WeekGoal,
   PINNED_MAX,
   sortBills,
   type Bill,
@@ -74,6 +79,7 @@ export const COUNTDOWNS_KEY = `${PREFIX}countdowns`;
 export const FOCUS_TIMER_KEY = `${PREFIX}focus-timer`;
 export const PINNED_KEY = `${PREFIX}pinned`;
 export const BILLS_KEY = `${PREFIX}bills`;
+export const GOALS_KEY = `${PREFIX}goals`;
 const DAY_PREFIX = `${PREFIX}day:`;
 export const dayStorageKey = (date: string) => `${DAY_PREFIX}${date}`;
 const quarantineKey = (key: string) => `${PREFIX}corrupt:${Date.now()}:${key}`;
@@ -240,6 +246,36 @@ export function sanitizeBills(v: unknown): Bill[] {
   );
 }
 
+/**
+ * Weekly goals: text capped, real weeks and times, one per id, at most
+ * three a week and GOALS_STORED_MAX in all (the newest kept), newest week first.
+ */
+export function sanitizeGoals(v: unknown): WeekGoal[] {
+  const items = list(
+    v,
+    (g) =>
+      isObj(g) && isId(g.id) && isStr(g.text) && isStr(g.week) && isTime(g.createdAt)
+        ? cleanGoal({
+            id: g.id,
+            text: g.text,
+            week: g.week,
+            createdAt: g.createdAt,
+            doneAt: isTime(g.doneAt) ? g.doneAt : undefined,
+          })
+        : null,
+    GOALS_STORED_MAX * 2,
+  );
+  const perWeek = new Map<string, number>();
+  const out: WeekGoal[] = [];
+  for (const g of sortGoals(items)) {
+    const n = perWeek.get(g.week) ?? 0;
+    if (n >= WEEK_GOALS_MAX) continue;
+    perWeek.set(g.week, n + 1);
+    out.push(g);
+  }
+  return out.slice(0, GOALS_STORED_MAX);
+}
+
 /** A running focus session: a real day, and no longer than the longest session. */
 export function sanitizeFocusTimer(v: unknown): FocusTimer | null {
   if (!isObj(v) || !isDateKey(v.date) || !isTime(v.startedAt) || !isTime(v.endsAt)) return null;
@@ -255,6 +291,7 @@ function sanitizeDays(v: unknown): number[] | undefined {
 }
 
 const withDays = (h: Habit, days: number[] | undefined): Habit => (days ? { ...h, days } : h);
+const withSince = (h: Habit, since: unknown): Habit => (isDateKey(since) ? { ...h, since } : h);
 
 /**
  * Custom habits from storage, with the four core habits always present.
@@ -273,7 +310,10 @@ export function sanitizeHabits(v: unknown): Habit[] {
     raw,
     (h) =>
       isObj(h) && isId(h.id) && isStr(h.label) && h.core !== true && h.label.trim()
-        ? withDays({ id: h.id, label: h.label.trim().slice(0, HABIT_MAX_LENGTH), core: false }, sanitizeDays(h.days))
+        ? withSince(
+            withDays({ id: h.id, label: h.label.trim().slice(0, HABIT_MAX_LENGTH), core: false }, sanitizeDays(h.days)),
+            h.since,
+          )
         : null,
     CUSTOM_HABITS_MAX * 2,
   )
@@ -387,6 +427,10 @@ export async function loadPinned(): Promise<Pinned[]> {
 
 export async function loadBills(): Promise<Bill[]> {
   return sanitizeBills(await parse(BILLS_KEY, await AsyncStorage.getItem(BILLS_KEY)));
+}
+
+export async function loadGoals(): Promise<WeekGoal[]> {
+  return sanitizeGoals(await parse(GOALS_KEY, await AsyncStorage.getItem(GOALS_KEY)));
 }
 
 export async function loadSettings(): Promise<Settings> {

@@ -7,18 +7,19 @@ A one-screen, dark-mode daily dashboard built with React Native and Expo
 | --- | --- |
 | Header | Day, date and time, kept current to the minute; greeting; daily-reminder toggle; Settings; step back up to a week to fill in a day you forgot to log |
 | Today's focus | One line for the thing that matters most today; tap to change or clear it. A focus timer (15, 25, 45 or 60 minutes) counts down beside it, keeps running if the app is closed, rings with a local notification at the end, and adds the minutes to the day; stopping early keeps the whole minutes done |
+| This week | Up to three goals for the week, Sunday to Saturday; tick them off as they get done; last week's unfinished ones can be brought over with one tap; searchable with everything else |
 | Quick Capture | Timestamped notes and to-dos in a list that scrolls inside its card; tap to edit, tick a to-do off; pin up to five notes to the top of every day (a door code, a reminder) and unpin them back into a day; unfinished to-dos from the past week can be brought over to today; search every note, focus and expense label from any day |
-| Habits | Four core habits with cross-out on completion and day streaks, with a word of congratulations at 3, 7, 14, 30 and 60 days; choose the weekdays each habit is for (days off sit under "Not today" and never break a streak); skip a habit for a day when life gets in the way (it stops counting and its streak carries on); put habits in any order; custom habits, which can be renamed (Premium) |
+| Habits | Four core habits with cross-out on completion and day streaks, with a word of congratulations at 3, 7, 14, 30 and 60 days; choose the weekdays each habit is for (days off sit under "Not today" and never break a streak); skip a habit for a day when life gets in the way (it stops counting and its streak carries on); put habits in any order; each habit's panel shows its last four weeks a square a day (done, missed, skipped, day off), how many planned days it was done, and its longest streak; custom habits, which can be renamed (Premium) |
 | Wellbeing | Glass-by-glass progress bar toward your water goal, with whether today is on pace for it (spread evenly from 8 AM to 8 PM), and optional reminders every two hours from 10 AM to 6 PM that stop for the day once the goal is reached; last night's sleep in half hours; 1–10 energy slider; five-face mood check-in |
 | Expenses | Amount, optional label and a category (food, transport, shopping, bills, fun, other); running total, what's left of an optional daily budget, the month so far against an optional monthly budget (with what each day left can take), and where the money went; recent expenses one tap away; "Repeat monthly" turns an expense into a monthly bill that is added again on the same day each month; an eye button that hides every amount on screen |
 | Journal | A few lines at the end of the day, with a different question each weekday, and "three good things", a short gratitude list; both searchable |
 | On this day | What you wrote a week, a month and a year ago: focus, good things, the first line of the journal (or a note). Hidden when there's nothing to show |
 | Coming up | Countdowns to the dates you're looking forward to: a trip, a birthday, a deadline |
 | Insights | Patterns in your own logs: energy and mood after more sleep or less, mood on days you did a habit, energy when you reached your water goal, the weekday you spend most (Premium) |
-| History | Day details can be shared as plain text through the share sheet. Weekly summary (water, sleep, energy, mood, habits done, spending, where most went), water / sleep / energy / mood / spending charts, a month calendar shaded by habits done with the month's totals and where its money went, and every past day in full (Premium) |
+| History | Day details can be shared as plain text through the share sheet. Weekly summary (water, sleep, energy, mood, habits done, spending, where most went), water / sleep / energy / mood / spending charts, a month calendar shaded by habits done or by mood, with the month's totals and where its money went, and every past day in full (Premium) |
 | Settings | Water goal, water reminders, monthly bills (change the day, or stop one), reminder time, daily and monthly budgets, focus session length, haptic feedback, which home-screen cards show and in what order, app lock and how soon it locks again, export (optionally protected with a passphrase) and restore your data, expenses as a spreadsheet (CSV), erase everything |
 
-Deleting a note, an expense or a custom habit shows **Undo** for five
+Deleting a note, a goal, an expense or a custom habit shows **Undo** for five
 seconds.
 
 ## Security and privacy
@@ -52,8 +53,8 @@ Limits worth knowing:
   chooser, which briefly send the app to the background. The default 30 s
   grace period exists so export and restore don't ask twice.
 - Restore merges rather than replaces. Where the backup and the phone
-  both have a value, the phone's wins; notes, expenses, pinned notes, bills
-  and countdowns are combined by id; water takes the larger count. Restoring the same file twice adds
+  both have a value, the phone's wins; notes, expenses, pinned notes, bills,
+  weekly goals (still three a week at most) and countdowns are combined by id; water takes the larger count. Restoring the same file twice adds
   nothing the second time. The preview says exactly what will be added
   before anything is written.
 - An exported file is plain JSON unless you give it a passphrase (it is
@@ -207,7 +208,8 @@ earlier days stay saved:
 
 ```ts
 {
-  habits: [{ id, label, core, days? }],          // definitions carry across days; days = weekdays it is for
+  habits: [{ id, label, core, days?, since? }],  // definitions carry across days; days = weekdays it is for;
+                                                 // since = the day a custom habit was added, where its history starts
   days: {
     '2026-11-08': { focus, journal, gratitude, notes, habitsDone, habitsSkipped, water, sleep, energy, mood,
                     expenses, focusMinutes },
@@ -215,12 +217,13 @@ earlier days stay saved:
   focusTimer: { date, startedAt, endsAt } | null,  // the focus session under way
   pinned: [{ id, text, createdAt, pinnedAt }],      // at the top of every day, up to 5
   bills: [{ id, label, cents, category, day, lastPosted? }],  // monthly, up to 20
+  goals: [{ id, text, week, createdAt, doneAt? }], // up to 3 a week; week = its Sunday; three years kept
 }
 ```
 
 On disk (AsyncStorage) every day has its own key, `pdh:v1:day:YYYY-MM-DD`,
 plus `pdh:v1:habits` (every habit, in order), `pdh:v1:settings`,
-`pdh:v1:countdowns`, `pdh:v1:focus-timer`, `pdh:v1:pinned` and `pdh:v1:bills`. Each value is
+`pdh:v1:countdowns`, `pdh:v1:focus-timer`, `pdh:v1:pinned`, `pdh:v1:bills` and `pdh:v1:goals`. Each value is
 stored sealed: `pdh1:` + base64(nonce ‖ ciphertext ‖ tag). Data saved by
 version 1.0 as plain JSON is encrypted in place at the first launch of 1.1. One key per day keeps each write
 small, means a corrupt value costs one day rather than the whole history,
@@ -351,7 +354,7 @@ src/components/             one file per module, plus Card, IconButton, StepSlid
                             SettingsSheet, LockScreen, Toast, PaywallModal, DaySheet,
                             TodayFocus, SearchSheet, MonthCalendar, Journal,
                             Money (the "Hide amounts" formatter, via context),
-                            CountdownsCard, InsightsCard, OnThisDay
+                            CountdownsCard, InsightsCard, OnThisDay, WeekGoals
 src/hooks/useDailyHub.ts    reducer + key, migration, load/save
 src/hooks/useAppLock.ts     when the lock screen shows
 src/hooks/useClock.ts       minute clock and today's date key
@@ -377,6 +380,7 @@ src/lib/reminders.ts        daily local reminder and the focus timer's end (remi
 src/lib/waterPace.ts        how today's water compares with the clock (pure)
 src/lib/monthBudget.ts      the month so far against a monthly budget (pure)
 src/lib/onThisDay.ts        which days "On this day" looks back to, and what to show (pure)
+src/lib/habitHistory.ts     one habit's last four weeks, planned vs done, longest streak (pure)
 src/components/homeCards.ts the home-screen cards' names, for arranging them
 src/lib/premium.ts          free limits, paywall copy, the mock purchase
 src/lib/utf8.ts             UTF-8 for the cipher, independent of Hermes
@@ -396,4 +400,12 @@ Expense categories are told apart by icon and name, not by colour: six hues
 side by side cannot all be distinguished by colour-blind readers. So "Where
 it went" is a list of single-colour bars, each row labelled, rather than a
 stacked bar in six colours. The calendar uses one hue, stepping from the
-card surface toward full green.
+card surface toward full green (or, shaded by mood, toward full teal, one
+step per face from Rough to Great), and every day says what it shows in
+words to a screen reader.
+
+A habit's history counts only the days it was meant for and not skipped,
+from the start of its record: the day a custom habit was added (kept since
+1.11), else its first tick for an older custom habit, else the first day
+anything was logged. So a habit added last week doesn't show three weeks of
+misses before it existed, and today isn't a miss until it's over.

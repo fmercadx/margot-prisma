@@ -36,6 +36,7 @@ export { default as Flame } from 'lucide-react-native/icons/flame';
 export { default as Forward } from 'lucide-react-native/icons/forward';
 export { default as Frown } from 'lucide-react-native/icons/frown';
 export { default as GlassWater } from 'lucide-react-native/icons/glass-water';
+export { default as Goal } from 'lucide-react-native/icons/goal';
 export { default as History } from 'lucide-react-native/icons/history';
 export { default as Hourglass } from 'lucide-react-native/icons/hourglass';
 export { default as InfinityIcon } from 'lucide-react-native/icons/infinity';

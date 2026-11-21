@@ -13,10 +13,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BookHeart, NotebookPen, Pin, Search, SearchX, Sparkles, Target, Wallet, X } from '../icons';
-import { clockTime, longDate, parseDateKey, weekdayName } from '../lib/date';
+import { BookHeart, Goal, NotebookPen, Pin, Search, SearchX, Sparkles, Target, Wallet, X } from '../icons';
+import { clockTime, longDate, parseDateKey, weekdayName, weekRangeLabel } from '../lib/date';
 import { SEARCH_QUERY_MAX, searchDays, type SearchHit } from '../lib/search';
-import type { DayLog, Pinned } from '../lib/store';
+import type { DayLog, Pinned, WeekGoal } from '../lib/store';
 import { colors, HIT, inputColors, radius, space, tint, type } from '../theme';
 import { IconButton } from './IconButton';
 
@@ -26,6 +26,8 @@ type Props = {
   days: Record<string, DayLog> | null;
   /** Pinned notes, which belong to no day. */
   pinned?: Pinned[];
+  /** Weekly goals, which belong to a week rather than a day. */
+  goals?: WeekGoal[];
   today: string;
   onClose: () => void;
 };
@@ -36,16 +38,17 @@ const KIND = {
   journal: { icon: BookHeart, color: colors.journal, name: 'Journal' },
   good: { icon: Sparkles, color: colors.journal, name: 'Good thing' },
   pinned: { icon: Pin, color: colors.notes, name: 'Pinned' },
+  goal: { icon: Goal, color: colors.week, name: 'Weekly goal' },
   expense: { icon: Wallet, color: colors.expenses, name: 'Expense' },
 } as const;
 
 /** Search every note, focus and expense label on the phone. */
-export function SearchSheet({ visible, days, pinned, today, onClose }: Props) {
+export function SearchSheet({ visible, days, pinned, goals, today, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const result = useMemo(
-    () => (days ? searchDays(days, query, undefined, pinned) : { hits: [], total: 0 }),
-    [days, query, pinned],
+    () => (days ? searchDays(days, query, undefined, pinned, goals) : { hits: [], total: 0 }),
+    [days, query, pinned, goals],
   );
   const typed = query.trim().length > 0;
 
@@ -148,7 +151,12 @@ function Hit({ hit, today }: { hit: SearchHit; today: string }) {
   const k = KIND[hit.kind];
   const Icon = k.icon;
   const d = parseDateKey(hit.date);
-  const day = hit.date === today ? 'Today' : `${weekdayName(d).slice(0, 3)}, ${longDate(d)}`;
+  const day =
+    hit.kind === 'goal'
+      ? `Week of ${weekRangeLabel(hit.date)}, ${d.getFullYear()}`
+      : hit.date === today
+        ? 'Today'
+        : `${weekdayName(d).slice(0, 3)}, ${longDate(d)}`;
   const when = hit.time === null ? day : `${day} · ${clockTime(hit.time)}`;
   const before = hit.text.slice(0, hit.start);
   const found = hit.text.slice(hit.start, hit.start + hit.length);

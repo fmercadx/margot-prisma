@@ -10,7 +10,7 @@ import {
   MONTHLY_BUDGET_STEPS_CENTS,
   type ExpenseCategory,
 } from './categories';
-import { lastNDays, parseDateKey } from './date';
+import { addDays, isDateKey, lastNDays, parseDateKey, weekStart } from './date';
 //
 // Daily data is keyed by local date string, so "today" starts empty each
 // morning while every earlier day stays where it was:
@@ -45,6 +45,8 @@ export type Habit = {
   core: boolean;
   /** Weekdays it is meant for (0 = Sunday … 6 = Saturday), sorted. Absent = every day. */
   days?: number[];
+  /** The day a custom habit was added, so its history doesn't count the days before as misses. */
+  since?: string;
 };
 
 export type DayLog = {
@@ -83,6 +85,7 @@ export type Settings = {
 /** The cards on the home screen, in their default order. */
 export const HOME_CARDS = [
   'focus',
+  'week',
   'notes',
   'habits',
   'wellbeing',
@@ -102,6 +105,12 @@ export type FocusTimer = { date: string; startedAt: number; endsAt: number };
 
 /** A date worth counting down to. */
 export type Countdown = { id: string; label: string; date: string };
+
+/**
+ * One of up to three goals for a week. `week` is the Sunday it starts on;
+ * goals in a week are in the order written.
+ */
+export type WeekGoal = { id: string; text: string; week: string; createdAt: number; doneAt?: number };
 
 /** A note kept at the top of Quick Capture every day. */
 export type Pinned = { id: string; text: string; createdAt: number; pinnedAt: number };
@@ -127,6 +136,7 @@ export type HubState = {
   focusTimer: FocusTimer | null; // the focus session under way, if any
   pinned: Pinned[]; // most recently pinned first
   bills: Bill[]; // monthly bills, by day of the month
+  goals: WeekGoal[]; // weekly goals, newest week first
 };
 
 export const WATER_GOAL_MIN = 4;
@@ -187,6 +197,12 @@ export const CUSTOM_HABITS_MAX = 20;
 export const COUNTDOWNS_MAX = 10;
 export const PINNED_MAX = 5;
 export const BILLS_MAX = 20;
+/** Goals in one week: a few that matter, not a to-do list. */
+export const WEEK_GOALS_MAX = 3;
+export const GOAL_MAX_LENGTH = 80;
+/** Weeks of goals kept: three years. Older ones make way for new. */
+export const GOAL_WEEKS_KEPT = 156;
+export const GOALS_STORED_MAX = WEEK_GOALS_MAX * GOAL_WEEKS_KEPT;
 export const COUNTDOWN_LABEL_MAX_LENGTH = 40;
 /** The furthest ahead a countdown can be set, in days. */
 export const COUNTDOWN_MAX_DAYS = 3650;
@@ -221,6 +237,7 @@ export const initialState: HubState = {
   focusTimer: null,
   pinned: [],
   bills: [],
+  goals: [],
 };
 
 export type Action =
@@ -233,7 +250,12 @@ export type Action =
       focusTimer?: FocusTimer | null;
       pinned?: Pinned[];
       bills?: Bill[];
+      goals?: WeekGoal[];
     }
+  | { type: 'addGoal'; goal: WeekGoal }
+  | { type: 'toggleGoal'; id: string; now: number }
+  | { type: 'deleteGoal'; id: string }
+  | { type: 'moveGoals'; ids: string[]; week: string }
   | { type: 'pinNote'; date: string; id: string; now: number }
   | { type: 'unpinNote'; id: string; date: string; now: number }
   | { type: 'deletePinned'; id: string }
@@ -278,6 +300,7 @@ export type Action =
       countdowns?: Countdown[];
       pinned?: Pinned[];
       bills?: Bill[];
+      goals?: WeekGoal[];
     }
   | { type: 'addExpense'; date: string; expense: Expense }
   | { type: 'deleteExpense'; date: string; id: string };
@@ -306,7 +329,43 @@ export function reducer(state: HubState, action: Action): HubState {
         focusTimer: action.focusTimer ?? null,
         pinned: action.pinned ?? [],
         bills: action.bills ?? [],
+        goals: action.goals ?? [],
       };
+
+    // Also how a deleted goal comes back.
+    case 'addGoal': {
+      const g = cleanGoal(action.goal);
+      if (!g || state.goals.some((x) => x.id === g.id)) return state;
+      if (goalsOf(state.goals, g.week).length >= WEEK_GOALS_MAX) return state;
+      return { ...state, goals: sortGoals([...state.goals, g]).slice(0, GOALS_STORED_MAX) };
+    }
+
+    case 'toggleGoal': {
+      const i = state.goals.findIndex((g) => g.id === action.id);
+      if (i === -1) return state;
+      const goals = [...state.goals];
+      const { doneAt, ...rest } = goals[i];
+      goals[i] = doneAt === undefined ? { ...rest, doneAt: action.now } : rest;
+      return { ...state, goals };
+    }
+
+    case 'deleteGoal': {
+      const goals = state.goals.filter((g) => g.id !== action.id);
+      return goals.length === state.goals.length ? state : { ...state, goals };
+    }
+
+    // Unfinished goals from earlier weeks come into `week`, as many as fit.
+    case 'moveGoals': {
+      let room = WEEK_GOALS_MAX - goalsOf(state.goals, action.week).length;
+      let moved = false;
+      const goals = state.goals.map((g) => {
+        if (room <= 0 || !action.ids.includes(g.id) || g.doneAt !== undefined || g.week >= action.week) return g;
+        room--;
+        moved = true;
+        return { ...g, week: action.week };
+      });
+      return moved ? { ...state, goals: sortGoals(goals) } : state;
+    }
 
     // A plain note moves out of its day to the top of every day.
     case 'pinNote': {
@@ -596,7 +655,9 @@ export function reducer(state: HubState, action: Action): HubState {
       const customCount = state.habits.filter((h) => !h.core).length;
       if (!label || customCount >= CUSTOM_HABITS_MAX) return state;
       if (state.habits.some((h) => h.label.toLowerCase() === label.toLowerCase())) return state;
-      return { ...state, habits: [...state.habits, { ...action.habit, label, core: false }] };
+      const { since, ...rest } = action.habit;
+      const habit: Habit = { ...rest, label, core: false, ...(isDateKey(since) ? { since } : {}) };
+      return { ...state, habits: [...state.habits, habit] };
     }
 
     case 'removeHabit': {
@@ -660,6 +721,7 @@ export function reducer(state: HubState, action: Action): HubState {
       const habits = [...state.habits];
       const next: Habit = { id: cur.id, label: cur.label, core: cur.core };
       if (days) next.days = days;
+      if (cur.since) next.since = cur.since;
       habits[i] = next;
       return { ...state, habits };
     }
@@ -703,7 +765,15 @@ export function reducer(state: HubState, action: Action): HubState {
     }
 
     case 'importBackup':
-      return mergeBackup(state, action.habits, action.days, action.countdowns, action.pinned, action.bills).state;
+      return mergeBackup(
+        state,
+        action.habits,
+        action.days,
+        action.countdowns,
+        action.pinned,
+        action.bills,
+        action.goals,
+      ).state;
 
     case 'addExpense': {
       const { cents } = action.expense;
@@ -736,6 +806,7 @@ export type MergeStats = {
   countdownsAdded: number;
   pinnedAdded: number;
   billsAdded: number;
+  goalsAdded: number;
 };
 
 const byNewest = <T extends { createdAt: number }>(a: T, b: T) => b.createdAt - a.createdAt;
@@ -762,6 +833,7 @@ export function mergeBackup(
   countdowns: Countdown[] = [],
   pinned: Pinned[] = [],
   bills: Bill[] = [],
+  goals: WeekGoal[] = [],
 ): { state: HubState; stats: MergeStats } {
   const stats: MergeStats = {
     daysAdded: 0,
@@ -772,7 +844,17 @@ export function mergeBackup(
     countdownsAdded: 0,
     pinnedAdded: 0,
     billsAdded: 0,
+    goalsAdded: 0,
   };
+
+  // Weekly goals: by id, up to three a week.
+  let nextGoals = state.goals;
+  for (const g of goals) {
+    if (nextGoals.some((x) => x.id === g.id) || goalsOf(nextGoals, g.week).length >= WEEK_GOALS_MAX) continue;
+    nextGoals = [...nextGoals, g];
+    stats.goalsAdded++;
+  }
+  if (nextGoals !== state.goals) nextGoals = sortGoals(nextGoals).slice(0, GOALS_STORED_MAX);
 
   // Pinned notes and bills: by id, up to their caps; the phone's own come first.
   let nextPinned = state.pinned;
@@ -867,7 +949,8 @@ export function mergeBackup(
     nextDays === state.days &&
     nextCountdowns === state.countdowns &&
     nextPinned === state.pinned &&
-    nextBills === state.bills;
+    nextBills === state.bills &&
+    nextGoals === state.goals;
   return {
     state: unchanged
       ? state
@@ -878,6 +961,7 @@ export function mergeBackup(
           countdowns: nextCountdowns,
           pinned: nextPinned,
           bills: nextBills,
+          goals: nextGoals,
         },
     stats,
   };
@@ -995,6 +1079,35 @@ export function openTasksBefore(
 /** One line, trimmed, capped. Clearing the text clears the focus. */
 export function cleanFocus(text: string): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, FOCUS_MAX_LENGTH);
+}
+
+/** A goal's text on one line, trimmed and capped, in its week's Sunday; null if it can't be one. */
+export function cleanGoal(g: WeekGoal): WeekGoal | null {
+  const text = g.text
+    .slice(0, GOAL_MAX_LENGTH * 4)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, GOAL_MAX_LENGTH);
+  const valid = (t: unknown) => typeof t === 'number' && Number.isFinite(t) && t > 0 && t < 8.64e15;
+  if (!g.id || !text || !isDateKey(g.week) || !valid(g.createdAt)) return null;
+  const out: WeekGoal = { id: g.id, text, week: weekStart(g.week), createdAt: g.createdAt };
+  if (valid(g.doneAt)) out.doneAt = g.doneAt;
+  return out;
+}
+
+/** Newest week first; within a week, in the order written. */
+export function sortGoals(list: WeekGoal[]): WeekGoal[] {
+  return [...list].sort((a, b) => (a.week === b.week ? a.createdAt - b.createdAt : a.week < b.week ? 1 : -1));
+}
+
+/** The goals of the week starting on `week`, in the order written. */
+export function goalsOf(goals: readonly WeekGoal[], week: string): WeekGoal[] {
+  return goals.filter((g) => g.week === week);
+}
+
+/** Last week's goals that weren't done, to bring into the week starting on `week`. */
+export function unfinishedGoalsBefore(goals: readonly WeekGoal[], week: string): WeekGoal[] {
+  return goalsOf(goals, addDays(week, -7)).filter((g) => g.doneAt === undefined);
 }
 
 /** A bill's label trimmed and capped, its fields checked; null if it can't be one. */

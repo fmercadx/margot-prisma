@@ -816,6 +816,7 @@ function RestorePreview(props: {
     stats.countdownsAdded ? plural(stats.countdownsAdded, 'countdown', 'countdowns') : '',
     stats.pinnedAdded ? plural(stats.pinnedAdded, 'pinned note', 'pinned notes') : '',
     stats.billsAdded ? plural(stats.billsAdded, 'monthly bill', 'monthly bills') : '',
+    stats.goalsAdded ? plural(stats.goalsAdded, 'weekly goal', 'weekly goals') : '',
   ].filter(Boolean);
   const when = props.exportedAt ? new Date(props.exportedAt) : null;
   return (

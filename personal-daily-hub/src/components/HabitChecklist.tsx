@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { weekdaysLabel } from '../lib/date';
+import { HISTORY_WEEKS, type HabitDay, type HabitHistory } from '../lib/habitHistory';
 import { HABIT_MAX_LENGTH, isDue, isScheduled, type Habit } from '../lib/store';
 import { colors, inputColors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
@@ -20,6 +21,8 @@ type Props = {
   streaks: Record<string, number>;
   /** The most days a streak can show (the history that is loaded). */
   streakCap: number;
+  /** A habit's last four weeks, shown in its panel. */
+  historyOf?: (id: string) => HabitHistory;
   isPremium: boolean;
   composerOpen: boolean;
   onToggle: (id: string) => void;
@@ -124,6 +127,8 @@ export function HabitChecklist(props: Props) {
           <DayPicker
             label={habit.label}
             days={habit.days}
+            history={props.historyOf?.(habit.id)}
+            historyCap={props.streakCap}
             onChange={(days) => props.onSetDays(habit.id, days)}
             onDone={() => setScheduling(null)}
             onRename={habit.core ? undefined : (label) => props.onRename(habit.id, label)}
@@ -219,6 +224,9 @@ function DayPicker(props: {
   onDown?: () => void;
   /** Set it aside for the day, or take it back. Absent on a day it isn't meant for. */
   skip?: { skipped: boolean; dayWord: string; onToggle: () => void };
+  history?: HabitHistory;
+  /** Days of history the best streak looks over. */
+  historyCap: number;
 }) {
   const [name, setName] = useState(props.label);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -245,6 +253,7 @@ function DayPicker(props: {
       accessibilityLabel={`Editing ${props.label}`}
       testID="day-picker"
     >
+      {props.history ? <HistoryGrid history={props.history} cap={props.historyCap} /> : null}
       {props.onRename ? (
         <View style={{ gap: space.xs }}>
           <TextInput
@@ -334,6 +343,55 @@ function DayPicker(props: {
   );
 }
 
+const WEEK_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+/**
+ * The habit's last four weeks, a square a day: filled when done, outlined
+ * when missed, dashed when skipped, faint on its days off. Spoken as one
+ * summary rather than 28 squares.
+ */
+function HistoryGrid({ history, cap }: { history: HabitHistory; cap: number }) {
+  const { planned, done, best, cells } = history;
+  const share = planned > 0 ? Math.round((done / planned) * 100) : null;
+  const summary =
+    planned === 0
+      ? 'Nothing to count yet'
+      : `${done} of ${planned} planned ${planned === 1 ? 'day' : 'days'} · ${share}%`;
+  const weeks = Array.from({ length: HISTORY_WEEKS }, (_, w) => cells.slice(w * 7, w * 7 + 7));
+  return (
+    <View
+      style={styles.history}
+      accessible
+      accessibilityLabel={`Last ${HISTORY_WEEKS} weeks: ${summary}. Longest streak in ${cap} days: ${best} ${best === 1 ? 'day' : 'days'}.`}
+      testID="habit-history"
+    >
+      <View style={styles.historyHead}>
+        <Text style={styles.historyTitle}>Last {HISTORY_WEEKS} weeks</Text>
+        <Text style={styles.historyValue} testID="habit-history-summary">
+          {summary}
+        </Text>
+      </View>
+      <View style={styles.gridRow}>
+        {WEEK_LETTERS.map((l, i) => (
+          <Text key={i} style={styles.gridLetter}>
+            {l}
+          </Text>
+        ))}
+      </View>
+      {weeks.map((week, w) => (
+        <View key={w} style={styles.gridRow}>
+          {week.map((c) => (
+            <View key={c.date} style={[styles.cell, CELL[c.status]]} testID={`history-${c.date}-${c.status}`} />
+          ))}
+        </View>
+      ))}
+      <Text style={styles.schedule} testID="habit-history-best">
+        Longest streak in {cap} days: {best} {best === 1 ? 'day' : 'days'}
+      </Text>
+    </View>
+  );
+}
+
 /** Shown from two days in a row: one day is not yet a streak. */
 function StreakChip({ days, cap }: { days: number; cap: number }) {
   if (days < 2) return null;
@@ -345,7 +403,30 @@ function StreakChip({ days, cap }: { days: number; cap: number }) {
   );
 }
 
+const CELL: Record<HabitDay, object> = {
+  done: { backgroundColor: colors.habits, borderColor: colors.habits },
+  missed: { borderColor: colors.textMuted },
+  skipped: { borderColor: colors.textMuted, borderStyle: 'dashed' },
+  off: { backgroundColor: colors.cardRaised },
+  today: { borderColor: colors.text },
+  future: { opacity: 0 },
+  before: { opacity: 0 },
+};
+
 const styles = StyleSheet.create({
+  history: { gap: 4, paddingBottom: space.xs },
+  historyHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 },
+  historyTitle: { ...type.label, color: colors.textSecondary },
+  historyValue: { ...type.label, color: colors.text, fontVariant: ['tabular-nums'] },
+  gridRow: { flexDirection: 'row', gap: 6 },
+  gridLetter: { flex: 1, textAlign: 'center', ...type.caption, color: colors.textMuted },
+  cell: {
+    flex: 1,
+    height: 18,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
   count: { ...type.label, color: colors.textSecondary, fontVariant: ['tabular-nums'] },
   row: { flexDirection: 'row', alignItems: 'center' },
   toggle: {
