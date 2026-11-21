@@ -7,7 +7,10 @@ Six unrelated products share this repository:
 - **`credit-analyzer/`** — a tri-merge credit analysis tool, serving
   `fmercadx.github.io/margot-prisma/analyzer/`
 - **`shepherds-whisper/`** — the marketing site for an Oregon adult foster
-  home, deployed on Railway, not on Pages
+  home. Railway is its real home, because only there does its server run and
+  the tour form reach an inbox; a static copy also ships to Pages at
+  `fmercadx.github.io/margot-prisma/shepherds-whisper/`, where `/api/tour-request`
+  is absent and the form falls back to a prefilled email
 - **`car-mirror/`** — an Android app that mirrors the owner's phone screen to
   their Tesla's browser. Its own Gradle build; ships as an APK on GitHub
   Releases, not on Pages or Railway. Its README explains the design.
@@ -19,8 +22,8 @@ Six unrelated products share this repository:
 - **`personal-daily-hub/`** — a React Native + Expo (SDK 58) daily dashboard
   app; built for phones through EAS, not deployed from this repo
 
-They are independent. `deploy.yml` builds the salon site, the analyzer and the
-takeoff page into one `dist/`, and `credit-analyzer.yml`,
+They are independent. `deploy.yml` builds the salon site, the analyzer, the
+takeoff page and the adult foster home site into one `dist/`, and `credit-analyzer.yml`,
 `shepherds-whisper.yml`, `car-mirror.yml`, `takeoff.yml` and the three
 `personal-daily-hub*` workflows are path-filtered so no product's changes run
 another's tests. `car-mirror.yml` alone also runs on branch pushes, because each
@@ -180,6 +183,12 @@ cd credit-analyzer/mobile  && npm test
 # The adult family home site: build, then browser checks against dist/
 cd shepherds-whisper && npm ci && npm run build && npm run smoke
 
+# Its Pages copy. SITE_BASE/SITE_OUT move the base and output; the script also
+# writes privacy/index.html, because Pages has no SPA fallback and a direct hit
+# on a route would otherwise 404. Build from the repo root — dist/ lives there.
+npm run build:whisper
+cd shepherds-whisper && npm run test:pages
+
 # Takeoff: 56 tests on synthetic drawing sets. Real sets stay outside the repo.
 cd takeoff && python -m pytest test_takeoff.py -q
 
@@ -286,5 +295,6 @@ the SDK's bundled version map instead, and `docs.expo.dev` is unreachable, so
 read the installed packages' `.d.ts` files for current APIs. Check with
 `curl -sS "$HTTPS_PROXY/__agentproxy/status"` rather than assuming either way.
 
-Chromium for Playwright is at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`.
+Chromium for Playwright is at `/opt/pw-browsers/chromium` (a symlink the image
+keeps pointing at the current build; the versioned path changes).
 Do not run `playwright install`.

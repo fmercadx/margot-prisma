@@ -8,13 +8,28 @@ import { useEffect, useState, type ReactNode } from 'react'
  * below keeps it working in the single-file preview build too, where there is
  * no server to do the falling back. */
 
+/* Where the site is mounted: '/' on Railway, '/margot-prisma/shepherds-whisper/'
+   on Pages. Vite inlines it at build time from the base above. */
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, '')
+
+/** '/margot-prisma/shepherds-whisper/privacy' -> '/privacy' */
+function toRoute(pathname: string) {
+  const stripped = BASE && pathname.startsWith(BASE) ? pathname.slice(BASE.length) : pathname
+  return stripped.replace(/\/+$/, '') || '/'
+}
+
+/** '/privacy' -> '/margot-prisma/shepherds-whisper/privacy' */
+export function href(route: string) {
+  return `${BASE}${route}` || '/'
+}
+
 export function useRoute() {
   const [path, setPath] = useState(() =>
-    typeof window === 'undefined' ? '/' : window.location.pathname,
+    typeof window === 'undefined' ? '/' : toRoute(window.location.pathname),
   )
 
   useEffect(() => {
-    const onPop = () => setPath(window.location.pathname)
+    const onPop = () => setPath(toRoute(window.location.pathname))
     window.addEventListener('popstate', onPop)
     window.addEventListener('route', onPop as EventListener)
     return () => {
@@ -23,11 +38,11 @@ export function useRoute() {
     }
   }, [])
 
-  return path.replace(/\/+$/, '') || '/'
+  return path
 }
 
 export function navigate(to: string) {
-  window.history.pushState({}, '', to)
+  window.history.pushState({}, '', href(to))
   window.dispatchEvent(new Event('route'))
   window.scrollTo({ top: 0 })
 }
@@ -39,7 +54,7 @@ type RouteLinkProps = { to: string; className?: string; children: ReactNode }
 export function RouteLink({ to, className, children }: RouteLinkProps) {
   return (
     <a
-      href={to}
+      href={href(to)}
       className={className}
       onClick={(event) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return

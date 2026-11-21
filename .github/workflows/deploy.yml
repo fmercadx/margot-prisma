@@ -45,6 +45,13 @@ jobs:
       # checked against pyodide-lock.json; nothing is fetched at run time.
       - run: npm run build:takeoff
 
+      # The adult foster home site is a fourth page, under dist/shepherds-whisper.
+      # Its real home is Railway, which runs its server and so has a working tour
+      # form; the Pages copy is static, so that endpoint is absent and the form
+      # falls back to a prefilled email. The script handles the subpath base and
+      # writes privacy/index.html, since Pages has no SPA fallback.
+      - run: npm run build:whisper
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
