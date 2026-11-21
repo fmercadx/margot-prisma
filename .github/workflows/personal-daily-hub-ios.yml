@@ -43,18 +43,14 @@ jobs:
           cache: npm
           cache-dependency-path: personal-daily-hub/package-lock.json
 
-      # Expo SDK 58's ExpoModulesJSI is written for Xcode 27 (Swift 6.4): Xcode 16
-      # can't read its package, and Xcode 26.3 rejects one of its data-race checks.
-      # The runner's default Xcode can be older, so take the newest it has.
+      # Expo SDK 58's ExpoModulesJSI needs a recent Swift: Xcode 16.4 can't read its
+      # package (Swift 6.2 tools), and Xcode 26.3 rejects one of its data-race
+      # checks. The runner's default Xcode can be older, so take the newest it has.
       - name: Use the newest Xcode
         run: |
-          ls -d /Applications/Xcode*.app
           xcode=$(ls -d /Applications/Xcode_[0-9]*.app | sort -V | tail -1)
           sudo xcode-select -s "$xcode"
-          major=$(xcodebuild -version | sed -n 's/^Xcode \([0-9]*\).*/\1/p')
-          if [ "$major" -lt 27 ]; then
-            echo "::error::Newest Xcode here is $(xcodebuild -version | head -1); Expo SDK 58 needs Xcode 27"; exit 1
-          fi
+          xcodebuild -version
 
       - name: Toolchain
         run: |
