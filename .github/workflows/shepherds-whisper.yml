@@ -66,6 +66,14 @@ jobs:
       # worse than none.
       - run: npm run test:privacy
 
+      # The Pages copy: a different base path, no SPA fallback and no server,
+      # so the tour form must fall back rather than error. Built from the repo
+      # root because that is where dist/ lives.
+      - run: npm run build:whisper
+        working-directory: .
+
+      - run: npm run test:pages
+
       - name: Check the built site actually serves
         run: |
           PORT=8080 node server.mjs &
