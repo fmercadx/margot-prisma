@@ -62,6 +62,7 @@ export { default as ShieldCheck } from 'lucide-react-native/icons/shield-check';
 export { default as ShoppingBag } from 'lucide-react-native/icons/shopping-bag';
 export { default as SkipForward } from 'lucide-react-native/icons/skip-forward';
 export { default as Smile } from 'lucide-react-native/icons/smile';
+export { default as Sparkles } from 'lucide-react-native/icons/sparkles';
 export { default as Square } from 'lucide-react-native/icons/square';
 export { default as Target } from 'lucide-react-native/icons/target';
 export { default as Timer } from 'lucide-react-native/icons/timer';

@@ -2,7 +2,14 @@
 // clock — the date and timestamps arrive in the actions — so it is tested
 // directly.
 
-import { CATEGORY_LABELS, DEFAULT_CATEGORY, isBudget, isCategory, type ExpenseCategory } from './categories';
+import {
+  CATEGORY_LABELS,
+  DEFAULT_CATEGORY,
+  isBudget,
+  isCategory,
+  MONTHLY_BUDGET_STEPS_CENTS,
+  type ExpenseCategory,
+} from './categories';
 import { lastNDays, parseDateKey } from './date';
 //
 // Daily data is keyed by local date string, so "today" starts empty each
@@ -43,6 +50,7 @@ export type Habit = {
 export type DayLog = {
   focus: string; // the one thing that matters today; '' until set
   journal: string; // a few lines at the end of the day; '' until written
+  gratitude: string[]; // up to three good things, in the order written
   notes: Note[]; // newest first
   habitsDone: string[]; // ids of habits ticked that day
   habitsSkipped: string[]; // ids of habits set aside that day: they neither count nor break a streak
@@ -60,8 +68,10 @@ export type Settings = {
   lockEnabled: boolean; // require fingerprint / face / PIN to open
   haptics: boolean; // a light tap of feedback on ticks, steps and saves
   dailyBudgetCents: number | null; // spending limit for a day; null = no budget
+  monthlyBudgetCents: number | null; // spending limit for a calendar month; null = no budget
   relockAfterSec: number; // with app lock on: time in the background before it locks again
   hideAmounts: boolean; // show every amount of money as "$•••", for using the app in company
+  waterReminders: boolean; // local notifications through the day until the water goal is reached
   focusLength: number; // minutes in one focus session
   homeOrder: HomeCard[]; // the home screen's cards, top to bottom
   homeHidden: HomeCard[]; // cards switched off on the home screen
@@ -83,7 +93,8 @@ export const HOME_CARDS = [
   'history',
 ] as const;
 export type HomeCard = (typeof HOME_CARDS)[number];
-export const isHomeCard = (v: unknown): v is HomeCard => typeof v === 'string' && (HOME_CARDS as readonly string[]).includes(v);
+export const isHomeCard = (v: unknown): v is HomeCard =>
+  typeof v === 'string' && (HOME_CARDS as readonly string[]).includes(v);
 
 /** A focus session that is running: it belongs to the day it was started on. */
 export type FocusTimer = { date: string; startedAt: number; endsAt: number };
@@ -109,8 +120,10 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   lockEnabled: false,
   haptics: true,
   dailyBudgetCents: null,
+  monthlyBudgetCents: null,
   relockAfterSec: 30,
   hideAmounts: false,
+  waterReminders: false,
   focusLength: 25,
   homeOrder: [...HOME_CARDS],
   homeHidden: [],
@@ -143,6 +156,9 @@ export const CARRY_LOOKBACK_DAYS = 7;
 export const NOTE_MAX_LENGTH = 500;
 export const FOCUS_MAX_LENGTH = 120;
 export const JOURNAL_MAX_LENGTH = 2000;
+/** "Three good things": how many, and how long each may be. */
+export const GRATITUDE_MAX = 3;
+export const GRATITUDE_MAX_LENGTH = 80;
 /** How far back recent expenses are offered to add again. */
 export const RECENT_EXPENSE_DAYS = 14;
 export const RECENT_EXPENSES_MAX = 6;
@@ -164,6 +180,7 @@ export const CORE_HABITS: readonly Habit[] = [
 export const EMPTY_DAY: DayLog = Object.freeze({
   focus: '',
   journal: '',
+  gratitude: [],
   notes: [],
   habitsDone: [],
   habitsSkipped: [],
@@ -215,6 +232,7 @@ export type Action =
   | { type: 'setMood'; date: string; value: number | null }
   | { type: 'setFocus'; date: string; text: string }
   | { type: 'setJournal'; date: string; text: string }
+  | { type: 'setGratitude'; date: string; items: string[] }
   | { type: 'setHabitDays'; id: string; days: number[] | null }
   | { type: 'setSleep'; date: string; value: number | null }
   | { type: 'toggleTask'; date: string; id: string; now: number }
@@ -254,7 +272,11 @@ export function reducer(state: HubState, action: Action): HubState {
         d.habitsSkipped.includes(action.id)
           ? { ...d, habitsSkipped: d.habitsSkipped.filter((id) => id !== action.id) }
           : // Set aside, so not done either.
-            { ...d, habitsSkipped: [...d.habitsSkipped, action.id], habitsDone: d.habitsDone.filter((id) => id !== action.id) },
+            {
+              ...d,
+              habitsSkipped: [...d.habitsSkipped, action.id],
+              habitsDone: d.habitsDone.filter((id) => id !== action.id),
+            },
       );
     }
 
@@ -284,7 +306,10 @@ export function reducer(state: HubState, action: Action): HubState {
       const minutes = focusMinutesDone(t, action.now);
       const next = { ...state, focusTimer: null };
       if (minutes === 0) return next;
-      return updateDay(next, t.date, (d) => ({ ...d, focusMinutes: Math.min(FOCUS_MINUTES_MAX, d.focusMinutes + minutes) }));
+      return updateDay(next, t.date, (d) => ({
+        ...d,
+        focusMinutes: Math.min(FOCUS_MINUTES_MAX, d.focusMinutes + minutes),
+      }));
     }
 
     case 'cancelFocus':
@@ -317,7 +342,8 @@ export function reducer(state: HubState, action: Action): HubState {
       const p = action.patch;
       const cur = state.settings;
       const next: Settings = {
-        waterGoal: p.waterGoal === undefined ? cur.waterGoal : clamp(Math.round(p.waterGoal), WATER_GOAL_MIN, WATER_GOAL_MAX),
+        waterGoal:
+          p.waterGoal === undefined ? cur.waterGoal : clamp(Math.round(p.waterGoal), WATER_GOAL_MIN, WATER_GOAL_MAX),
         reminderHour:
           p.reminderHour === undefined
             ? cur.reminderHour
@@ -330,11 +356,18 @@ export function reducer(state: HubState, action: Action): HubState {
             : isBudget(p.dailyBudgetCents)
               ? p.dailyBudgetCents
               : null,
+        monthlyBudgetCents:
+          p.monthlyBudgetCents === undefined
+            ? cur.monthlyBudgetCents
+            : isBudget(p.monthlyBudgetCents, MONTHLY_BUDGET_STEPS_CENTS)
+              ? p.monthlyBudgetCents
+              : null,
         relockAfterSec:
           p.relockAfterSec !== undefined && RELOCK_CHOICES_SEC.includes(p.relockAfterSec)
             ? p.relockAfterSec
             : cur.relockAfterSec,
         hideAmounts: p.hideAmounts === undefined ? cur.hideAmounts : p.hideAmounts === true,
+        waterReminders: p.waterReminders === undefined ? cur.waterReminders : p.waterReminders === true,
         focusLength:
           p.focusLength !== undefined && FOCUS_LENGTHS.includes(p.focusLength) ? p.focusLength : cur.focusLength,
         homeOrder: p.homeOrder === undefined ? cur.homeOrder : normalizeHomeOrder(p.homeOrder),
@@ -347,8 +380,10 @@ export function reducer(state: HubState, action: Action): HubState {
         next.lockEnabled === cur.lockEnabled &&
         next.haptics === cur.haptics &&
         next.dailyBudgetCents === cur.dailyBudgetCents &&
+        next.monthlyBudgetCents === cur.monthlyBudgetCents &&
         next.relockAfterSec === cur.relockAfterSec &&
         next.hideAmounts === cur.hideAmounts &&
+        next.waterReminders === cur.waterReminders &&
         next.focusLength === cur.focusLength &&
         next.homeOrder.join() === cur.homeOrder.join() &&
         next.homeHidden.join() === cur.homeHidden.join() &&
@@ -360,9 +395,7 @@ export function reducer(state: HubState, action: Action): HubState {
     // it goes back by timestamp, not to the top.
     case 'restoreNote':
       return updateDay(state, action.date, (d) =>
-        d.notes.some((n) => n.id === action.note.id)
-          ? d
-          : { ...d, notes: insertByTime(d.notes, action.note) },
+        d.notes.some((n) => n.id === action.note.id) ? d : { ...d, notes: insertByTime(d.notes, action.note) },
       );
 
     case 'restoreExpense':
@@ -379,7 +412,8 @@ export function reducer(state: HubState, action: Action): HubState {
       const next = { ...state, habits };
       const id = action.habit.id;
       if (action.wasDone) return updateDay(next, action.date, (d) => ({ ...d, habitsDone: [...d.habitsDone, id] }));
-      if (action.wasSkipped) return updateDay(next, action.date, (d) => ({ ...d, habitsSkipped: [...d.habitsSkipped, id] }));
+      if (action.wasSkipped)
+        return updateDay(next, action.date, (d) => ({ ...d, habitsSkipped: [...d.habitsSkipped, id] }));
       return next;
     }
 
@@ -422,7 +456,11 @@ export function reducer(state: HubState, action: Action): HubState {
         d.habitsDone.includes(action.id)
           ? { ...d, habitsDone: d.habitsDone.filter((id) => id !== action.id) }
           : // Ticking a habit that was set aside takes it back.
-            { ...d, habitsDone: [...d.habitsDone, action.id], habitsSkipped: d.habitsSkipped.filter((id) => id !== action.id) },
+            {
+              ...d,
+              habitsDone: [...d.habitsDone, action.id],
+              habitsSkipped: d.habitsSkipped.filter((id) => id !== action.id),
+            },
       );
     }
 
@@ -476,6 +514,13 @@ export function reducer(state: HubState, action: Action): HubState {
     case 'setJournal': {
       const journal = cleanJournal(action.text);
       return updateDay(state, action.date, (d) => (journal === d.journal ? d : { ...d, journal }));
+    }
+
+    case 'setGratitude': {
+      const gratitude = cleanGratitude(action.items);
+      return updateDay(state, action.date, (d) =>
+        gratitude.join('\n') === d.gratitude.join('\n') ? d : { ...d, gratitude },
+      );
     }
 
     case 'setHabitDays': {
@@ -569,7 +614,9 @@ const byNewest = <T extends { createdAt: number }>(a: T, b: T) => b.createdAt - 
 function unionById<T extends { id: string; createdAt: number }>(mine: T[], theirs: T[]): { list: T[]; added: number } {
   const have = new Set(mine.map((x) => x.id));
   const extra = theirs.filter((x) => !have.has(x.id));
-  return extra.length === 0 ? { list: mine, added: 0 } : { list: [...mine, ...extra].sort(byNewest), added: extra.length };
+  return extra.length === 0
+    ? { list: mine, added: 0 }
+    : { list: [...mine, ...extra].sort(byNewest), added: extra.length };
 }
 
 /**
@@ -626,10 +673,13 @@ export function mergeBackup(
       const expenses = unionById(mine.expenses, theirs.expenses);
       const habitsDone = [...new Set([...mine.habitsDone, ...theirs.habitsDone])];
       // Done on either wins over set aside on the other.
-      const skipped = [...new Set([...mine.habitsSkipped, ...theirs.habitsSkipped])].filter((id) => !habitsDone.includes(id));
+      const skipped = [...new Set([...mine.habitsSkipped, ...theirs.habitsSkipped])].filter(
+        (id) => !habitsDone.includes(id),
+      );
       const candidate: DayLog = {
         focus: mine.focus || theirs.focus,
         journal: mine.journal || theirs.journal,
+        gratitude: mine.gratitude.length ? mine.gratitude : theirs.gratitude,
         notes: notes.list,
         expenses: expenses.list,
         habitsDone: habitsDone.length === mine.habitsDone.length ? mine.habitsDone : habitsDone,
@@ -643,6 +693,7 @@ export function mergeBackup(
       const changed =
         candidate.focus !== mine.focus ||
         candidate.journal !== mine.journal ||
+        candidate.gratitude !== mine.gratitude ||
         candidate.notes !== mine.notes ||
         candidate.expenses !== mine.expenses ||
         candidate.habitsDone !== mine.habitsDone ||
@@ -669,6 +720,21 @@ export function mergeBackup(
   };
 }
 
+/** One line each, trimmed and capped; empty ones dropped; at most three. */
+export function cleanGratitude(items: readonly unknown[]): string[] {
+  return items
+    .filter((x): x is string => typeof x === 'string')
+    .map((x) =>
+      x
+        .slice(0, GRATITUDE_MAX_LENGTH * 4)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, GRATITUDE_MAX_LENGTH),
+    )
+    .filter(Boolean)
+    .slice(0, GRATITUDE_MAX);
+}
+
 /** Line breaks kept, ends trimmed, capped. Clearing the text clears the entry. */
 export function cleanJournal(text: string): string {
   return text.replace(/\r\n?/g, '\n').trim().slice(0, JOURNAL_MAX_LENGTH);
@@ -679,7 +745,9 @@ export function cleanJournal(text: string): string {
  * none is not a schedule (null).
  */
 export function normalizeDays(days: readonly unknown[]): number[] | undefined | null {
-  const set = [...new Set(days.filter((d): d is number => Number.isInteger(d) && (d as number) >= 0 && (d as number) <= 6))].sort();
+  const set = [
+    ...new Set(days.filter((d): d is number => Number.isInteger(d) && (d as number) >= 0 && (d as number) <= 6)),
+  ].sort();
   if (set.length === 0) return null;
   return set.length === 7 ? undefined : set;
 }
@@ -697,7 +765,11 @@ export function isScheduled(habit: Pick<Habit, 'days'>, date: string): boolean {
  * Whether the habit counts on that day: meant for it, and not set aside.
  * A day off and a skipped day both leave a streak as it was.
  */
-export function isDue(habit: Pick<Habit, 'id' | 'days'>, date: string, day: Pick<DayLog, 'habitsSkipped'> | null | undefined): boolean {
+export function isDue(
+  habit: Pick<Habit, 'id' | 'days'>,
+  date: string,
+  day: Pick<DayLog, 'habitsSkipped'> | null | undefined,
+): boolean {
   return isScheduled(habit, date) && !(day?.habitsSkipped.includes(habit.id) ?? false);
 }
 
@@ -751,7 +823,9 @@ export function openTasksBefore(
   today: string,
   lookback = CARRY_LOOKBACK_DAYS,
 ): { from: string; note: Note }[] {
-  const days = lastNDays(today, lookback + 1).slice(0, -1).reverse();
+  const days = lastNDays(today, lookback + 1)
+    .slice(0, -1)
+    .reverse();
   return days.flatMap((from) => (state.days[from]?.notes ?? []).filter(isOpenTask).map((note) => ({ from, note })));
 }
 
@@ -769,7 +843,10 @@ export function sortCountdowns(list: Countdown[]): Countdown[] {
 export function daysUntil(date: string, today: string): number {
   const a = parseDateKey(today);
   const b = parseDateKey(date);
-  return Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 86_400_000);
+  return Math.round(
+    (Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) /
+      86_400_000,
+  );
 }
 
 function insertByTime<T extends { createdAt: number }>(list: T[], item: T): T[] {
@@ -840,6 +917,7 @@ export function hasAnyData(day: DayLog): boolean {
   return (
     day.focus !== '' ||
     day.journal !== '' ||
+    day.gratitude.length > 0 ||
     day.notes.length > 0 ||
     day.habitsDone.length > 0 ||
     day.habitsSkipped.length > 0 ||
@@ -856,7 +934,5 @@ let counter = 0;
 /** Unique enough for local records: time, a counter, and a random tail. */
 export function newId(prefix: string): string {
   counter = (counter + 1) % 1_000_000;
-  return `${prefix}-${Date.now().toString(36)}-${counter.toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2, 7)}`;
+  return `${prefix}-${Date.now().toString(36)}-${counter.toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }

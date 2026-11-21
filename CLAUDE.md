@@ -21,14 +21,17 @@ Six unrelated products share this repository:
 
 They are independent. `deploy.yml` builds the salon site, the analyzer and the
 takeoff page into one `dist/`, and `credit-analyzer.yml`,
-`shepherds-whisper.yml`, `car-mirror.yml`, `takeoff.yml` and the two
+`shepherds-whisper.yml`, `car-mirror.yml`, `takeoff.yml` and the three
 `personal-daily-hub*` workflows are path-filtered so no product's changes run
 another's tests. `car-mirror.yml` alone also runs on branch pushes, because each
 build publishes a release; its `scope` job skips a branch that hasn't changed
 car-mirror since it left `main`, since GitHub runs path-filtered workflows on new
 branches and force-pushes anyway. `personal-daily-hub-android.yml` also builds
 on branch pushes, but only uploads artifacts (the APK, and screenshots from
-running it on an emulator); it publishes nothing.
+running it on an emulator); it publishes nothing. `personal-daily-hub-ios.yml`
+does the same for iOS on a macOS runner: a Simulator build (signed ad hoc, no
+Apple account; unsigned, it gets no Keychain and the app refuses to save),
+driven with Maestro, uploaded as artifacts.
 
 **`car-mirror/` network exposure is deliberate.** Its VPN covers only the app
 and routes a single link-local `/32` (link-local because Android 13+ drops
@@ -197,7 +200,8 @@ cd car-mirror && ./gradlew :app:testDebugUnitTest
 # then bundle every platform. `expo install`, `expo export` and
 # `expo prebuild` need EXPO_OFFLINE=1 here — see below. Gradle cannot run
 # here (Maven is not on the allowlist); personal-daily-hub-android.yml
-# builds the APK on GitHub instead.
+# builds the APK on GitHub instead. Xcode cannot run here either (no macOS);
+# personal-daily-hub-ios.yml builds and runs the iOS app on GitHub.
 cd personal-daily-hub && npm ci && npm run typecheck && npm test
 EXPO_OFFLINE=1 npx expo export --platform android --platform ios --platform web --output-dir dist
 ```

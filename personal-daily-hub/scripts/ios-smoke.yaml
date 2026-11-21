@@ -1,0 +1,32 @@
+# The Maestro flow scripts/ios_smoke.py runs in the iOS Simulator.
+# Adds a note, closes the app, opens it again and expects the note back:
+# storage, the Keychain key and decryption all working on iOS. Screenshots
+# land in the folder ios_smoke.py passes as --test-output-dir.
+appId: com.fmercadx.personaldailyhub
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Quick Capture"
+    timeout: 120000
+# The banner the app shows when it can't open its saved data (no Keychain,
+# for instance); saving is off while it shows.
+- assertNotVisible: "Couldn.t read your saved data.*"
+- takeScreenshot: 1-home
+- tapOn:
+    id: "note-input"
+- inputText: "Simulator check"
+- tapOn:
+    id: "note-submit"
+# On iOS a tappable row is one element labelled "Edit note: <text>", and
+# Maestro matches whole labels. The exact label also can't be mistaken for
+# the text box, which still holds the words if saving didn't happen.
+- extendedWaitUntil:
+    visible: "Edit note: Simulator check"
+    timeout: 15000
+- takeScreenshot: 2-note
+- stopApp
+- launchApp
+- extendedWaitUntil:
+    visible: "Edit note: Simulator check"
+    timeout: 120000
+- takeScreenshot: 3-restarted

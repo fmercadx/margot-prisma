@@ -43,6 +43,7 @@ import { openBackup, readSealedBackup, sealBackup, type SealedBackup } from '../
 import { haptic, setHapticsEnabled } from '../lib/haptics';
 import { pickBackupText } from '../lib/importData';
 import { findInsights } from '../lib/insights';
+import { monthToDate } from '../lib/monthBudget';
 import { parseBackup, type ParsedBackup } from '../lib/importJson';
 import {
   canAddCustomHabit,
@@ -53,12 +54,14 @@ import {
 } from '../lib/premium';
 import {
   cancelFocusEnd,
+  cancelWaterReminders,
   disableDailyReminder,
   enableDailyReminder,
   hourLabel,
   isReminderScheduled,
   remindersSupported,
   scheduleFocusEnd,
+  scheduleWaterReminders,
 } from '../lib/reminders';
 import { loadAllDays } from '../lib/storage';
 import {
@@ -377,6 +380,12 @@ export default function HomeScreen() {
 
   // ---- expenses -----------------------------------------------------------
   const recent = useMemo(() => recentExpenses(state, today), [state, today]);
+  const monthlyBudget = state.settings.monthlyBudgetCents;
+  const month = useMemo(
+    () =>
+      monthlyBudget === null ? null : { ...monthToDate(state.days, today, monthlyBudget), budgetCents: monthlyBudget },
+    [state.days, today, monthlyBudget],
+  );
 
   const deleteExpense = (id: string) => {
     const expense = day.expenses.find((e) => e.id === id);
@@ -429,6 +438,42 @@ export default function HomeScreen() {
     scheduledHour.current = reminderHour;
     if (reminderOn) void enableDailyReminder(reminderHour);
   }, [ready, reminderHour, reminderOn]);
+
+  // ---- water reminders ----------------------------------------------------
+  // A week of them is scheduled ahead and refreshed at each launch, at
+  // midnight, and when today's goal is reached (they stop for the day) or
+  // lost again (an undone glass brings them back).
+  const waterRemindersOn = state.settings.waterReminders;
+  const waterGoalMet = getDay(state, today).water >= state.settings.waterGoal;
+  const [waterBusy, setWaterBusy] = useState(false);
+  useEffect(() => {
+    if (!ready || !waterRemindersOn || !remindersSupported) return;
+    void scheduleWaterReminders(new Date(), waterGoalMet);
+  }, [ready, waterRemindersOn, waterGoalMet, today]);
+
+  const toggleWaterReminders = async (next: boolean) => {
+    setWaterBusy(true);
+    try {
+      if (!next) {
+        await cancelWaterReminders();
+        changeSettings({ waterReminders: false });
+        return;
+      }
+      const result = await scheduleWaterReminders(new Date(), waterGoalMet);
+      if (result === 'enabled') {
+        changeSettings({ waterReminders: true });
+      } else {
+        setSettingsOpen(false);
+        setMessage(
+          result === 'denied'
+            ? 'Notifications are off for Daily Hub. Turn them on in Settings.'
+            : 'Couldn’t set water reminders. Please try again.',
+        );
+      }
+    } finally {
+      setWaterBusy(false);
+    }
+  };
 
   // ---- settings -----------------------------------------------------------
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -621,6 +666,7 @@ export default function HomeScreen() {
       // reschedule it.
       await disableDailyReminder();
       await cancelFocusEnd();
+      await cancelWaterReminders();
       setReminderOn(false);
       await erase();
       removeOldExports();
@@ -797,6 +843,7 @@ export default function HomeScreen() {
         }}
         hidden={state.settings.hideAmounts}
         onToggleHidden={() => changeSettings({ hideAmounts: !state.settings.hideAmounts })}
+        month={month}
       />
     ),
     journal: (
@@ -806,6 +853,11 @@ export default function HomeScreen() {
         entry={day.journal}
         onSave={(text) => {
           dispatch({ type: 'setJournal', date: activeDate, text });
+          haptic.success();
+        }}
+        gratitude={day.gratitude}
+        onSaveGratitude={(items) => {
+          dispatch({ type: 'setGratitude', date: activeDate, items });
           haptic.success();
         }}
       />
@@ -919,6 +971,7 @@ export default function HomeScreen() {
           settings={state.settings}
           onChange={changeSettings}
           reminderOn={reminderOn}
+          waterReminders={{ supported: remindersSupported, busy: waterBusy, onToggle: toggleWaterReminders }}
           lockSupported={appLockSupported}
           lockBusy={lockBusy}
           onToggleLock={toggleLock}

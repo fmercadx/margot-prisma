@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { AppState, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { BookHeart } from '../icons';
+import { BookHeart, Sparkles } from '../icons';
 import { parseDateKey } from '../lib/date';
-import { cleanJournal, JOURNAL_MAX_LENGTH } from '../lib/store';
+import { cleanGratitude, cleanJournal, GRATITUDE_MAX, GRATITUDE_MAX_LENGTH, JOURNAL_MAX_LENGTH } from '../lib/store';
 import { colors, inputColors, HIT, radius, space, type } from '../theme';
 import { Card } from './Card';
 
@@ -27,6 +27,9 @@ type Props = {
   entry: string;
   /** Saves the entry. Saving blank text clears it. */
   onSave: (text: string) => void;
+  /** The day's three good things, and saving them. */
+  gratitude?: string[];
+  onSaveGratitude?: (items: string[]) => void;
 };
 
 /**
@@ -35,7 +38,7 @@ type Props = {
  * the card goes away (the lock screen replaces it), so a half-written
  * thought is neither saved on every keystroke nor lost.
  */
-export function Journal({ date, entry, onSave }: Props) {
+export function Journal({ date, entry, onSave, gratitude, onSaveGratitude }: Props) {
   const [draft, setDraft] = useState(entry);
   const changed = cleanJournal(draft) !== entry;
 
@@ -87,7 +90,13 @@ export function Journal({ date, entry, onSave }: Props) {
       />
       <View style={styles.foot}>
         <Text style={styles.count}>
-          {draft.length > JOURNAL_MAX_LENGTH * 0.8 ? `${draft.length}/${JOURNAL_MAX_LENGTH}` : changed ? 'Not saved yet' : entry ? 'Saved' : ''}
+          {draft.length > JOURNAL_MAX_LENGTH * 0.8
+            ? `${draft.length}/${JOURNAL_MAX_LENGTH}`
+            : changed
+              ? 'Not saved yet'
+              : entry
+                ? 'Saved'
+                : ''}
         </Text>
         <Pressable
           onPress={save}
@@ -101,7 +110,80 @@ export function Journal({ date, entry, onSave }: Props) {
           <Text style={[styles.saveText, !changed && styles.saveTextOff]}>Save</Text>
         </Pressable>
       </View>
+      {gratitude && onSaveGratitude ? <GoodThings items={gratitude} onSave={onSaveGratitude} /> : null}
     </Card>
+  );
+}
+
+const GOOD_PLACEHOLDERS = ['One good thing, however small', 'Another one', 'And one more'];
+const pad = (items: string[]) => Array.from({ length: GRATITUDE_MAX }, (_, i) => items[i] ?? '');
+const same = (a: string[], b: string[]) => cleanGratitude(a).join('\n') === b.join('\n');
+
+/**
+ * "Three good things": a short gratitude list. Each line saves when it loses
+ * focus, and anything unsaved is kept when the app goes to the background or
+ * the card goes away, like the journal entry.
+ */
+function GoodThings({ items, onSave }: { items: string[]; onSave: (items: string[]) => void }) {
+  const [drafts, setDrafts] = useState(() => pad(items));
+
+  // Follow outside changes (a restore, erasing) unless there are unsaved edits.
+  const shown = useRef(items);
+  useEffect(() => {
+    if (same(drafts, shown.current)) setDrafts(pad(items));
+    shown.current = items;
+    // Only when the saved list changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
+  const latest = useRef({ drafts, items, onSave });
+  latest.current = { drafts, items, onSave };
+  useEffect(() => {
+    const flush = () => {
+      const { drafts: d, items: saved, onSave: save } = latest.current;
+      if (!same(d, saved)) save(d);
+    };
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s !== 'active') flush();
+    });
+    return () => {
+      sub.remove();
+      flush();
+    };
+  }, []);
+
+  const save = () => {
+    if (!same(drafts, items)) onSave(drafts);
+  };
+
+  return (
+    <View style={styles.good} testID="good-things">
+      <View style={styles.goodHead}>
+        <Sparkles size={15} color={colors.journal} />
+        <Text style={styles.goodTitle} accessibilityRole="header">
+          Three good things
+        </Text>
+      </View>
+      {drafts.map((value, i) => (
+        <View key={i} style={styles.goodRow}>
+          <Text style={styles.goodNumber}>{i + 1}</Text>
+          <TextInput
+            value={value}
+            onChangeText={(t) => setDrafts((d) => d.map((x, j) => (j === i ? t : x)))}
+            onBlur={save}
+            onSubmitEditing={save}
+            placeholder={GOOD_PLACEHOLDERS[i]}
+            {...inputColors}
+            style={styles.goodInput}
+            maxLength={GRATITUDE_MAX_LENGTH}
+            returnKeyType="done"
+            submitBehavior="blurAndSubmit"
+            accessibilityLabel={`Good thing ${i + 1}`}
+            testID={`good-${i + 1}`}
+          />
+        </View>
+      ))}
+    </View>
   );
 }
 
@@ -129,4 +211,24 @@ const styles = StyleSheet.create({
   saveOff: { backgroundColor: colors.cardRaised },
   saveText: { ...type.label, color: colors.background, fontWeight: '700' },
   saveTextOff: { color: colors.textMuted },
+  good: {
+    gap: space.sm,
+    paddingTop: space.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.hairline,
+  },
+  goodHead: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  goodTitle: { ...type.label, color: colors.text },
+  goodRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  goodNumber: { ...type.label, color: colors.textMuted, width: 14, textAlign: 'center', fontVariant: ['tabular-nums'] },
+  goodInput: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: HIT,
+    backgroundColor: colors.cardRaised,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    color: colors.text,
+    ...type.body,
+  },
 });

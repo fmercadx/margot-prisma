@@ -9,13 +9,13 @@ A one-screen, dark-mode daily dashboard built with React Native and Expo
 | Today's focus | One line for the thing that matters most today; tap to change or clear it. A focus timer (15, 25, 45 or 60 minutes) counts down beside it, keeps running if the app is closed, rings with a local notification at the end, and adds the minutes to the day; stopping early keeps the whole minutes done |
 | Quick Capture | Timestamped notes and to-dos in a list that scrolls inside its card; tap to edit, tick a to-do off; unfinished to-dos from the past week can be brought over to today; search every note, focus and expense label from any day |
 | Habits | Four core habits with cross-out on completion and day streaks, with a word of congratulations at 3, 7, 14, 30 and 60 days; choose the weekdays each habit is for (days off sit under "Not today" and never break a streak); skip a habit for a day when life gets in the way (it stops counting and its streak carries on); put habits in any order; custom habits, which can be renamed (Premium) |
-| Wellbeing | Glass-by-glass progress bar toward your water goal, with whether today is on pace for it (spread evenly from 8 AM to 8 PM); last night's sleep in half hours; 1–10 energy slider; five-face mood check-in |
-| Expenses | Amount, optional label and a category (food, transport, shopping, bills, fun, other); running total, what's left of an optional daily budget, and where the money went; recent expenses one tap away; an eye button that hides every amount on screen |
-| Journal | A few lines at the end of the day, with a different question each weekday; searchable |
+| Wellbeing | Glass-by-glass progress bar toward your water goal, with whether today is on pace for it (spread evenly from 8 AM to 8 PM), and optional reminders every two hours from 10 AM to 6 PM that stop for the day once the goal is reached; last night's sleep in half hours; 1–10 energy slider; five-face mood check-in |
+| Expenses | Amount, optional label and a category (food, transport, shopping, bills, fun, other); running total, what's left of an optional daily budget, the month so far against an optional monthly budget (with what each day left can take), and where the money went; recent expenses one tap away; an eye button that hides every amount on screen |
+| Journal | A few lines at the end of the day, with a different question each weekday, and "three good things", a short gratitude list; both searchable |
 | Coming up | Countdowns to the dates you're looking forward to: a trip, a birthday, a deadline |
 | Insights | Patterns in your own logs: energy and mood after more sleep or less, mood on days you did a habit, energy when you reached your water goal, the weekday you spend most (Premium) |
 | History | Day details can be shared as plain text through the share sheet. Weekly summary (water, sleep, energy, mood, habits done, spending, where most went), water / sleep / energy / mood / spending charts, a month calendar shaded by habits done with the month's totals and where its money went, and every past day in full (Premium) |
-| Settings | Water goal, reminder time, daily budget, focus session length, haptic feedback, which home-screen cards show and in what order, app lock and how soon it locks again, export (optionally protected with a passphrase) and restore your data, expenses as a spreadsheet (CSV), erase everything |
+| Settings | Water goal, water reminders, reminder time, daily and monthly budgets, focus session length, haptic feedback, which home-screen cards show and in what order, app lock and how soon it locks again, export (optionally protected with a passphrase) and restore your data, expenses as a spreadsheet (CSV), erase everything |
 
 Deleting a note, an expense or a custom habit shows **Undo** for five
 seconds.
@@ -34,8 +34,9 @@ What protects what, and why each is there:
 | Fewest permissions | Push, launcher-badge, storage and photo (`READ_MEDIA_IMAGES`) permissions are stripped; CI fails if one comes back. | `app.json`, APK workflow |
 | Passphrase-protected backups | Export can seal the file with AES-256-GCM under a key derived from a passphrase with scrypt (N = 2^15, r = 8, p = 1; `@noble/hashes`, audited, pure JS). The cost settings and salt are bound in as authenticated data, so editing them makes the file fail to open rather than open weaker. On restore, a file's cost settings are checked against hard limits (N ≤ 2^16, r ≤ 8, p ≤ 2, so at most 64 MB) before any work, so a crafted file can't freeze the phone. There is no recovery for a forgotten passphrase. | `src/lib/backupCrypto.ts` |
 | Spreadsheets can't run your labels | In the CSV export, a label starting with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with an apostrophe, so Excel, Sheets and Numbers show it as text instead of running it as a formula (CSV injection). Commas, quotes and line breaks are quoted per RFC 4180. | `src/lib/exportCsv.ts` |
-| Erase everything | Settings → Erase all data, after a confirmation (and the owner's fingerprint, face or PIN when app lock is on). Every stored value is removed, quarantined copies included, and then the encryption key is deleted from the Keystore / Keychain, so a copy of the database taken earlier can't be decrypted. A new key is made for whatever comes next. The daily reminder and any focus-timer notification are cancelled and old export files are deleted too. |
-| Lock-screen notifications say nothing personal | The daily reminder and the focus timer's notification are fixed wording ("Focus session done"). Neither ever includes your focus, notes or anything else you logged, since a lock screen is read by whoever picks the phone up. Both are scheduled on the phone; no push service is involved. | `src/lib/reminders.ts` | `erase` in `src/hooks/useDailyHub.ts` |
+| Erase everything | Settings → Erase all data, after a confirmation (and the owner's fingerprint, face or PIN when app lock is on). Every stored value is removed, quarantined copies included, and then the encryption key is deleted from the Keystore / Keychain, so a copy of the database taken earlier can't be decrypted. A new key is made for whatever comes next. The daily reminder, water reminders and any focus-timer notification are cancelled and old export files are deleted too. | `erase` in `src/hooks/useDailyHub.ts` |
+| Lock-screen notifications say nothing personal | The daily reminder, water reminders and the focus timer's notification are fixed wording ("Focus session done", "Time for a glass of water"). None ever includes your focus, how much you drank, notes or anything else you logged, since a lock screen is read by whoever picks the phone up. All are scheduled on the phone; no push service is involved, and the iOS build carries no push entitlement. | `src/lib/reminders.ts` |
+| Apple privacy manifest | The iOS app declares no tracking and no collected data types (nothing leaves the phone), plus the standard reasons for the system APIs React Native and Expo use. CI checks the built app's manifest. | `app.json` (`ios.privacyManifests`) |
 | Restore treats the file as hostile | A picked backup is size-capped (5 MB), must name this app and a format it knows, and passes the same sanitizers as stored data, with length caps on every string, per-day caps on notes and expenses, real non-future dates only, and at most ten years. Restoring only adds: nothing on the phone is overwritten, and the picker's plain-JSON copy is deleted from the cache once read. | `src/lib/importJson.ts`, `mergeBackup` in `store.ts` |
 
 Limits worth knowing:
@@ -144,6 +145,30 @@ Android specifics already handled:
 - Text fields drop Android's default underline and use the app's cursor and
   selection colours. The back gesture closes the paywall.
 
+## On an iPhone
+
+The same code runs on iOS: every test runs once as iOS and once as Android,
+and CI builds and runs the iPhone app in the iOS Simulator on each push. What
+differs is getting it onto a phone. Apple doesn't allow installing an app
+file the way Android does, so every route goes through Apple:
+
+| Route | Needs | Good for |
+| --- | --- | --- |
+| **Expo Go** | A computer on the same Wi-Fi running `npx expo start`, and the Expo Go app from the App Store (with SDK 58 support) | Trying it today, free |
+| **TestFlight** | An Apple Developer Program membership ($99/year) and a free Expo account. Then `npx eas-cli build -p ios --profile production` and `npx eas-cli submit -p ios`: EAS builds and signs it in the cloud, no Mac needed, and TestFlight installs it | Using it day to day, and sharing it with testers |
+| **Xcode on a Mac** | A Mac with a recent Xcode (Expo SDK 58's native code fails on Xcode 16.4 and 26.3; CI builds with the newest Xcode on GitHub's macOS 26 image); a free Apple ID works | A build on your own phone; with a free Apple ID it must be reinstalled every 7 days |
+
+`eas.json` holds the build profiles. Its production profile builds Android
+without the INTERNET permission too, as the APK workflow does. App Store
+Connect will ask about encryption when you upload: the app encrypts data on
+the phone with AES-256-GCM through Apple's CryptoKit (via expo-crypto), and
+backups with scrypt plus the same AES. It is your call how to answer, so
+`ITSAppUsesNonExemptEncryption` is deliberately left unset.
+
+On iOS the app lock uses Face ID (the prompt text is in `app.json`), the key
+lives in the Keychain (this device only), and the app switcher shows a blurred
+snapshot while the lock is on.
+
 ## Checks
 
 ```bash
@@ -157,6 +182,15 @@ to this folder. The suite covers logic, encryption (real AES-GCM, via Node's
 crypto standing in for the native module), storage and migration, the whole
 rendered screen, the app lock, export, and platform branches such as
 Android's notification channel.
+
+`personal-daily-hub-ios.yml` does the same for iPhone on a macOS runner: it
+builds the app for the iOS Simulator (signed ad hoc, so no Apple account; an
+unsigned build gets no Keychain, and the app then turns saving off), checks the built
+app's bundle id, version, Face ID prompt, privacy manifest and that it asks
+for no push entitlement, then drives it with Maestro: launch, add a note,
+close and reopen, the note is still there, the app's data container holds
+only sealed values, and no crash report names the app. Screenshots are in
+the run's **personal-daily-hub-ios-smoke** artifact.
 
 The APK workflow then runs the release APK on an **Android emulator**
 (`scripts/android_smoke.py`): it launches the app, adds a note, kills and
@@ -174,7 +208,7 @@ earlier days stay saved:
 {
   habits: [{ id, label, core, days? }],          // definitions carry across days; days = weekdays it is for
   days: {
-    '2026-11-08': { focus, journal, notes, habitsDone, habitsSkipped, water, sleep, energy, mood,
+    '2026-11-08': { focus, journal, gratitude, notes, habitsDone, habitsSkipped, water, sleep, energy, mood,
                     expenses, focusMinutes },
   },
   focusTimer: { date, startedAt, endsAt } | null,  // the focus session under way
@@ -324,10 +358,13 @@ src/lib/haptics.ts          feedback taps, switchable, silent on web
 src/lib/mood.ts             the five mood words
 src/lib/reminders.ts        daily local reminder and the focus timer's end (reminders.web.ts stubs them)
 src/lib/waterPace.ts        how today's water compares with the clock (pure)
+src/lib/monthBudget.ts      the month so far against a monthly budget (pure)
 src/components/homeCards.ts the home-screen cards' names, for arranging them
 src/lib/premium.ts          free limits, paywall copy, the mock purchase
 src/lib/utf8.ts             UTF-8 for the cipher, independent of Hermes
 scripts/android_smoke.py    the emulator test CI runs against the APK
+scripts/ios_smoke.py        the iOS Simulator test CI runs (with scripts/ios-smoke.yaml, a Maestro flow)
+eas.json                    EAS build profiles, for signed iPhone builds (TestFlight) and Android
 app.config.js               drops INTERNET from the release build
 src/icons.ts                every Lucide icon used, imported per file
 src/theme.ts                colours, spacing, type

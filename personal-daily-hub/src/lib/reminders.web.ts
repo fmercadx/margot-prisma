@@ -28,3 +28,16 @@ export async function scheduleFocusEnd(_endsAt: number, _minutes: number): Promi
 }
 
 export async function cancelFocusEnd(): Promise<void> {}
+
+export const WATER_REMINDER_HOURS: readonly number[] = [10, 12, 14, 16, 18];
+export const WATER_REMINDER_DAYS = 7;
+
+export function waterReminderTimes(_now: Date, _goalMetToday: boolean): Date[] {
+  return [];
+}
+
+export async function scheduleWaterReminders(_now: Date, _goalMetToday: boolean): Promise<EnableResult> {
+  return 'unsupported';
+}
+
+export async function cancelWaterReminders(): Promise<void> {}

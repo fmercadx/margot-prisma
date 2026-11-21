@@ -13,6 +13,13 @@ const REMINDER_ID = 'pdh-daily-reminder';
 const CHANNEL_ID = 'daily-reminder';
 const FOCUS_ID = 'pdh-focus-end';
 const FOCUS_CHANNEL_ID = 'focus-timer';
+const WATER_PREFIX = 'pdh-water-';
+const WATER_CHANNEL_ID = 'water-reminders';
+
+/** When water reminders come: every two hours through the day. */
+export const WATER_REMINDER_HOURS: readonly number[] = [10, 12, 14, 16, 18];
+/** How far ahead they are scheduled; opening the app tops them up. */
+export const WATER_REMINDER_DAYS = 7;
 export const REMINDER_MINUTE = 0;
 
 /** Local scheduled notifications do not exist on the web build. */
@@ -125,6 +132,67 @@ export async function cancelFocusEnd(): Promise<void> {
     await Notifications.cancelScheduledNotificationAsync(FOCUS_ID);
   } catch (err) {
     console.warn('[reminders] could not cancel the focus timer', err);
+  }
+}
+
+/**
+ * The water reminders still to come, for `days` days from `now`. Today's
+ * are left out once the goal is reached, so they stop for the day. Pure.
+ */
+export function waterReminderTimes(now: Date, goalMetToday: boolean, days = WATER_REMINDER_DAYS): Date[] {
+  const out: Date[] = [];
+  for (let d = goalMetToday ? 1 : 0; d < days; d++) {
+    for (const hour of WATER_REMINDER_HOURS) {
+      const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + d, hour, 0, 0, 0);
+      if (at.getTime() > now.getTime()) out.push(at);
+    }
+  }
+  return out;
+}
+
+const waterId = (at: Date) =>
+  `${WATER_PREFIX}${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}-${at.getHours()}`;
+
+/** Removes every scheduled water reminder. */
+export async function cancelWaterReminders(): Promise<void> {
+  if (!remindersSupported) return;
+  try {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    await Promise.all(
+      scheduled
+        .filter((n) => n.identifier.startsWith(WATER_PREFIX))
+        .map((n) => Notifications.cancelScheduledNotificationAsync(n.identifier)),
+    );
+  } catch (err) {
+    console.warn('[reminders] could not cancel water reminders', err);
+  }
+}
+
+/**
+ * Replaces the water reminders with a fresh week of them. Called when they
+ * are switched on, at each launch, and when today's goal is reached or
+ * lost again. The wording is fixed: it never says how much was drunk.
+ */
+export async function scheduleWaterReminders(now: Date, goalMetToday: boolean): Promise<EnableResult> {
+  if (!remindersSupported) return 'unsupported';
+  try {
+    if (!(await permitted(WATER_CHANNEL_ID, 'Water reminders'))) return 'denied';
+    await cancelWaterReminders();
+    for (const at of waterReminderTimes(now, goalMetToday)) {
+      await Notifications.scheduleNotificationAsync({
+        identifier: waterId(at),
+        content: { title: 'Time for a glass of water', body: 'A quick sip keeps the day going.' },
+        trigger: {
+          type: Notifications.SchedulableTriggerInputTypes.DATE,
+          date: at.getTime(),
+          channelId: Platform.OS === 'android' ? WATER_CHANNEL_ID : undefined,
+        },
+      });
+    }
+    return 'enabled';
+  } catch (err) {
+    console.warn('[reminders] could not schedule water reminders', err);
+    return 'failed';
   }
 }
 

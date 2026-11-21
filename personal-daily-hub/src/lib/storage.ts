@@ -16,7 +16,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { DEFAULT_CATEGORY, isBudget, isCategory } from './categories';
+import { DEFAULT_CATEGORY, isBudget, isCategory, MONTHLY_BUDGET_STEPS_CENTS } from './categories';
 import { isSealed, plainCodec, type Codec } from './codec';
 import { isDateKey } from './date';
 import { MAX_EXPENSE_CENTS } from './money';
@@ -28,6 +28,8 @@ import {
   DEFAULT_SETTINGS,
   ENERGY_MAX,
   ENERGY_MIN,
+  cleanGratitude,
+  GRATITUDE_MAX,
   EXPENSE_LABEL_MAX_LENGTH,
   FOCUS_LENGTHS,
   FOCUS_MAX_LENGTH,
@@ -80,8 +82,7 @@ const ID_MAX_LENGTH = 64;
 /** Per-day ceilings, far above real use, so a hostile file cannot balloon memory. */
 export const DAY_ITEMS_MAX = 1000;
 
-const isObj = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null && !Array.isArray(v);
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isId = (v: unknown): v is string => isStr(v) && v.length > 0 && v.length <= ID_MAX_LENGTH;
@@ -137,11 +138,24 @@ export function sanitizeDay(v: unknown): DayLog {
     Array.isArray(x) ? [...new Set(x.slice(0, CUSTOM_HABITS_MAX + CORE_HABITS.length).filter(isId))] : [];
   const habitsDone = habitIds(o.habitsDone);
   const water = isNum(o.water) ? Math.min(WATER_MAX, Math.max(0, Math.round(o.water))) : 0;
-  const focus = isStr(o.focus) ? o.focus.slice(0, FOCUS_MAX_LENGTH * 4).replace(/\s+/g, ' ').trim().slice(0, FOCUS_MAX_LENGTH) : '';
-  const journal = isStr(o.journal) ? o.journal.slice(0, JOURNAL_MAX_LENGTH * 2).replace(/\r\n?/g, '\n').trim().slice(0, JOURNAL_MAX_LENGTH) : '';
+  const focus = isStr(o.focus)
+    ? o.focus
+        .slice(0, FOCUS_MAX_LENGTH * 4)
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, FOCUS_MAX_LENGTH)
+    : '';
+  const journal = isStr(o.journal)
+    ? o.journal
+        .slice(0, JOURNAL_MAX_LENGTH * 2)
+        .replace(/\r\n?/g, '\n')
+        .trim()
+        .slice(0, JOURNAL_MAX_LENGTH)
+    : '';
   return {
     focus,
     journal,
+    gratitude: Array.isArray(o.gratitude) ? cleanGratitude(o.gratitude.slice(0, GRATITUDE_MAX * 2)) : [],
     notes: list(o.notes, sanitizeNote),
     habitsDone,
     // A habit is done or set aside, not both; done wins.
@@ -165,13 +179,18 @@ export function sanitizeSettings(v: unknown): Settings {
     lockEnabled: o.lockEnabled === true,
     haptics: o.haptics !== false, // on unless switched off
     dailyBudgetCents: isBudget(o.dailyBudgetCents) ? o.dailyBudgetCents : null,
+    monthlyBudgetCents: isBudget(o.monthlyBudgetCents, MONTHLY_BUDGET_STEPS_CENTS) ? o.monthlyBudgetCents : null,
     relockAfterSec:
       isNum(o.relockAfterSec) && RELOCK_CHOICES_SEC.includes(o.relockAfterSec)
         ? o.relockAfterSec
         : DEFAULT_SETTINGS.relockAfterSec,
     hideAmounts: o.hideAmounts === true,
-    focusLength: isNum(o.focusLength) && FOCUS_LENGTHS.includes(o.focusLength) ? o.focusLength : DEFAULT_SETTINGS.focusLength,
-    homeOrder: Array.isArray(o.homeOrder) ? normalizeHomeOrder(o.homeOrder.slice(0, HOME_CARDS.length * 2)) : [...HOME_CARDS],
+    waterReminders: o.waterReminders === true,
+    focusLength:
+      isNum(o.focusLength) && FOCUS_LENGTHS.includes(o.focusLength) ? o.focusLength : DEFAULT_SETTINGS.focusLength,
+    homeOrder: Array.isArray(o.homeOrder)
+      ? normalizeHomeOrder(o.homeOrder.slice(0, HOME_CARDS.length * 2))
+      : [...HOME_CARDS],
     homeHidden: Array.isArray(o.homeHidden) ? normalizeHomeHidden(o.homeHidden.slice(0, HOME_CARDS.length * 2)) : [],
     mockPremium: o.mockPremium === true,
   };
@@ -449,5 +468,7 @@ export function createPersister(
 type StoredHabit = Habit | { id: string; core: true; days?: number[] };
 
 export function habitsForStorage(habits: Habit[]): StoredHabit[] {
-  return habits.map((h): StoredHabit => (!h.core ? h : h.days ? { id: h.id, core: true, days: h.days } : { id: h.id, core: true }));
+  return habits.map(
+    (h): StoredHabit => (!h.core ? h : h.days ? { id: h.id, core: true, days: h.days } : { id: h.id, core: true }),
+  );
 }

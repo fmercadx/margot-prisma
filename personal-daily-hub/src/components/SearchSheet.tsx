@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BookHeart, NotebookPen, Search, SearchX, Target, Wallet, X } from '../icons';
+import { BookHeart, NotebookPen, Search, SearchX, Sparkles, Target, Wallet, X } from '../icons';
 import { clockTime, longDate, parseDateKey, weekdayName } from '../lib/date';
 import { SEARCH_QUERY_MAX, searchDays, type SearchHit } from '../lib/search';
 import type { DayLog } from '../lib/store';
@@ -32,6 +32,7 @@ const KIND = {
   note: { icon: NotebookPen, color: colors.notes, name: 'Note' },
   focus: { icon: Target, color: colors.focus, name: 'Focus' },
   journal: { icon: BookHeart, color: colors.journal, name: 'Journal' },
+  good: { icon: Sparkles, color: colors.journal, name: 'Good thing' },
   expense: { icon: Wallet, color: colors.expenses, name: 'Expense' },
 } as const;
 
@@ -57,15 +58,24 @@ export function SearchSheet({ visible, days, today, onClose }: Props) {
       navigationBarTranslucent={Platform.OS === 'android'}
     >
       <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <Pressable style={styles.backdrop} onPress={close} accessibilityRole="button" accessibilityLabel="Dismiss search" />
-        <View style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]} accessibilityViewIsModal testID="search-sheet">
+        <Pressable
+          style={styles.backdrop}
+          onPress={close}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss search"
+        />
+        <View
+          style={[styles.sheet, { paddingBottom: insets.bottom + space.lg }]}
+          accessibilityViewIsModal
+          testID="search-sheet"
+        >
           <View style={styles.head}>
             <View style={styles.field}>
               <Search size={18} color={colors.textSecondary} />
               <TextInput
                 value={query}
                 onChangeText={setQuery}
-                placeholder="Search notes, journal, expenses…"
+                placeholder="Search notes, journal, good things, expenses…"
                 {...inputColors}
                 style={styles.input}
                 maxLength={SEARCH_QUERY_MAX}
@@ -76,7 +86,13 @@ export function SearchSheet({ visible, days, today, onClose }: Props) {
                 testID="search-input"
               />
               {typed ? (
-                <IconButton icon={X} size={16} label="Clear search" onPress={() => setQuery('')} color={colors.textMuted} />
+                <IconButton
+                  icon={X}
+                  size={16}
+                  label="Clear search"
+                  onPress={() => setQuery('')}
+                  color={colors.textMuted}
+                />
               ) : null}
             </View>
             <IconButton icon={X} label="Close search" onPress={close} filled />
@@ -87,9 +103,7 @@ export function SearchSheet({ visible, days, today, onClose }: Props) {
               <ActivityIndicator color={colors.textSecondary} />
             </View>
           ) : !typed ? (
-            <Text style={styles.hint}>
-              Everything you have written, on every day, is searched here on your phone.
-            </Text>
+            <Text style={styles.hint}>Everything you have written, on every day, is searched here on your phone.</Text>
           ) : result.total === 0 ? (
             <View style={styles.center}>
               <SearchX size={22} color={colors.textMuted} />
@@ -106,7 +120,12 @@ export function SearchSheet({ visible, days, today, onClose }: Props) {
                     ? '1 match'
                     : `${result.total} matches`}
               </Text>
-              <ScrollView style={styles.scroll} contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+              <ScrollView
+                style={styles.scroll}
+                contentContainerStyle={styles.list}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+              >
                 {result.hits.map((h) => (
                   <Hit key={`${h.kind}-${h.date}-${h.id}`} hit={h} today={today} />
                 ))}

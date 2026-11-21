@@ -1,12 +1,12 @@
 // Searching everything the person has written: notes, each day's focus,
-// journal entries and expense labels. Pure; the caller supplies the days (decrypted by the
+// journal entries, good things and expense labels. Pure; the caller supplies the days (decrypted by the
 // storage layer) and nothing leaves the phone.
 
 import type { DayLog } from './store';
 
 export type SearchHit = {
   date: string;
-  kind: 'focus' | 'note' | 'journal' | 'expense';
+  kind: 'focus' | 'note' | 'journal' | 'good' | 'expense';
   id: string;
   text: string;
   time: number | null; // when it was written; a focus has no time
@@ -93,9 +93,15 @@ export function searchDays(
     if (f) push({ date, kind: 'focus', id: `focus-${date}`, text: day.focus, time: null, ...f });
     const j = day.journal ? match(day.journal, needle) : null;
     if (j) push({ date, kind: 'journal', id: `journal-${date}`, time: null, ...snippet(day.journal, j) });
+    day.gratitude.forEach((g, i) => {
+      const m = match(g, needle);
+      if (m) push({ date, kind: 'good', id: `good-${date}-${i}`, text: g, time: null, ...m });
+    });
     const entries = [
       ...day.notes.map((n) => ({ kind: 'note' as const, id: n.id, text: n.text, time: n.createdAt })),
-      ...day.expenses.filter((e) => e.label).map((e) => ({ kind: 'expense' as const, id: e.id, text: e.label, time: e.createdAt })),
+      ...day.expenses
+        .filter((e) => e.label)
+        .map((e) => ({ kind: 'expense' as const, id: e.id, text: e.label, time: e.createdAt })),
     ].sort((a, b) => b.time - a.time);
     for (const e of entries) {
       const m = match(e.text, needle);
