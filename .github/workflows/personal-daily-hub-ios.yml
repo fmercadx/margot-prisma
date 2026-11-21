@@ -175,6 +175,8 @@ jobs:
           echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
 
       - name: Run it in the iOS Simulator
+        env:
+          MAESTRO_CLI_NO_ANALYTICS: '1'
         run: |
           maestro --version
           python3 scripts/ios_smoke.py \

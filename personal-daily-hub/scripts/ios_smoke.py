@@ -88,8 +88,9 @@ def main():
     check(True, 'app installed')
 
     started = time.time()
+    # Maestro keeps screenshots inside its output folder; make that --out.
     flow = run(
-        'maestro', '--device', udid, 'test', '-e', f'OUT={out}', os.path.join(HERE, 'ios-smoke.yaml'),
+        'maestro', '--device', udid, 'test', '--test-output-dir', out, os.path.join(HERE, 'ios-smoke.yaml'),
         check_rc=False, timeout=1200,
     )
     with open(os.path.join(out, 'maestro.log'), 'w') as f:
