@@ -140,6 +140,7 @@ describe('month summary', () => {
       habitRate: 3 / 6,
       spentCents: 3500,
       avgSleep: 7,
+      avgMood: null,
       categories: [
         { category: 'bills', cents: 2500 },
         { category: 'food', cents: 1000 },

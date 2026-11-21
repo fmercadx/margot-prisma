@@ -29,6 +29,7 @@ export const colors = {
   journal: '#F472B6',
   insights: '#FACC15',
   countdown: '#22D3EE',
+  week: '#60A5FA',
 
   premium: '#E8C468',
   onPremium: '#121212',

@@ -295,6 +295,7 @@ describe('settings for 1.8', () => {
       'focus',
       'notes',
       'habits',
+      'week',
       'wellbeing',
       'expenses',
       'journal',

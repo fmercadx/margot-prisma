@@ -177,14 +177,14 @@ describe('reordering habits', () => {
 describe('arranging the home screen', () => {
   test('hide a card, move one, and reset', async () => {
     await launch();
-    const all = ['today-focus', 'card-notes', 'card-habits', 'card-water', 'card-expenses', 'card-journal', 'card-countdowns', 'card-insights', 'card-history'];
+    const all = ['today-focus', 'card-notes', 'card-habits', 'card-week', 'card-water', 'card-expenses', 'card-journal', 'card-countdowns', 'card-insights', 'card-history'];
     expect(cardOrder()).toEqual(all);
 
     await openSettings();
     await fireEvent.press(screen.getByRole('button', { name: 'Arrange the home screen' }));
     await fireEvent(screen.getByLabelText('Show Journal'), 'valueChange', false);
     await fireEvent.press(screen.getByRole('button', { name: 'Move History up' }));
-    expect(cardOrder()).toEqual(all.filter((c) => c !== 'card-journal' && c !== 'card-history').toSpliced(6, 0, 'card-history'));
+    expect(cardOrder()).toEqual(all.filter((c) => c !== 'card-journal' && c !== 'card-history').toSpliced(7, 0, 'card-history'));
 
     await fireEvent.press(screen.getByRole('button', { name: 'Reset the home screen' }));
     expect(cardOrder()).toEqual(all);
@@ -194,11 +194,11 @@ describe('arranging the home screen', () => {
     await launch();
     await openSettings();
     await fireEvent.press(screen.getByRole('button', { name: 'Arrange the home screen' }));
-    for (const label of ['Today’s focus', 'Quick Capture', 'Habits', 'Wellbeing', 'Expenses', 'Journal', 'On this day', 'Coming up', 'Insights', 'History']) {
+    for (const label of ['Today’s focus', 'Quick Capture', 'Habits', 'This week', 'Wellbeing', 'Expenses', 'Journal', 'On this day', 'Coming up', 'Insights', 'History']) {
       await fireEvent(screen.getByLabelText(`Show ${label}`), 'valueChange', false);
     }
     await fireEvent.press(screen.getByRole('button', { name: 'Done arranging' }));
-    expect(screen.getByTestId('arrange-home')).toHaveTextContent(/0 of 10 cards showing/);
+    expect(screen.getByTestId('arrange-home')).toHaveTextContent(/0 of 11 cards showing/);
     await fireEvent.press(screen.getByRole('button', { name: 'Close settings' }));
     expect(screen.getByText('Every card is switched off.')).toBeOnTheScreen();
     expect(screen.queryAllByTestId(/^card-/)).toHaveLength(0);

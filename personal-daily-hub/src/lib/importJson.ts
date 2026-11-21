@@ -8,8 +8,8 @@
 // overwrites or removes anything.
 
 import { dateKey, isDateKey } from './date';
-import { sanitizeBills, sanitizeCountdowns, sanitizeDay, sanitizeHabits, sanitizePinned } from './storage';
-import { hasAnyData, type Bill, type Countdown, type DayLog, type Habit, type Pinned } from './store';
+import { sanitizeBills, sanitizeCountdowns, sanitizeDay, sanitizeGoals, sanitizeHabits, sanitizePinned } from './storage';
+import { hasAnyData, type Bill, type Countdown, type DayLog, type Habit, type Pinned, type WeekGoal } from './store';
 
 /** A year of heavy use exports to well under 1 MB. */
 export const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
@@ -22,6 +22,7 @@ export type ParsedBackup = {
   countdowns: Countdown[];
   pinned: Pinned[];
   bills: Bill[];
+  goals: WeekGoal[];
   exportedAt: string | null;
 };
 
@@ -68,6 +69,7 @@ export function parseBackup(text: string, now: Date = new Date()): ParseResult {
       countdowns: sanitizeCountdowns(raw.countdowns),
       pinned: sanitizePinned(raw.pinned),
       bills: sanitizeBills(raw.bills),
+      goals: sanitizeGoals(raw.goals),
       exportedAt: typeof raw.exportedAt === 'string' ? raw.exportedAt.slice(0, 40) : null,
     },
   };

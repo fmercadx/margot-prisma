@@ -66,7 +66,7 @@ describe('mergeBackup', () => {
       }),
     };
     const { state, stats } = mergeBackup(phone, [], backup);
-    expect(stats).toEqual({ daysAdded: 1, daysMerged: 1, notesAdded: 1, expensesAdded: 0, habitsAdded: 0, countdownsAdded: 0, pinnedAdded: 0, billsAdded: 0 });
+    expect(stats).toEqual({ daysAdded: 1, daysMerged: 1, notesAdded: 1, expensesAdded: 0, habitsAdded: 0, countdownsAdded: 0, pinnedAdded: 0, billsAdded: 0, goalsAdded: 0 });
     const t = getDay(state, TODAY);
     expect(t.notes.map((n) => n.text)).toEqual(['only in backup', 'on the phone']); // phone's 'a' kept
     expect(t.water).toBe(6); // the larger count

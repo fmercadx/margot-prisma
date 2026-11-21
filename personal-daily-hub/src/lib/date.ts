@@ -51,6 +51,27 @@ export function lastNDays(endKey: string, n: number): string[] {
   return keys;
 }
 
+/** `n` calendar days after `key` (before, if negative). */
+export function addDays(key: string, n: number): string {
+  const d = parseDateKey(key);
+  return dateKey(new Date(d.getFullYear(), d.getMonth(), d.getDate() + n));
+}
+
+/** The Sunday a week starts on, for any day in it (weeks run Sunday to Saturday, as on the calendar). */
+export function weekStart(key: string): string {
+  return addDays(key, -parseDateKey(key).getDay());
+}
+
+/** "Nov 15 – 21", "Nov 29 – Dec 5": the week starting on `start`. */
+export function weekRangeLabel(start: string): string {
+  const a = parseDateKey(start);
+  const b = parseDateKey(addDays(start, 6));
+  const mon = (d: Date) => MONTHS[d.getMonth()].slice(0, 3);
+  return a.getMonth() === b.getMonth()
+    ? `${mon(a)} ${a.getDate()} – ${b.getDate()}`
+    : `${mon(a)} ${a.getDate()} – ${mon(b)} ${b.getDate()}`;
+}
+
 export function weekdayName(d: Date): string {
   return DAYS[d.getDay()];
 }

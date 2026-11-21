@@ -32,17 +32,19 @@ import { SettingsSheet } from '../components/SettingsSheet';
 import { UndoToast } from '../components/Toast';
 import { TodayFocus } from '../components/TodayFocus';
 import { WaterEnergy } from '../components/WaterEnergy';
+import { WeekGoals } from '../components/WeekGoals';
 import { useAppLock } from '../hooks/useAppLock';
 import { useToday } from '../hooks/useClock';
 import { HISTORY_DAYS, LOADED_DAYS, useDailyHub } from '../hooks/useDailyHub';
 import { appLockSupported, authenticate, lockAvailability } from '../lib/appLock';
-import { lastNDays, longDate, parseDateKey, weekdayName } from '../lib/date';
+import { lastNDays, longDate, parseDateKey, weekdayName, weekStart } from '../lib/date';
 import { exportAvailable, removeOldExports, shareExport } from '../lib/exportData';
 import { buildExpensesCsv } from '../lib/exportCsv';
 import { buildExport, protectedFilename } from '../lib/exportJson';
 import { openBackup, readSealedBackup, sealBackup, type SealedBackup } from '../lib/backupCrypto';
 import { haptic, setHapticsEnabled } from '../lib/haptics';
 import { pickBackupText } from '../lib/importData';
+import { habitHistory } from '../lib/habitHistory';
 import { findInsights } from '../lib/insights';
 import { monthToDate } from '../lib/monthBudget';
 import { memoryDates, memoryOf } from '../lib/onThisDay';
@@ -78,6 +80,7 @@ import {
   focusLabel,
   focusMinutesDone,
   getDay,
+  goalsOf,
   HABIT_MAX_LENGTH,
   type HomeCard,
   type DayLog,
@@ -89,6 +92,8 @@ import {
   recentExpenses,
   STREAK_MILESTONES,
   totalCents,
+  unfinishedGoalsBefore,
+  WEEK_GOALS_MAX,
   type Action,
   type MergeStats,
   type Settings,
@@ -277,6 +282,60 @@ export default function HomeScreen() {
     setUndo({ message: 'Pinned note deleted', restore: { type: 'restorePinned', pinned } });
   };
 
+  // ---- this week's goals ----------------------------------------------------
+  // The week of the day being logged: this week, or last week while filling
+  // in a day from it. Last week's unfinished goals are offered for this one.
+  const week = weekStart(activeDate);
+  const isThisWeek = week === weekStart(today);
+  const weekGoals = useMemo(() => goalsOf(state.goals, week), [state.goals, week]);
+  const leftoverGoals = useMemo(
+    () => (isThisWeek ? unfinishedGoalsBefore(state.goals, week) : []),
+    [state.goals, week, isThisWeek],
+  );
+  const [goalsCarryDismissed, setGoalsCarryDismissed] = useState<string | null>(null);
+  const goalsRoom = WEEK_GOALS_MAX - weekGoals.length;
+
+  const addGoal = (text: string) => {
+    dispatch({ type: 'addGoal', goal: { id: newId('goal'), text, week, createdAt: Date.now() } });
+    haptic.success();
+  };
+
+  const toggleGoal = (id: string) => {
+    const goal = weekGoals.find((g) => g.id === id);
+    if (!goal) return;
+    dispatch({ type: 'toggleGoal', id, now: Date.now() });
+    const finishing = goal.doneAt === undefined;
+    const othersDone = weekGoals.every((g) => g.id === id || g.doneAt !== undefined);
+    if (finishing && othersDone && weekGoals.length > 1) {
+      haptic.success();
+      setMessage(`All ${weekGoals.length} goals done ${isThisWeek ? 'this week' : 'last week'}. Nicely done.`);
+    } else {
+      haptic.tick();
+    }
+  };
+
+  const deleteGoal = (id: string) => {
+    const goal = state.goals.find((g) => g.id === id);
+    if (!goal) return;
+    dispatch({ type: 'deleteGoal', id });
+    haptic.remove();
+    setUndo({ message: 'Goal deleted', restore: { type: 'addGoal', goal } });
+  };
+
+  const bringGoalsOver = () => {
+    const moving = leftoverGoals.slice(0, goalsRoom);
+    if (moving.length === 0) return;
+    dispatch({ type: 'moveGoals', ids: moving.map((g) => g.id), week });
+    haptic.success();
+    const n = moving.length;
+    const left = leftoverGoals.length - n;
+    setMessage(
+      left > 0
+        ? `Brought ${n} ${n === 1 ? 'goal' : 'goals'} into this week; ${left} didn’t fit.`
+        : `Brought ${n} ${n === 1 ? 'goal' : 'goals'} into this week.`,
+    );
+  };
+
   // ---- today's focus ------------------------------------------------------
   const saveFocus = (text: string) => {
     if (cleanFocus(text) === day.focus) return;
@@ -318,7 +377,8 @@ export default function HomeScreen() {
     if (state.habits.filter((h) => !h.core).length >= CUSTOM_HABITS_MAX) {
       return `You can have up to ${CUSTOM_HABITS_MAX} custom habits.`;
     }
-    dispatch({ type: 'addHabit', habit: { id: newId('habit'), label, core: false } });
+    // Its history starts from the day it was added on (or filled in for).
+    dispatch({ type: 'addHabit', habit: { id: newId('habit'), label, core: false, since: activeDate } });
     return null;
   };
 
@@ -346,6 +406,9 @@ export default function HomeScreen() {
     haptic.tick();
     if (skipping) setMessage(`Skipped “${habit.label}” ${dayWord}. Its streak carries on.`);
   };
+
+  // Worked out only for the habit whose panel is open.
+  const historyOf = useCallback((id: string) => habitHistory(state, id, today, LOADED_DAYS), [state, today]);
 
   const streaks = useMemo(() => {
     const out: Record<string, number> = {};
@@ -625,6 +688,7 @@ export default function HomeScreen() {
         state.countdowns,
         state.pinned,
         state.bills,
+        state.goals,
       );
       if (passphrase) await shareExport(protectedFilename(filename), await sealBackup(json, passphrase));
       else await shareExport(filename, json);
@@ -673,8 +737,8 @@ export default function HomeScreen() {
       setMessage(parsed.error);
       return;
     }
-    const { habits, days, countdowns, pinned, bills } = parsed.backup;
-    const { stats } = mergeBackup(state, habits, days, countdowns, pinned, bills);
+    const { habits, days, countdowns, pinned, bills, goals } = parsed.backup;
+    const { stats } = mergeBackup(state, habits, days, countdowns, pinned, bills, goals);
     if (Object.values(stats).every((n) => n === 0)) {
       setSettingsOpen(false);
       setMessage('Everything in that backup is already on this phone.');
@@ -741,6 +805,7 @@ export default function HomeScreen() {
       countdowns: backup.countdowns,
       pinned: backup.pinned,
       bills: backup.bills,
+      goals: backup.goals,
     });
     setRestorePending(null);
     setSettingsOpen(false);
@@ -836,6 +901,19 @@ export default function HomeScreen() {
         }
       />
     ),
+    week: (
+      <WeekGoals
+        week={week}
+        isThisWeek={isThisWeek}
+        goals={weekGoals}
+        onAdd={addGoal}
+        onToggle={toggleGoal}
+        onDelete={deleteGoal}
+        leftover={goalsCarryDismissed === week ? 0 : Math.min(leftoverGoals.length, goalsRoom)}
+        onBringOver={bringGoalsOver}
+        onDismissLeftover={() => setGoalsCarryDismissed(week)}
+      />
+    ),
     notes: (
       <QuickCapture
         notes={day.notes}
@@ -875,6 +953,7 @@ export default function HomeScreen() {
           haptic.tick();
         }}
         streaks={isToday ? streaks : {}}
+        historyOf={historyOf}
         streakCap={LOADED_DAYS}
         isPremium={isPremium}
         composerOpen={habitComposerOpen}
@@ -1136,6 +1215,7 @@ export default function HomeScreen() {
           visible={searchOpen}
           days={searchDays}
           pinned={state.pinned}
+          goals={state.goals}
           today={today}
           onClose={() => setSearchOpen(false)}
         />

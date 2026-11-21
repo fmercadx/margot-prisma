@@ -11,6 +11,7 @@ import {
   eraseStoredData,
   BILLS_KEY,
   FOCUS_TIMER_KEY,
+  GOALS_KEY,
   HABITS_KEY,
   PINNED_KEY,
   habitsForStorage,
@@ -19,6 +20,7 @@ import {
   loadBills,
   loadDays,
   loadFocusTimer,
+  loadGoals,
   loadHabits,
   loadPinned,
   loadSettings,
@@ -40,6 +42,7 @@ import {
   type HubState,
   type Pinned,
   type Settings,
+  type WeekGoal,
 } from '../lib/store';
 
 /** Days shown in the history charts, today included. */
@@ -91,6 +94,7 @@ export function useDailyHub(today: string): DailyHub {
     focusTimer: FocusTimer | null | undefined; // undefined: nothing queued yet
     pinned: Pinned[] | null;
     bills: Bill[] | null;
+    goals: WeekGoal[] | null;
     days: Record<string, DayLog>;
   }>({
     habits: null,
@@ -99,6 +103,7 @@ export function useDailyHub(today: string): DailyHub {
     focusTimer: undefined,
     pinned: null,
     bills: null,
+    goals: null,
     days: {},
   });
   const loadedFor = useRef<string | null>(null);
@@ -127,12 +132,13 @@ export function useDailyHub(today: string): DailyHub {
         focusTimer: FocusTimer | null;
         pinned: Pinned[];
         bills: Bill[];
+        goals: WeekGoal[];
       } | null = null;
       try {
         setCodec(await createDataCodec());
         const sealed = await ensureSealed();
         if (sealed > 0) console.info(`[storage] encrypted ${sealed} values saved by an earlier version`);
-        const [habits, days, settings, countdowns, focusTimer, pinned, bills] = await Promise.all([
+        const [habits, days, settings, countdowns, focusTimer, pinned, bills, goals] = await Promise.all([
           loadHabits(),
           loadDays(lastNDays(today, LOADED_DAYS)),
           loadSettings(),
@@ -140,8 +146,9 @@ export function useDailyHub(today: string): DailyHub {
           loadFocusTimer(),
           loadPinned(),
           loadBills(),
+          loadGoals(),
         ]);
-        loaded = { habits, days, settings, countdowns, focusTimer, pinned, bills };
+        loaded = { habits, days, settings, countdowns, focusTimer, pinned, bills, goals };
       } catch (err) {
         console.warn('[storage] could not read saved data', err);
       }
@@ -158,6 +165,7 @@ export function useDailyHub(today: string): DailyHub {
         focusTimer: loaded.focusTimer,
         pinned: loaded.pinned,
         bills: loaded.bills,
+        goals: loaded.goals,
         days: { ...loaded.days },
       };
       loadedFor.current = today;
@@ -218,6 +226,10 @@ export function useDailyHub(today: string): DailyHub {
       p.schedule(BILLS_KEY, state.bills);
       queued.current.bills = state.bills;
     }
+    if (state.goals !== queued.current.goals) {
+      p.schedule(GOALS_KEY, state.goals);
+      queued.current.goals = state.goals;
+    }
     for (const [date, day] of Object.entries(state.days)) {
       if (queued.current.days[date] !== day) {
         p.schedule(dayStorageKey(date), day);
@@ -263,6 +275,7 @@ export function useDailyHub(today: string): DailyHub {
       focusTimer: null,
       pinned: [] as Pinned[],
       bills: [] as Bill[],
+      goals: [] as WeekGoal[],
     };
     queued.current = {
       habits: fresh.habits,
@@ -271,6 +284,7 @@ export function useDailyHub(today: string): DailyHub {
       focusTimer: null,
       pinned: fresh.pinned,
       bills: fresh.bills,
+      goals: fresh.goals,
       days: {},
     };
     loadedFor.current = today;

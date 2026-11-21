@@ -1,13 +1,14 @@
 // Searching everything the person has written: notes, each day's focus,
-// journal entries, good things and expense labels. Pure; the caller supplies the days (decrypted by the
+// journal entries, good things, weekly goals and expense labels. Pure; the caller supplies the days (decrypted by the
 // storage layer) and nothing leaves the phone.
 
 import { dateKey } from './date';
-import type { DayLog, Pinned } from './store';
+import type { DayLog, Pinned, WeekGoal } from './store';
 
 export type SearchHit = {
   date: string;
-  kind: 'focus' | 'note' | 'journal' | 'good' | 'expense' | 'pinned';
+  /** A goal's date is the Sunday its week starts on. */
+  kind: 'focus' | 'note' | 'journal' | 'good' | 'expense' | 'pinned' | 'goal';
   id: string;
   text: string;
   time: number | null; // when it was written; a focus has no time
@@ -80,6 +81,7 @@ export function searchDays(
   query: string,
   limit = SEARCH_RESULTS_MAX,
   pinned: Pinned[] = [],
+  goals: WeekGoal[] = [],
 ): { hits: SearchHit[]; total: number } {
   const needle = foldQuery(query);
   if (!needle) return { hits: [], total: 0 };
@@ -94,8 +96,17 @@ export function searchDays(
     const m = match(p.text, needle);
     if (m) push({ date: dateKey(new Date(p.createdAt)), kind: 'pinned', id: p.id, text: p.text, time: p.createdAt, ...m });
   }
-  for (const date of Object.keys(days).sort().reverse()) {
+  // A week's goals are filed under its Sunday, ahead of that day's entries.
+  const goalsByWeek = new Map<string, WeekGoal[]>();
+  for (const g of goals) goalsByWeek.set(g.week, [...(goalsByWeek.get(g.week) ?? []), g]);
+  const dates = [...new Set([...Object.keys(days), ...goalsByWeek.keys()])].sort().reverse();
+  for (const date of dates) {
+    for (const g of goalsByWeek.get(date) ?? []) {
+      const m = match(g.text, needle);
+      if (m) push({ date, kind: 'goal', id: g.id, text: g.text, time: null, ...m });
+    }
     const day = days[date];
+    if (!day) continue;
     const f = day.focus ? match(day.focus, needle) : null;
     if (f) push({ date, kind: 'focus', id: `focus-${date}`, text: day.focus, time: null, ...f });
     const j = day.journal ? match(day.journal, needle) : null;

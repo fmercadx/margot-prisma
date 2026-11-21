@@ -5,6 +5,7 @@ export const HOME_CARD_LABELS: Record<HomeCard, string> = {
   focus: 'Today’s focus',
   notes: 'Quick Capture',
   habits: 'Habits',
+  week: 'This week',
   wellbeing: 'Wellbeing',
   expenses: 'Expenses',
   journal: 'Journal',
