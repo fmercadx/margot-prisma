@@ -66,6 +66,34 @@ def pick_iphone():
     return best[1]
 
 
+def dump_screen(udid, out):
+    """What Maestro can see on screen now: every label, text and id, for the log."""
+    r = run('maestro', '--device', udid, 'hierarchy', check_rc=False, timeout=300)
+    with open(os.path.join(out, 'hierarchy.json'), 'w') as f:
+        f.write(r.stdout)
+    seen = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            attrs = node.get('attributes') or {}
+            for k in ('accessibilityText', 'text', 'resource-id', 'value', 'hintText'):
+                v = attrs.get(k)
+                if v and (k, v) not in seen:
+                    seen.append((k, v))
+            for child in node.get('children') or []:
+                walk(child)
+
+    try:
+        start = r.stdout.index('{')
+        walk(json.loads(r.stdout[start:]))
+    except (ValueError, json.JSONDecodeError):
+        print('Could not read the hierarchy:', r.stdout[-2000:], r.stderr[-2000:], flush=True)
+        return
+    print('On screen now:', flush=True)
+    for k, v in seen[:200]:
+        print(f'  {k}: {v}', flush=True)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--app', required=True, help='the .app built for the iOS Simulator')
@@ -97,6 +125,8 @@ def main():
         f.write(flow.stdout + '\n' + flow.stderr)
     print(flow.stdout[-4000:], flush=True)
     check(flow.returncode == 0, 'home screen drawn, note added, and still there after closing and reopening the app')
+    if flow.returncode != 0:
+        dump_screen(udid, out)
 
     run('xcrun', 'simctl', 'io', udid, 'screenshot', os.path.join(out, '4-final.png'), check_rc=False)
 

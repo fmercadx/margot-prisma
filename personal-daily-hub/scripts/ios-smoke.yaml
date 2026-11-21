@@ -14,11 +14,16 @@ appId: com.fmercadx.personaldailyhub
 - inputText: "Simulator check"
 - tapOn:
     id: "note-submit"
-- assertVisible: "Simulator check"
+# On iOS a tappable row is one element labelled "Edit note: <text>", and
+# Maestro matches whole labels. The exact label also can't be mistaken for
+# the text box, which still holds the words if saving didn't happen.
+- extendedWaitUntil:
+    visible: "Edit note: Simulator check"
+    timeout: 15000
 - takeScreenshot: 2-note
 - stopApp
 - launchApp
 - extendedWaitUntil:
-    visible: "Simulator check"
+    visible: "Edit note: Simulator check"
     timeout: 120000
 - takeScreenshot: 3-restarted
