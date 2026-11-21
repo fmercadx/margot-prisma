@@ -1,4 +1,5 @@
 import { business, hasAddress, hasPhone, locality, telHref } from '../content/business'
+import { RouteLink } from '../router'
 import { MailIcon, PhoneIcon, PinIcon } from './Icons'
 
 const year = new Date().getFullYear()
@@ -116,7 +117,13 @@ export default function Footer() {
 
         <div className="mt-14 flex flex-col gap-3 border-t border-sand-deep/50 pt-8 text-[0.92rem] text-navy-soft sm:flex-row sm:items-center sm:justify-between">
           <p>
-            © {year} {business.legalName}. All rights reserved.
+            © {year} {business.legalName}. All rights reserved.{' '}
+            <RouteLink
+              to="/privacy"
+              className="font-medium text-navy underline decoration-sand-deep underline-offset-4 hover:text-clay"
+            >
+              Privacy
+            </RouteLink>
           </p>
           <p>
             We provide equal access to housing and care regardless of race, colour, national origin,
