@@ -85,9 +85,9 @@ export type Settings = {
 /** The cards on the home screen, in their default order. */
 export const HOME_CARDS = [
   'focus',
-  'week',
   'notes',
   'habits',
+  'week',
   'wellbeing',
   'expenses',
   'journal',

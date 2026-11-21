@@ -177,7 +177,7 @@ describe('reordering habits', () => {
 describe('arranging the home screen', () => {
   test('hide a card, move one, and reset', async () => {
     await launch();
-    const all = ['today-focus', 'card-week', 'card-notes', 'card-habits', 'card-water', 'card-expenses', 'card-journal', 'card-countdowns', 'card-insights', 'card-history'];
+    const all = ['today-focus', 'card-notes', 'card-habits', 'card-week', 'card-water', 'card-expenses', 'card-journal', 'card-countdowns', 'card-insights', 'card-history'];
     expect(cardOrder()).toEqual(all);
 
     await openSettings();
@@ -194,7 +194,7 @@ describe('arranging the home screen', () => {
     await launch();
     await openSettings();
     await fireEvent.press(screen.getByRole('button', { name: 'Arrange the home screen' }));
-    for (const label of ['Today’s focus', 'This week', 'Quick Capture', 'Habits', 'Wellbeing', 'Expenses', 'Journal', 'On this day', 'Coming up', 'Insights', 'History']) {
+    for (const label of ['Today’s focus', 'Quick Capture', 'Habits', 'This week', 'Wellbeing', 'Expenses', 'Journal', 'On this day', 'Coming up', 'Insights', 'History']) {
       await fireEvent(screen.getByLabelText(`Show ${label}`), 'valueChange', false);
     }
     await fireEvent.press(screen.getByRole('button', { name: 'Done arranging' }));

@@ -11,8 +11,10 @@ import {
   EMPTY_DAY,
   goalsOf,
   GOALS_STORED_MAX,
+  HOME_CARDS,
   initialState,
   mergeBackup,
+  normalizeHomeOrder,
   reducer,
   unfinishedGoalsBefore,
   WEEK_GOALS_MAX,
@@ -50,6 +52,26 @@ describe('weeks', () => {
     expect(weekRangeLabel('2026-11-15')).toBe('Nov 15 – 21');
     expect(weekRangeLabel('2026-11-29')).toBe('Nov 29 – Dec 5');
     expect(weekRangeLabel('2026-12-27')).toBe('Dec 27 – Jan 2');
+  });
+});
+
+describe('the This week card', () => {
+  test('comes after Habits, so the top of the screen is as it was in 1.10', () => {
+    expect(HOME_CARDS.slice(0, 4)).toEqual(['focus', 'notes', 'habits', 'week']);
+    // A saved 1.10 arrangement gains it in the same place, after Habits wherever that was moved.
+    const saved = [
+      'notes',
+      'focus',
+      'habits',
+      'wellbeing',
+      'expenses',
+      'journal',
+      'onThisDay',
+      'countdowns',
+      'insights',
+      'history',
+    ];
+    expect(normalizeHomeOrder(saved).slice(0, 4)).toEqual(['notes', 'focus', 'habits', 'week']);
   });
 });
 
