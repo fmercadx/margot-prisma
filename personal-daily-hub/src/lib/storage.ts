@@ -21,7 +21,13 @@ import { isSealed, plainCodec, type Codec } from './codec';
 import { isDateKey } from './date';
 import { MAX_EXPENSE_CENTS } from './money';
 import {
+  BILLS_MAX,
+  cleanBill,
   CORE_HABITS,
+  PINNED_MAX,
+  sortBills,
+  type Bill,
+  type Pinned,
   COUNTDOWN_LABEL_MAX_LENGTH,
   COUNTDOWNS_MAX,
   CUSTOM_HABITS_MAX,
@@ -66,6 +72,8 @@ export const HABITS_KEY = `${PREFIX}habits`;
 export const SETTINGS_KEY = `${PREFIX}settings`;
 export const COUNTDOWNS_KEY = `${PREFIX}countdowns`;
 export const FOCUS_TIMER_KEY = `${PREFIX}focus-timer`;
+export const PINNED_KEY = `${PREFIX}pinned`;
+export const BILLS_KEY = `${PREFIX}bills`;
 const DAY_PREFIX = `${PREFIX}day:`;
 export const dayStorageKey = (date: string) => `${DAY_PREFIX}${date}`;
 const quarantineKey = (key: string) => `${PREFIX}corrupt:${Date.now()}:${key}`;
@@ -194,6 +202,42 @@ export function sanitizeSettings(v: unknown): Settings {
     homeHidden: Array.isArray(o.homeHidden) ? normalizeHomeHidden(o.homeHidden.slice(0, HOME_CARDS.length * 2)) : [],
     mockPremium: o.mockPremium === true,
   };
+}
+
+/** Pinned notes: one per id, real times, text capped, at most PINNED_MAX, newest pinned first. */
+export function sanitizePinned(v: unknown): Pinned[] {
+  return list(
+    v,
+    (p) => {
+      if (!isObj(p) || !isId(p.id) || !isStr(p.text) || !isTime(p.createdAt) || !isTime(p.pinnedAt)) return null;
+      const text = p.text.slice(0, NOTE_MAX_LENGTH);
+      return text.trim() ? { id: p.id, text, createdAt: p.createdAt, pinnedAt: p.pinnedAt } : null;
+    },
+    PINNED_MAX * 2,
+  )
+    .slice(0, PINNED_MAX)
+    .sort((a, b) => b.pinnedAt - a.pinnedAt);
+}
+
+/** Monthly bills: checked like a typed one, one per id, at most BILLS_MAX, by day. */
+export function sanitizeBills(v: unknown): Bill[] {
+  return sortBills(
+    list(
+      v,
+      (b) =>
+        isObj(b) && isId(b.id) && isStr(b.label) && isNum(b.cents) && isNum(b.day)
+          ? cleanBill({
+              id: b.id,
+              label: b.label.slice(0, EXPENSE_LABEL_MAX_LENGTH * 4),
+              cents: b.cents,
+              category: (isCategory(b.category) ? b.category : DEFAULT_CATEGORY) as Bill['category'],
+              day: b.day,
+              lastPosted: isStr(b.lastPosted) ? b.lastPosted.slice(0, 7) : undefined,
+            })
+          : null,
+      BILLS_MAX * 2,
+    ).slice(0, BILLS_MAX),
+  );
 }
 
 /** A running focus session: a real day, and no longer than the longest session. */
@@ -335,6 +379,14 @@ export async function loadCountdowns(): Promise<Countdown[]> {
 export async function loadFocusTimer(): Promise<FocusTimer | null> {
   const raw = await AsyncStorage.getItem(FOCUS_TIMER_KEY);
   return sanitizeFocusTimer(await parse(FOCUS_TIMER_KEY, raw));
+}
+
+export async function loadPinned(): Promise<Pinned[]> {
+  return sanitizePinned(await parse(PINNED_KEY, await AsyncStorage.getItem(PINNED_KEY)));
+}
+
+export async function loadBills(): Promise<Bill[]> {
+  return sanitizeBills(await parse(BILLS_KEY, await AsyncStorage.getItem(BILLS_KEY)));
 }
 
 export async function loadSettings(): Promise<Settings> {

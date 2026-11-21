@@ -31,7 +31,7 @@ import { PASSPHRASE_MIN_LENGTH } from '../lib/backupCrypto';
 import { MONTHLY_BUDGET_STEPS_CENTS, stepBudget } from '../lib/categories';
 import { formatCents } from '../lib/money';
 import { hourLabel } from '../lib/reminders';
-import type { MergeStats } from '../lib/store';
+import { ordinal, type Bill, type MergeStats } from '../lib/store';
 import {
   FOCUS_LENGTHS,
   HOME_CARDS,
@@ -46,6 +46,7 @@ import {
 import { colors, inputColors, radius, space, type } from '../theme';
 import { HOME_CARD_LABELS } from './homeCards';
 import { IconButton } from './IconButton';
+import { useMoney } from './Money';
 
 const SWITCH_COLORS = {
   trackColor: { false: colors.hairline, true: colors.notes },
@@ -60,6 +61,10 @@ type Props = {
   settings: Settings;
   onChange: (patch: Partial<Settings>) => void;
   reminderOn: boolean;
+  /** Monthly bills, to change the day of or remove. */
+  bills: Bill[];
+  onSetBillDay: (id: string, day: number) => void;
+  onRemoveBill: (id: string) => void;
   /** Water reminders need local notifications, which the web build lacks. */
   waterReminders: { supported: boolean; busy: boolean; onToggle: (next: boolean) => void };
   lockSupported: boolean;
@@ -249,6 +254,20 @@ export function SettingsSheet(p: Props) {
                   </View>
                   <Text style={styles.turnOff}>Turn off</Text>
                 </Pressable>
+              </Section>
+            ) : null}
+
+            {p.bills.length > 0 ? (
+              <Section title="Monthly bills">
+                {p.bills.map((b, i) => (
+                  <BillRow
+                    key={b.id}
+                    bill={b}
+                    last={i === p.bills.length - 1}
+                    onSetDay={(day) => p.onSetBillDay(b.id, day)}
+                    onRemove={() => p.onRemoveBill(b.id)}
+                  />
+                ))}
               </Section>
             ) : null}
 
@@ -637,6 +656,57 @@ function UnlockPanel(props: {
   );
 }
 
+/** One monthly bill: what, how much, and the day it comes back on. */
+function BillRow({
+  bill,
+  last,
+  onSetDay,
+  onRemove,
+}: {
+  bill: Bill;
+  last: boolean;
+  onSetDay: (day: number) => void;
+  onRemove: () => void;
+}) {
+  const { money } = useMoney();
+  return (
+    <View style={[styles.row, last && styles.lastRow]} testID={`bill-${bill.id}`}>
+      <View style={styles.rowText}>
+        <Text style={styles.rowTitle} numberOfLines={1}>
+          {bill.label}
+        </Text>
+        <Text style={styles.rowSubtitle}>
+          {money(bill.cents)} · on the {ordinal(bill.day)}
+          {bill.day > 28 ? ' (or the month’s last day)' : ''}
+        </Text>
+      </View>
+      <IconButton
+        icon={Minus}
+        size={16}
+        label={`Earlier day for ${bill.label}`}
+        onPress={() => onSetDay(bill.day - 1)}
+        disabled={bill.day <= 1}
+        filled
+      />
+      <IconButton
+        icon={Plus}
+        size={16}
+        label={`Later day for ${bill.label}`}
+        onPress={() => onSetDay(bill.day + 1)}
+        disabled={bill.day >= 31}
+        filled
+      />
+      <IconButton
+        icon={X}
+        size={16}
+        label={`Stop repeating ${bill.label}`}
+        onPress={onRemove}
+        color={colors.textMuted}
+      />
+    </View>
+  );
+}
+
 /** Every card with a switch to show it and arrows to move it. Changes apply at once. */
 function ArrangePanel(props: {
   order: HomeCard[];
@@ -744,6 +814,8 @@ function RestorePreview(props: {
     stats.expensesAdded ? plural(stats.expensesAdded, 'expense', 'expenses') : '',
     stats.habitsAdded ? plural(stats.habitsAdded, 'custom habit', 'custom habits') : '',
     stats.countdownsAdded ? plural(stats.countdownsAdded, 'countdown', 'countdowns') : '',
+    stats.pinnedAdded ? plural(stats.pinnedAdded, 'pinned note', 'pinned notes') : '',
+    stats.billsAdded ? plural(stats.billsAdded, 'monthly bill', 'monthly bills') : '',
   ].filter(Boolean);
   const when = props.exportedAt ? new Date(props.exportedAt) : null;
   return (

@@ -13,10 +13,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BookHeart, NotebookPen, Search, SearchX, Sparkles, Target, Wallet, X } from '../icons';
+import { BookHeart, NotebookPen, Pin, Search, SearchX, Sparkles, Target, Wallet, X } from '../icons';
 import { clockTime, longDate, parseDateKey, weekdayName } from '../lib/date';
 import { SEARCH_QUERY_MAX, searchDays, type SearchHit } from '../lib/search';
-import type { DayLog } from '../lib/store';
+import type { DayLog, Pinned } from '../lib/store';
 import { colors, HIT, inputColors, radius, space, tint, type } from '../theme';
 import { IconButton } from './IconButton';
 
@@ -24,6 +24,8 @@ type Props = {
   visible: boolean;
   /** Every stored day, or null while they are still being read. */
   days: Record<string, DayLog> | null;
+  /** Pinned notes, which belong to no day. */
+  pinned?: Pinned[];
   today: string;
   onClose: () => void;
 };
@@ -33,14 +35,18 @@ const KIND = {
   focus: { icon: Target, color: colors.focus, name: 'Focus' },
   journal: { icon: BookHeart, color: colors.journal, name: 'Journal' },
   good: { icon: Sparkles, color: colors.journal, name: 'Good thing' },
+  pinned: { icon: Pin, color: colors.notes, name: 'Pinned' },
   expense: { icon: Wallet, color: colors.expenses, name: 'Expense' },
 } as const;
 
 /** Search every note, focus and expense label on the phone. */
-export function SearchSheet({ visible, days, today, onClose }: Props) {
+export function SearchSheet({ visible, days, pinned, today, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
-  const result = useMemo(() => (days ? searchDays(days, query) : { hits: [], total: 0 }), [days, query]);
+  const result = useMemo(
+    () => (days ? searchDays(days, query, undefined, pinned) : { hits: [], total: 0 }),
+    [days, query, pinned],
+  );
   const typed = query.trim().length > 0;
 
   const close = () => {

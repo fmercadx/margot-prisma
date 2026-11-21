@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 
 import { dateKey } from '../src/lib/date';
 import { FREE_NOTES_PER_DAY } from '../src/lib/premium';
@@ -41,7 +41,7 @@ test('renders every module', async () => {
   expect(screen.getByText('Wellbeing')).toBeOnTheScreen();
   expect(screen.getByText('Expenses')).toBeOnTheScreen();
   expect(screen.getByText('History')).toBeOnTheScreen();
-  expect(screen.getAllByRole('checkbox')).toHaveLength(4);
+  expect(within(screen.getByTestId('card-habits')).getAllByRole('checkbox')).toHaveLength(4);
 });
 
 test(`the ${FREE_NOTES_PER_DAY + 1}th note opens the paywall, and unlocking saves it`, async () => {

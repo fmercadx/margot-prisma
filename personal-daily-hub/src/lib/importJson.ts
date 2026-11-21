@@ -8,8 +8,8 @@
 // overwrites or removes anything.
 
 import { dateKey, isDateKey } from './date';
-import { sanitizeCountdowns, sanitizeDay, sanitizeHabits } from './storage';
-import { hasAnyData, type Countdown, type DayLog, type Habit } from './store';
+import { sanitizeBills, sanitizeCountdowns, sanitizeDay, sanitizeHabits, sanitizePinned } from './storage';
+import { hasAnyData, type Bill, type Countdown, type DayLog, type Habit, type Pinned } from './store';
 
 /** A year of heavy use exports to well under 1 MB. */
 export const IMPORT_MAX_BYTES = 5 * 1024 * 1024;
@@ -20,13 +20,14 @@ export type ParsedBackup = {
   habits: Habit[]; // custom habits only
   days: Record<string, DayLog>;
   countdowns: Countdown[];
+  pinned: Pinned[];
+  bills: Bill[];
   exportedAt: string | null;
 };
 
 export type ParseResult = { ok: true; backup: ParsedBackup } | { ok: false; error: string };
 
-const isObj = (v: unknown): v is Record<string, unknown> =>
-  typeof v === 'object' && v !== null && !Array.isArray(v);
+const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 const fail = (error: string): ParseResult => ({ ok: false, error });
 
@@ -42,7 +43,8 @@ export function parseBackup(text: string, now: Date = new Date()): ParseResult {
   if (!isObj(raw) || raw.app !== 'Personal Daily Hub' || !isObj(raw.days)) {
     return fail('That file is not a Daily Hub backup.');
   }
-  if (raw.format !== 1) return fail('That backup was made by a newer version of the app. Update the app, then try again.');
+  if (raw.format !== 1)
+    return fail('That backup was made by a newer version of the app. Update the app, then try again.');
 
   // Real calendar dates only, none in the future (allowing a day for time zones).
   const tomorrow = dateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
@@ -64,6 +66,8 @@ export function parseBackup(text: string, now: Date = new Date()): ParseResult {
       habits: sanitizeHabits(raw.habits).filter((h) => !h.core),
       days,
       countdowns: sanitizeCountdowns(raw.countdowns),
+      pinned: sanitizePinned(raw.pinned),
+      bills: sanitizeBills(raw.bills),
       exportedAt: typeof raw.exportedAt === 'string' ? raw.exportedAt.slice(0, 40) : null,
     },
   };

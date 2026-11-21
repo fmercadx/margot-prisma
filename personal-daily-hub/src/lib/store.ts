@@ -88,6 +88,7 @@ export const HOME_CARDS = [
   'wellbeing',
   'expenses',
   'journal',
+  'onThisDay',
   'countdowns',
   'insights',
   'history',
@@ -102,12 +103,30 @@ export type FocusTimer = { date: string; startedAt: number; endsAt: number };
 /** A date worth counting down to. */
 export type Countdown = { id: string; label: string; date: string };
 
+/** A note kept at the top of Quick Capture every day. */
+export type Pinned = { id: string; text: string; createdAt: number; pinnedAt: number };
+
+/**
+ * An expense that comes back every month on the same day (rent, a phone
+ * plan). Posted on its day; `lastPosted` is the month ('YYYY-MM') it last was.
+ */
+export type Bill = {
+  id: string;
+  label: string;
+  cents: number;
+  category: ExpenseCategory;
+  day: number; // 1–31; in a shorter month, the last day
+  lastPosted?: string;
+};
+
 export type HubState = {
   habits: Habit[];
   days: Record<string, DayLog>;
   settings: Settings;
   countdowns: Countdown[]; // soonest first
   focusTimer: FocusTimer | null; // the focus session under way, if any
+  pinned: Pinned[]; // most recently pinned first
+  bills: Bill[]; // monthly bills, by day of the month
 };
 
 export const WATER_GOAL_MIN = 4;
@@ -166,6 +185,8 @@ export const HABIT_MAX_LENGTH = 60;
 export const EXPENSE_LABEL_MAX_LENGTH = 40;
 export const CUSTOM_HABITS_MAX = 20;
 export const COUNTDOWNS_MAX = 10;
+export const PINNED_MAX = 5;
+export const BILLS_MAX = 20;
 export const COUNTDOWN_LABEL_MAX_LENGTH = 40;
 /** The furthest ahead a countdown can be set, in days. */
 export const COUNTDOWN_MAX_DAYS = 3650;
@@ -198,6 +219,8 @@ export const initialState: HubState = {
   settings: DEFAULT_SETTINGS,
   countdowns: [],
   focusTimer: null,
+  pinned: [],
+  bills: [],
 };
 
 export type Action =
@@ -208,7 +231,17 @@ export type Action =
       settings: Settings;
       countdowns?: Countdown[];
       focusTimer?: FocusTimer | null;
+      pinned?: Pinned[];
+      bills?: Bill[];
     }
+  | { type: 'pinNote'; date: string; id: string; now: number }
+  | { type: 'unpinNote'; id: string; date: string; now: number }
+  | { type: 'deletePinned'; id: string }
+  | { type: 'restorePinned'; pinned: Pinned }
+  | { type: 'addBill'; bill: Bill }
+  | { type: 'removeBill'; id: string }
+  | { type: 'setBillDay'; id: string; day: number }
+  | { type: 'postBills'; today: string }
   | { type: 'skipHabit'; date: string; id: string }
   | { type: 'moveHabit'; id: string; nextTo: string; where: 'before' | 'after' }
   | { type: 'startFocus'; date: string; now: number; minutes: number }
@@ -238,7 +271,14 @@ export type Action =
   | { type: 'toggleTask'; date: string; id: string; now: number }
   | { type: 'carryOver'; to: string; items: { from: string; id: string; copy: { id: string; createdAt: number } }[] }
   | { type: 'editNote'; date: string; id: string; text: string; now: number }
-  | { type: 'importBackup'; habits: Habit[]; days: Record<string, DayLog>; countdowns?: Countdown[] }
+  | {
+      type: 'importBackup';
+      habits: Habit[];
+      days: Record<string, DayLog>;
+      countdowns?: Countdown[];
+      pinned?: Pinned[];
+      bills?: Bill[];
+    }
   | { type: 'addExpense'; date: string; expense: Expense }
   | { type: 'deleteExpense'; date: string; id: string };
 
@@ -264,7 +304,94 @@ export function reducer(state: HubState, action: Action): HubState {
         settings: action.settings,
         countdowns: action.countdowns ?? [],
         focusTimer: action.focusTimer ?? null,
+        pinned: action.pinned ?? [],
+        bills: action.bills ?? [],
       };
+
+    // A plain note moves out of its day to the top of every day.
+    case 'pinNote': {
+      if (state.pinned.length >= PINNED_MAX) return state;
+      const note = getDay(state, action.date).notes.find((n) => n.id === action.id);
+      if (!note || note.task || state.pinned.some((p) => p.id === note.id)) return state;
+      const next = updateDay(state, action.date, (d) => ({ ...d, notes: d.notes.filter((n) => n.id !== action.id) }));
+      return {
+        ...next,
+        pinned: [{ id: note.id, text: note.text, createdAt: note.createdAt, pinnedAt: action.now }, ...state.pinned],
+      };
+    }
+
+    // Back into the day being looked at, as a note written now.
+    case 'unpinNote': {
+      const p = state.pinned.find((x) => x.id === action.id);
+      if (!p || getDay(state, action.date).notes.some((n) => n.id === p.id)) return state;
+      const next = { ...state, pinned: state.pinned.filter((x) => x.id !== action.id) };
+      return updateDay(next, action.date, (d) => ({
+        ...d,
+        notes: [{ id: p.id, text: p.text, createdAt: action.now }, ...d.notes],
+      }));
+    }
+
+    case 'deletePinned': {
+      const pinned = state.pinned.filter((p) => p.id !== action.id);
+      return pinned.length === state.pinned.length ? state : { ...state, pinned };
+    }
+
+    case 'restorePinned': {
+      const p = action.pinned;
+      if (state.pinned.length >= PINNED_MAX || state.pinned.some((x) => x.id === p.id)) return state;
+      return { ...state, pinned: [...state.pinned, p].sort((a, b) => b.pinnedAt - a.pinnedAt) };
+    }
+
+    case 'addBill': {
+      const b = cleanBill(action.bill);
+      if (!b || state.bills.length >= BILLS_MAX || state.bills.some((x) => x.id === b.id)) return state;
+      return { ...state, bills: sortBills([...state.bills, b]) };
+    }
+
+    case 'removeBill': {
+      const bills = state.bills.filter((b) => b.id !== action.id);
+      return bills.length === state.bills.length ? state : { ...state, bills };
+    }
+
+    case 'setBillDay': {
+      const day = Math.round(action.day);
+      const i = state.bills.findIndex((b) => b.id === action.id);
+      if (i === -1 || day < 1 || day > 31 || state.bills[i].day === day) return state;
+      const bills = [...state.bills];
+      bills[i] = { ...bills[i], day };
+      return { ...state, bills: sortBills(bills) };
+    }
+
+    // Each bill due by today and not yet posted this month is added to its
+    // day. The expense id is the bill's and the month's, so posting twice
+    // (or restoring a backup that has it) never adds it twice.
+    case 'postBills': {
+      const month = action.today.slice(0, 7);
+      let next = state;
+      const bills = state.bills.map((b) => {
+        const due = billDueDate(b, action.today);
+        if (b.lastPosted === month || due > action.today) return b;
+        const id = billExpenseId(b.id, month);
+        const at = parseDateKey(due);
+        at.setHours(9, 0, 0, 0);
+        next = updateDay(next, due, (d) =>
+          d.expenses.some((e) => e.id === id)
+            ? d
+            : {
+                ...d,
+                expenses: insertByTime(d.expenses, {
+                  id,
+                  cents: b.cents,
+                  label: b.label,
+                  category: b.category,
+                  createdAt: at.getTime(),
+                }),
+              },
+        );
+        return { ...b, lastPosted: month };
+      });
+      return bills.every((b, i) => b === state.bills[i]) ? state : { ...next, bills };
+    }
 
     case 'skipHabit': {
       if (!state.habits.some((h) => h.id === action.id)) return state;
@@ -576,7 +703,7 @@ export function reducer(state: HubState, action: Action): HubState {
     }
 
     case 'importBackup':
-      return mergeBackup(state, action.habits, action.days, action.countdowns).state;
+      return mergeBackup(state, action.habits, action.days, action.countdowns, action.pinned, action.bills).state;
 
     case 'addExpense': {
       const { cents } = action.expense;
@@ -607,6 +734,8 @@ export type MergeStats = {
   expensesAdded: number;
   habitsAdded: number;
   countdownsAdded: number;
+  pinnedAdded: number;
+  billsAdded: number;
 };
 
 const byNewest = <T extends { createdAt: number }>(a: T, b: T) => b.createdAt - a.createdAt;
@@ -631,6 +760,8 @@ export function mergeBackup(
   habits: Habit[],
   days: Record<string, DayLog>,
   countdowns: Countdown[] = [],
+  pinned: Pinned[] = [],
+  bills: Bill[] = [],
 ): { state: HubState; stats: MergeStats } {
   const stats: MergeStats = {
     daysAdded: 0,
@@ -639,7 +770,25 @@ export function mergeBackup(
     expensesAdded: 0,
     habitsAdded: 0,
     countdownsAdded: 0,
+    pinnedAdded: 0,
+    billsAdded: 0,
   };
+
+  // Pinned notes and bills: by id, up to their caps; the phone's own come first.
+  let nextPinned = state.pinned;
+  for (const p of pinned) {
+    if (nextPinned.length >= PINNED_MAX || nextPinned.some((x) => x.id === p.id)) continue;
+    nextPinned = [...nextPinned, p];
+    stats.pinnedAdded++;
+  }
+  if (nextPinned !== state.pinned) nextPinned = [...nextPinned].sort((a, b) => b.pinnedAt - a.pinnedAt);
+  let nextBills = state.bills;
+  for (const b of bills) {
+    if (nextBills.length >= BILLS_MAX || nextBills.some((x) => x.id === b.id)) continue;
+    nextBills = [...nextBills, b];
+    stats.billsAdded++;
+  }
+  if (nextBills !== state.bills) nextBills = sortBills(nextBills);
 
   // Countdowns: by id, up to the cap; the phone's own come first.
   let nextCountdowns = state.countdowns;
@@ -713,9 +862,23 @@ export function mergeBackup(
     nextDays[date] = merged;
   }
 
-  const unchanged = nextHabits === state.habits && nextDays === state.days && nextCountdowns === state.countdowns;
+  const unchanged =
+    nextHabits === state.habits &&
+    nextDays === state.days &&
+    nextCountdowns === state.countdowns &&
+    nextPinned === state.pinned &&
+    nextBills === state.bills;
   return {
-    state: unchanged ? state : { ...state, habits: nextHabits, days: nextDays, countdowns: nextCountdowns },
+    state: unchanged
+      ? state
+      : {
+          ...state,
+          habits: nextHabits,
+          days: nextDays,
+          countdowns: nextCountdowns,
+          pinned: nextPinned,
+          bills: nextBills,
+        },
     stats,
   };
 }
@@ -832,6 +995,37 @@ export function openTasksBefore(
 /** One line, trimmed, capped. Clearing the text clears the focus. */
 export function cleanFocus(text: string): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, FOCUS_MAX_LENGTH);
+}
+
+/** A bill's label trimmed and capped, its fields checked; null if it can't be one. */
+export function cleanBill(b: Bill): Bill | null {
+  const label = b.label.replace(/\s+/g, ' ').trim().slice(0, EXPENSE_LABEL_MAX_LENGTH);
+  if (!b.id || !label || !Number.isInteger(b.cents) || b.cents <= 0 || b.cents > 100_000_000) return null;
+  if (!Number.isInteger(b.day) || b.day < 1 || b.day > 31 || !isCategory(b.category)) return null;
+  const out: Bill = { id: b.id, label, cents: b.cents, category: b.category, day: b.day };
+  if (b.lastPosted && /^\d{4}-\d{2}$/.test(b.lastPosted)) out.lastPosted = b.lastPosted;
+  return out;
+}
+
+/** By day of the month, then by name. */
+export function sortBills(list: Bill[]): Bill[] {
+  return [...list].sort((a, b) => a.day - b.day || a.label.localeCompare(b.label));
+}
+
+/** The date a bill falls due in `today`'s month: its day, or the month's last day if shorter. */
+export function billDueDate(b: Pick<Bill, 'day'>, today: string): string {
+  const d = parseDateKey(today);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  return `${today.slice(0, 8)}${String(Math.min(b.day, last)).padStart(2, '0')}`;
+}
+
+/** The expense a bill posts in a month always has the same id. */
+export const billExpenseId = (billId: string, month: string) => `bill-${billId}-${month}`.slice(0, 64);
+
+/** "1st", "2nd", "23rd" */
+export function ordinal(n: number): string {
+  const s = n % 100 >= 11 && n % 100 <= 13 ? 'th' : (['th', 'st', 'nd', 'rd'][n % 10] ?? 'th');
+  return `${n}${s}`;
 }
 
 /** Soonest first; same day, by name. */
