@@ -28,9 +28,15 @@ import {
   X,
 } from '../icons';
 import { PASSPHRASE_MIN_LENGTH } from '../lib/backupCrypto';
-import { MONTHLY_BUDGET_STEPS_CENTS, stepBudget } from '../lib/categories';
+import {
+  CATEGORY_BUDGET_STEPS_CENTS,
+  CATEGORY_LABELS,
+  EXPENSE_CATEGORIES,
+  MONTHLY_BUDGET_STEPS_CENTS,
+  stepBudget,
+} from '../lib/categories';
 import { formatCents } from '../lib/money';
-import { hourLabel } from '../lib/reminders';
+import { hourLabel, minutesLabel } from '../lib/reminders';
 import { ordinal, type Bill, type MergeStats } from '../lib/store';
 import {
   FOCUS_LENGTHS,
@@ -40,6 +46,7 @@ import {
   REMINDER_HOUR_MIN,
   WATER_GOAL_MAX,
   WATER_GOAL_MIN,
+  WIND_DOWN_CHOICES,
   type HomeCard,
   type Settings,
 } from '../lib/store';
@@ -67,6 +74,8 @@ type Props = {
   onRemoveBill: (id: string) => void;
   /** Water reminders need local notifications, which the web build lacks. */
   waterReminders: { supported: boolean; busy: boolean; onToggle: (next: boolean) => void };
+  /** The wind-down reminder, the same way. */
+  windDown: { supported: boolean; busy: boolean; onToggle: (next: boolean) => void };
   lockSupported: boolean;
   lockBusy: boolean;
   onToggleLock: (next: boolean) => void;
@@ -211,6 +220,34 @@ export function SettingsSheet(p: Props) {
                   )}
                 </Row>
               ) : null}
+              {p.windDown.supported ? (
+                <Row title="Wind-down reminder" subtitle="A nudge each evening to start getting ready for bed">
+                  {p.windDown.busy ? (
+                    <ActivityIndicator color={colors.textSecondary} />
+                  ) : (
+                    <Switch
+                      value={s.windDownAt !== null}
+                      onValueChange={p.windDown.onToggle}
+                      {...SWITCH_COLORS}
+                      accessibilityLabel="Wind-down reminder"
+                      testID="wind-down-switch"
+                    />
+                  )}
+                </Row>
+              ) : null}
+              {p.windDown.supported && s.windDownAt !== null ? (
+                <Row title="Wind down at" subtitle="Every evening">
+                  <Stepper
+                    value={minutesLabel(s.windDownAt)}
+                    label="wind-down time"
+                    onDown={() => p.onChange({ windDownAt: stepChoice(WIND_DOWN_CHOICES, s.windDownAt!, -1) })}
+                    onUp={() => p.onChange({ windDownAt: stepChoice(WIND_DOWN_CHOICES, s.windDownAt!, 1) })}
+                    canDown={stepChoice(WIND_DOWN_CHOICES, s.windDownAt, -1) !== s.windDownAt}
+                    canUp={stepChoice(WIND_DOWN_CHOICES, s.windDownAt, 1) !== s.windDownAt}
+                    testID="wind-down-time"
+                  />
+                </Row>
+              ) : null}
               <Row title="Focus session" subtitle="Length of one session on the focus timer">
                 <Stepper
                   value={`${s.focusLength} min`}
@@ -233,6 +270,34 @@ export function SettingsSheet(p: Props) {
                   />
                 </Row>
               ) : null}
+            </Section>
+
+            <Section title="Budgets by category">
+              {EXPENSE_CATEGORIES.map((c) => {
+                const cents = s.categoryBudgets[c] ?? null;
+                const label = CATEGORY_LABELS[c];
+                return (
+                  <Row key={c} title={label} subtitle={cents === null ? 'No limit' : 'A month'}>
+                    <Stepper
+                      value={cents === null ? 'Off' : formatCents(cents).replace(/\.00$/, '')}
+                      label={`${label} budget`}
+                      onDown={() =>
+                        p.onChange({
+                          categoryBudgets: { ...s.categoryBudgets, [c]: stepBudget(cents, -1, CATEGORY_BUDGET_STEPS_CENTS) },
+                        })
+                      }
+                      onUp={() =>
+                        p.onChange({
+                          categoryBudgets: { ...s.categoryBudgets, [c]: stepBudget(cents, 1, CATEGORY_BUDGET_STEPS_CENTS) },
+                        })
+                      }
+                      canDown={cents !== null}
+                      canUp={stepBudget(cents, 1, CATEGORY_BUDGET_STEPS_CENTS) !== cents}
+                      testID={`category-budget-${c}`}
+                    />
+                  </Row>
+                );
+              })}
             </Section>
 
             {s.mockPremium ? (

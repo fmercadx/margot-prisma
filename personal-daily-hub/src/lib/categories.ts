@@ -60,6 +60,25 @@ export function isBudget(v: unknown, steps: readonly number[] = BUDGET_STEPS_CEN
   return typeof v === 'number' && Number.isInteger(v) && v >= steps[0] && v <= steps[steps.length - 1];
 }
 
+/** Monthly budget choices for one category, $25 to $3,000. */
+export const CATEGORY_BUDGET_STEPS_CENTS: readonly number[] = [
+  2500, 5000, 7500, 10000, 15000, 20000, 25000, 30000, 40000, 50000, 75000, 100000, 150000, 200000, 300000,
+];
+
+export type CategoryBudgets = Partial<Record<ExpenseCategory, number>>;
+
+/** Known categories with a valid budget, in category order; anything else dropped. */
+export function normalizeCategoryBudgets(v: unknown): CategoryBudgets {
+  const out: CategoryBudgets = {};
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return out;
+  const o = v as Record<string, unknown>;
+  for (const c of EXPENSE_CATEGORIES) {
+    const cents = o[c];
+    if (isBudget(cents, CATEGORY_BUDGET_STEPS_CENTS)) out[c] = cents;
+  }
+  return out;
+}
+
 /** Monthly budget choices, $100 to $10,000. */
 export const MONTHLY_BUDGET_STEPS_CENTS: readonly number[] = [
   10000, 20000, 30000, 40000, 50000, 75000, 100000, 125000, 150000, 200000, 250000, 300000, 400000, 500000, 750000,

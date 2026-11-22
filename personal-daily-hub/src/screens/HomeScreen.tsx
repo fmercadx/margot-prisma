@@ -37,7 +37,7 @@ import { useAppLock } from '../hooks/useAppLock';
 import { useToday } from '../hooks/useClock';
 import { HISTORY_DAYS, LOADED_DAYS, useDailyHub } from '../hooks/useDailyHub';
 import { appLockSupported, authenticate, lockAvailability } from '../lib/appLock';
-import { lastNDays, longDate, parseDateKey, weekdayName, weekStart } from '../lib/date';
+import { addDays, lastNDays, longDate, parseDateKey, weekdayName, weekStart } from '../lib/date';
 import { exportAvailable, removeOldExports, shareExport } from '../lib/exportData';
 import { buildExpensesCsv } from '../lib/exportCsv';
 import { buildExport, protectedFilename } from '../lib/exportJson';
@@ -46,7 +46,8 @@ import { haptic, setHapticsEnabled } from '../lib/haptics';
 import { pickBackupText } from '../lib/importData';
 import { habitHistory } from '../lib/habitHistory';
 import { findInsights } from '../lib/insights';
-import { monthToDate } from '../lib/monthBudget';
+import { budgetCrossing, categoryBudgetUse, categorySpent, monthToDate } from '../lib/monthBudget';
+import { weekReview } from '../lib/weekReview';
 import { memoryDates, memoryOf } from '../lib/onThisDay';
 import { CATEGORY_LABELS, type ExpenseCategory } from '../lib/categories';
 import { parseBackup, type ParsedBackup } from '../lib/importJson';
@@ -60,6 +61,7 @@ import {
 import {
   cancelFocusEnd,
   cancelWaterReminders,
+  cancelWindDown,
   disableDailyReminder,
   enableDailyReminder,
   hourLabel,
@@ -67,6 +69,7 @@ import {
   remindersSupported,
   scheduleFocusEnd,
   scheduleWaterReminders,
+  scheduleWindDown,
 } from '../lib/reminders';
 import { loadAllDays, loadDays } from '../lib/storage';
 import {
@@ -94,6 +97,7 @@ import {
   totalCents,
   unfinishedGoalsBefore,
   WEEK_GOALS_MAX,
+  WIND_DOWN_DEFAULT,
   type Action,
   type MergeStats,
   type Settings,
@@ -293,6 +297,13 @@ export default function HomeScreen() {
     [state.goals, week, isThisWeek],
   );
   const [goalsCarryDismissed, setGoalsCarryDismissed] = useState<string | null>(null);
+  // Last week looked back on, at the top of this week's card, until put away.
+  const lastWeek = addDays(weekStart(today), -7);
+  const reviewedWeek = state.settings.reviewedWeek;
+  const review = useMemo(
+    () => (isThisWeek && reviewedWeek !== lastWeek ? weekReview(state, lastWeek) : null),
+    [state, isThisWeek, reviewedWeek, lastWeek],
+  );
   const goalsRoom = WEEK_GOALS_MAX - weekGoals.length;
 
   const addGoal = (text: string) => {
@@ -548,6 +559,24 @@ export default function HomeScreen() {
     [state.days, today, monthlyBudget],
   );
 
+  const categoryBudgets = state.settings.categoryBudgets;
+  const categoryUse = useMemo(
+    () => categoryBudgetUse(state.days, today.slice(0, 7), categoryBudgets),
+    [state.days, today, categoryBudgets],
+  );
+
+  /** Says so when an expense takes its category close to or past its monthly budget. No amounts: they may be hidden. */
+  const noteBudget = (category: ExpenseCategory, cents: number) => {
+    const budget = categoryBudgets[category];
+    if (budget === undefined || activeDate.slice(0, 7) !== today.slice(0, 7)) return;
+    const before = categorySpent(state.days, today.slice(0, 7), category);
+    const crossing = budgetCrossing(before, before + cents, budget);
+    const name = CATEGORY_LABELS[category];
+    if (crossing === 'over') setMessage(`${name} is over its monthly budget.`);
+    else if (crossing === 'near')
+      setMessage(`${name} has used ${Math.floor(((before + cents) / budget) * 100)}% of its monthly budget.`);
+  };
+
   const deleteExpense = (id: string) => {
     const expense = day.expenses.find((e) => e.id === id);
     if (!expense) return;
@@ -633,6 +662,41 @@ export default function HomeScreen() {
       }
     } finally {
       setWaterBusy(false);
+    }
+  };
+
+  // ---- wind-down reminder --------------------------------------------------
+  // One daily notification; set again at each launch and whenever the time
+  // moves (the same identifier replaces the last one).
+  const windDownAt = state.settings.windDownAt;
+  const [windDownBusy, setWindDownBusy] = useState(false);
+  useEffect(() => {
+    if (!ready || windDownAt === null || !remindersSupported) return;
+    void scheduleWindDown(windDownAt);
+  }, [ready, windDownAt]);
+
+  const toggleWindDown = async (next: boolean) => {
+    setWindDownBusy(true);
+    try {
+      if (!next) {
+        await cancelWindDown();
+        changeSettings({ windDownAt: null });
+        return;
+      }
+      const at = WIND_DOWN_DEFAULT;
+      const result = await scheduleWindDown(at);
+      if (result === 'enabled') {
+        changeSettings({ windDownAt: at });
+      } else {
+        setSettingsOpen(false);
+        setMessage(
+          result === 'denied'
+            ? 'Notifications are off for Daily Hub. Turn them on in Settings.'
+            : 'Couldn’t set the wind-down reminder. Please try again.',
+        );
+      }
+    } finally {
+      setWindDownBusy(false);
     }
   };
 
@@ -846,6 +910,7 @@ export default function HomeScreen() {
       await disableDailyReminder();
       await cancelFocusEnd();
       await cancelWaterReminders();
+      await cancelWindDown();
       setReminderOn(false);
       await erase();
       removeOldExports();
@@ -912,6 +977,8 @@ export default function HomeScreen() {
         leftover={goalsCarryDismissed === week ? 0 : Math.min(leftoverGoals.length, goalsRoom)}
         onBringOver={bringGoalsOver}
         onDismissLeftover={() => setGoalsCarryDismissed(week)}
+        review={review}
+        onDismissReview={() => changeSettings({ reviewedWeek: lastWeek })}
       />
     ),
     notes: (
@@ -1028,6 +1095,7 @@ export default function HomeScreen() {
             expense: { id: newId('exp'), cents, label, category, createdAt: Date.now() },
           });
           haptic.success();
+          noteBudget(category, cents);
           if (monthly) addRepeating(cents, label, category);
         }}
         repeatDay={parseDateKey(activeDate).getDate()}
@@ -1041,10 +1109,12 @@ export default function HomeScreen() {
             expense: { id: newId('exp'), cents: e.cents, label: e.label, category: e.category, createdAt: Date.now() },
           });
           haptic.success();
+          noteBudget(e.category, e.cents);
         }}
         hidden={state.settings.hideAmounts}
         onToggleHidden={() => changeSettings({ hideAmounts: !state.settings.hideAmounts })}
         month={month}
+        categoryBudgets={categoryUse}
       />
     ),
     journal: (
@@ -1174,6 +1244,7 @@ export default function HomeScreen() {
           onChange={changeSettings}
           reminderOn={reminderOn}
           waterReminders={{ supported: remindersSupported, busy: waterBusy, onToggle: toggleWaterReminders }}
+          windDown={{ supported: remindersSupported, busy: windDownBusy, onToggle: toggleWindDown }}
           lockSupported={appLockSupported}
           lockBusy={lockBusy}
           onToggleLock={toggleLock}

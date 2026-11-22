@@ -1,6 +1,6 @@
-// An opt-in daily reminder, and the end of a focus session, scheduled
-// locally with expo-notifications. Nothing is sent to a server and no push
-// token is requested.
+// An opt-in daily reminder, water reminders, a wind-down reminder and the
+// end of a focus session, scheduled locally with expo-notifications.
+// Nothing is sent to a server and no push token is requested.
 //
 // Whether the reminder is on is read back from the OS's list of scheduled
 // notifications rather than stored separately, so the toggle cannot drift
@@ -15,6 +15,8 @@ const FOCUS_ID = 'pdh-focus-end';
 const FOCUS_CHANNEL_ID = 'focus-timer';
 const WATER_PREFIX = 'pdh-water-';
 const WATER_CHANNEL_ID = 'water-reminders';
+const WIND_DOWN_ID = 'pdh-wind-down';
+const WIND_DOWN_CHANNEL_ID = 'wind-down';
 
 /** When water reminders come: every two hours through the day. */
 export const WATER_REMINDER_HOURS: readonly number[] = [10, 12, 14, 16, 18];
@@ -193,6 +195,48 @@ export async function scheduleWaterReminders(now: Date, goalMetToday: boolean): 
   } catch (err) {
     console.warn('[reminders] could not schedule water reminders', err);
     return 'failed';
+  }
+}
+
+/** "10:30 PM", for a time given in minutes after midnight. */
+export function minutesLabel(minutes: number): string {
+  const h = Math.floor(minutes / 60) % 24;
+  const m = minutes % 60;
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+/**
+ * A daily nudge to start getting ready for bed, at `minutes` after
+ * midnight. Reusing the identifier moves an earlier one rather than adding
+ * a second. The wording is fixed: it says nothing about the day logged.
+ */
+export async function scheduleWindDown(minutes: number): Promise<EnableResult> {
+  if (!remindersSupported) return 'unsupported';
+  try {
+    if (!(await permitted(WIND_DOWN_CHANNEL_ID, 'Wind-down reminder'))) return 'denied';
+    await Notifications.scheduleNotificationAsync({
+      identifier: WIND_DOWN_ID,
+      content: { title: 'Time to wind down', body: 'Screens down, lights low. A good night starts now.' },
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DAILY,
+        hour: Math.floor(minutes / 60),
+        minute: minutes % 60,
+        channelId: Platform.OS === 'android' ? WIND_DOWN_CHANNEL_ID : undefined,
+      },
+    });
+    return 'enabled';
+  } catch (err) {
+    console.warn('[reminders] could not schedule the wind-down reminder', err);
+    return 'failed';
+  }
+}
+
+export async function cancelWindDown(): Promise<void> {
+  if (!remindersSupported) return;
+  try {
+    await Notifications.cancelScheduledNotificationAsync(WIND_DOWN_ID);
+  } catch (err) {
+    console.warn('[reminders] could not cancel the wind-down reminder', err);
   }
 }
 
