@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "build:analyzer": "python3 credit-analyzer/browser/build.py --out dist/analyzer",
-    "build:takeoff": "python3 takeoff/browser/build.py --out dist/takeoff"
+    "build:takeoff": "python3 takeoff/browser/build.py --out dist/takeoff",
+    "build:whisper": "node scripts/pages-build.mjs"
   },
   "dependencies": {
     "framer-motion": "^12.43.0",
