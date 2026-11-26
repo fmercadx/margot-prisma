@@ -8,13 +8,13 @@ Four unrelated products share this repository:
   `fmercadx.github.io/margot-prisma/analyzer/`
 - **`shepherds-whisper/`** — the marketing site for an Oregon adult foster
   home, deployed on Railway, not on Pages
-- **`takeoff/`** — a plan takeoff tool: counts symbols and measures areas and
-  lengths on CAD-exported PDFs, in the browser, serving
-  `fmercadx.github.io/margot-prisma/takeoff/`
+- **`plan-takeoff/`** — a plan takeoff tool: counts symbols and measures areas
+  and lengths on CAD-exported PDFs, in the browser, serving
+  `fmercadx.github.io/margot-prisma/plan-takeoff/`
 
 They are independent. `deploy.yml` builds the salon site, the analyzer and the
-takeoff tool into one `dist/`, and `credit-analyzer.yml`,
-`shepherds-whisper.yml` and `takeoff.yml` are path-filtered so no product's
+plan takeoff tool into one `dist/`, and `credit-analyzer.yml`,
+`shepherds-whisper.yml` and `plan-takeoff.yml` are path-filtered so no product's
 changes run another's tests.
 
 **Two Railway services, two configs.** The root `railway.json` and `Procfile`
@@ -118,9 +118,9 @@ cd credit-analyzer/mobile  && npm test
 # The adult family home site: build, then browser checks against dist/
 cd shepherds-whisper && npm ci && npm run build && npm run smoke
 
-# Plan takeoff: 13 engine tests, build into dist/takeoff, browser smoke test
-cd takeoff && npm ci && npm test && npm run build && cd ..
-python3 takeoff/smoke.py --dist dist/takeoff
+# Plan takeoff: 13 engine tests, build into dist/plan-takeoff, browser smoke test
+cd plan-takeoff && npm ci && npm test && npm run build && cd ..
+python3 plan-takeoff/smoke.py --dist dist/plan-takeoff
 ```
 
 The smoke scripts take `--browser <path>` if Playwright's Chromium is not on
@@ -170,7 +170,7 @@ to know where it is running, it is in the wrong file.
 buttons through the platform's file and share APIs; `smoke_native.py` asserts
 it did.
 
-**`takeoff/` is JavaScript, not Python.** Its engine (`takeoff/src/engine/`)
+**`plan-takeoff/` is JavaScript, not Python.** Its engine (`plan-takeoff/src/engine/`)
 takes pdf.js's `OPS` table as an argument and never imports pdf.js, so the
 Node tests run it against the real operator list with no browser. The page
 imports the `legacy` pdf.js build on purpose: the default build assumes the

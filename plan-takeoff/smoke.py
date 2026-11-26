@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drive the built page in a real browser against the synthetic plan.
 
-    python3 takeoff/smoke.py --dist dist/takeoff
+    python3 plan-takeoff/smoke.py --dist dist/plan-takeoff
 
 The Node tests prove the engine; this proves the page around it: that the
 bundled pdf.js worker loads, that a File becomes a rendered sheet and a list
@@ -31,7 +31,7 @@ class _Quiet(http.server.SimpleHTTPRequestHandler):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dist", default="dist/takeoff")
+    ap.add_argument("--dist", default="dist/plan-takeoff")
     ap.add_argument("--file", default=str(FIXTURE))
     ap.add_argument("--port", type=int, default=8911)
     ap.add_argument("--browser", default=None,
@@ -42,7 +42,7 @@ def main(argv=None) -> int:
 
     dist = Path(args.dist).resolve()
     if not (dist / "index.html").exists():
-        sys.exit(f"smoke.py: {dist} has no index.html — run `npm run build` in takeoff/ first")
+        sys.exit(f"smoke.py: {dist} has no index.html — run `npm run build` in plan-takeoff/ first")
 
     # A run that died mid-way leaves the port in TIME_WAIT; don't fail the next one.
     socketserver.TCPServer.allow_reuse_address = True

@@ -1,4 +1,4 @@
-name: takeoff
+name: plan-takeoff
 
 # Path-filtered like the other product workflows, so nothing else in the repo
 # runs this. Deployment is deploy.yml's job; this proves the engine, the build
@@ -6,25 +6,25 @@ name: takeoff
 on:
   pull_request:
     paths:
-      - 'takeoff/**'
-      - '.github/workflows/takeoff.yml'
+      - 'plan-takeoff/**'
+      - '.github/workflows/plan-takeoff.yml'
   push:
     branches: [main]
     paths:
-      - 'takeoff/**'
-      - '.github/workflows/takeoff.yml'
+      - 'plan-takeoff/**'
+      - '.github/workflows/plan-takeoff.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: takeoff-${{ github.ref }}
+  group: plan-takeoff-${{ github.ref }}
   cancel-in-progress: true
 
 defaults:
   run:
-    working-directory: takeoff
+    working-directory: plan-takeoff
 
 jobs:
   build:
@@ -36,7 +36,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: takeoff/package-lock.json
+          cache-dependency-path: plan-takeoff/package-lock.json
 
       - uses: actions/setup-python@v5
         with:
@@ -49,13 +49,13 @@ jobs:
       # transforms, scale notation.
       - run: npm test
 
-      # Writes to ../dist/takeoff, the same place deploy.yml puts it.
+      # Writes to ../dist/plan-takeoff, the same place deploy.yml puts it.
       - run: npm run build
 
       - run: pip install playwright && python -m playwright install --with-deps chromium
 
       # smoke.py takes repo-root-relative paths, so this step must not inherit
-      # the takeoff/ working directory.
+      # the plan-takeoff/ working directory.
       - name: Browser smoke test
         working-directory: .
-        run: python3 takeoff/smoke.py --dist dist/takeoff
+        run: python3 plan-takeoff/smoke.py --dist dist/plan-takeoff

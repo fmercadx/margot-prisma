@@ -15,7 +15,7 @@ const samplePlan = {
 }
 
 /* A relative base, unlike the salon site's '/margot-prisma/': this page is
-   served from /margot-prisma/takeoff/ on Pages and from / by smoke.py, and
+   served from /margot-prisma/plan-takeoff/ on Pages and from / by smoke.py, and
    relative asset URLs work in both without a rebuild.
 
    The output goes into the repo-root dist/ beside the salon site and the
@@ -25,7 +25,7 @@ export default defineConfig({
   base: './',
   plugins: [samplePlan],
   build: {
-    outDir: '../dist/takeoff',
+    outDir: '../dist/plan-takeoff',
     emptyOutDir: true,
     sourcemap: false,
     target: 'es2022',

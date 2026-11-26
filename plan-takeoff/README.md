@@ -2,13 +2,20 @@
 
 Open a plan PDF in the browser, and it counts the symbols and measures the
 areas and lengths drawn on it. Served at
-`fmercadx.github.io/margot-prisma/takeoff/`.
+`fmercadx.github.io/margot-prisma/plan-takeoff/`.
 
 This is the first slice of the idea reviewed in
 [`reports/bobyard-review/`](../reports/bobyard-review/README.md): a
 *vector-first* takeoff tool. CAD exports store a plan as lines and shapes, so
 most of what an estimator counts can be read straight out of the file. No
 model, no training data, no server.
+
+Not to be confused with [`takeoff/`](../takeoff/README.md), the repo's other
+takeoff tool. That one counts electrical symbols from one clicked example and
+measures circuits, with its Python modules running in Pyodide. This one reads
+every repeated shape, hatch, polygon and line off a sheet unprompted, in
+JavaScript over pdf.js's own path data. They share no code. Whether they stay
+two tools or become one is an open decision.
 
 ## What it does
 
@@ -71,15 +78,15 @@ pdf.js, so it has no runtime dependency and can be tested against any shape.
 ## Commands
 
 ```bash
-cd takeoff
+cd plan-takeoff
 npm ci
 npm test                       # 13 engine tests, Node only
-npm run build                  # → ../dist/takeoff
+npm run build                  # → ../dist/plan-takeoff
 cd ..
-python3 takeoff/smoke.py --dist dist/takeoff
+python3 plan-takeoff/smoke.py --dist dist/plan-takeoff
 
 # regenerate the synthetic fixture after changing test/fixture.mjs
-cd takeoff && node test/fixture.mjs test/fixtures/synthetic_plan.pdf
+cd plan-takeoff && node test/fixture.mjs test/fixtures/synthetic_plan.pdf
 ```
 
 `test/fixtures/` is gitignored except for `synthetic_*`. Do not put a client's
