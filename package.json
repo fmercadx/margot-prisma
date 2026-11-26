@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "build:analyzer": "python3 credit-analyzer/browser/build.py --out dist/analyzer",
     "build:takeoff": "python3 takeoff/browser/build.py --out dist/takeoff",
-    "build:whisper": "node scripts/pages-build.mjs"
+    "build:whisper": "node scripts/pages-build.mjs",
+    "build:plan-takeoff": "npm --prefix plan-takeoff run build"
   },
   "dependencies": {
     "framer-motion": "^12.43.0",

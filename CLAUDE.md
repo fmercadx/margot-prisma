@@ -1,6 +1,6 @@
 # Working in this repo
 
-Six unrelated products share this repository:
+Seven unrelated products share this repository:
 
 - **the salon site** — React + Vite + Tailwind, at the repo root, serving
   `fmercadx.github.io/margot-prisma/`
@@ -19,14 +19,19 @@ Six unrelated products share this repository:
   printed scale. A Python command-line tool, and a click screen serving
   `fmercadx.github.io/margot-prisma/takeoff/` that runs the same modules in the
   browser.
+- **`plan-takeoff/`** — a plan takeoff tool: reads every repeated symbol,
+  hatch, polygon and line off a CAD-exported PDF unprompted and reports counts,
+  areas and lengths; JavaScript, in the browser, serving
+  `fmercadx.github.io/margot-prisma/plan-takeoff/`. Shares no code with
+  `takeoff/`; whether they stay two tools is an open decision
 - **`personal-daily-hub/`** — a React Native + Expo (SDK 58) daily dashboard
   app; built for phones through EAS, not deployed from this repo
 
 They are independent. `deploy.yml` builds the salon site, the analyzer, the
-takeoff page and the adult foster home site into one `dist/`, and `credit-analyzer.yml`,
-`shepherds-whisper.yml`, `car-mirror.yml`, `takeoff.yml` and the three
-`personal-daily-hub*` workflows are path-filtered so no product's changes run
-another's tests. `car-mirror.yml` alone also runs on branch pushes, because each
+takeoff page, the adult foster home site and the plan takeoff tool into one
+`dist/`, and `credit-analyzer.yml`, `shepherds-whisper.yml`, `car-mirror.yml`,
+`takeoff.yml`, `plan-takeoff.yml` and the three `personal-daily-hub*`
+workflows are path-filtered so no product's changes run another's tests. `car-mirror.yml` alone also runs on branch pushes, because each
 build publishes a release; its `scope` job skips a branch that hasn't changed
 car-mirror since it left `main`, since GitHub runs path-filtered workflows on new
 branches and force-pushes anyway. `personal-daily-hub-android.yml` also builds
@@ -198,6 +203,10 @@ cd takeoff && python -m pytest test_takeoff.py -q
 npm ci && npm run build:takeoff
 python3 takeoff/browser/smoke.py --dist dist/takeoff
 
+# Plan takeoff: 13 engine tests, build into dist/plan-takeoff, browser smoke test
+cd plan-takeoff && npm ci && npm test && npm run build && cd ..
+python3 plan-takeoff/smoke.py --dist dist/plan-takeoff
+
 # Car mirror: core tests (JDK only), then the viewer page in Chromium.
 # The APK itself cannot build here (dl.google.com is blocked); CI builds it.
 # Maven Central sometimes answers 429 through the proxy: just rerun.
@@ -274,6 +283,12 @@ modern one needs browser features only the newest have.
 **`<a download>` does nothing in a web view.** The native shell rewires those
 buttons through the platform's file and share APIs; `smoke_native.py` asserts
 it did.
+
+**`plan-takeoff/` is JavaScript, not Python.** Its engine (`plan-takeoff/src/engine/`)
+takes pdf.js's `OPS` table as an argument and never imports pdf.js, so the
+Node tests run it against the real operator list with no browser. The page
+imports the `legacy` pdf.js build on purpose: the default build assumes the
+newest browser and threw on the Chromium in this container.
 
 **The page must not scroll sideways at 390px.** Wide tables scroll inside their
 own `overflow-x: auto` container; the document never does. A single
