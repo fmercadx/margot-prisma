@@ -9,6 +9,8 @@ import { IconButton } from './IconButton';
 
 type Props = {
   isPremium: boolean;
+  /** The Premium badge; hidden while everything is included. */
+  showPremium?: boolean;
   onPremiumPress: () => void;
   reminder: { supported: boolean; on: boolean; busy: boolean; hour: number; onToggle: () => void };
   onSettingsPress: () => void;
@@ -25,7 +27,15 @@ type Props = {
   };
 };
 
-export function Header({ isPremium, onPremiumPress, reminder, onSettingsPress, message, logging }: Props) {
+export function Header({
+  isPremium,
+  showPremium = true,
+  onPremiumPress,
+  reminder,
+  onSettingsPress,
+  message,
+  logging,
+}: Props) {
   const now = useClock();
 
   return (
@@ -33,17 +43,19 @@ export function Header({ isPremium, onPremiumPress, reminder, onSettingsPress, m
       <View style={styles.topRow}>
         <Text style={styles.greeting}>{greeting(now)}</Text>
         <View style={styles.actions}>
-          <Pressable
-            onPress={onPremiumPress}
-            disabled={isPremium}
-            accessibilityRole={isPremium ? 'text' : 'button'}
-            accessibilityLabel={isPremium ? 'Premium is active' : 'Go Premium'}
-            style={({ pressed }) => [styles.badge, pressed && { opacity: 0.7 }]}
-            testID="premium-badge"
-          >
-            <Crown size={14} color={colors.premium} strokeWidth={2.5} />
-            <Text style={styles.badgeText}>{isPremium ? 'Premium' : 'Go Premium'}</Text>
-          </Pressable>
+          {showPremium ? (
+            <Pressable
+              onPress={onPremiumPress}
+              disabled={isPremium}
+              accessibilityRole={isPremium ? 'text' : 'button'}
+              accessibilityLabel={isPremium ? 'Premium is active' : 'Go Premium'}
+              style={({ pressed }) => [styles.badge, pressed && { opacity: 0.7 }]}
+              testID="premium-badge"
+            >
+              <Crown size={14} color={colors.premium} strokeWidth={2.5} />
+              <Text style={styles.badgeText}>{isPremium ? 'Premium' : 'Go Premium'}</Text>
+            </Pressable>
+          ) : null}
           {reminder.supported ? (
             <IconButton
               icon={reminder.on ? BellRing : Bell}

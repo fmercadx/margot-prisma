@@ -1,5 +1,14 @@
 // The free/premium line, in one place so the UI and the tests agree on it.
 
+/**
+ * Everything is included: the first Google Play release has no purchases,
+ * and its listing and content rating say so. The free limits and the
+ * paywall below stay in place for a later release with real billing; set
+ * this to false only once purchasePremiumMock has been replaced by Google
+ * Play Billing / StoreKit (and update the Play declarations to match).
+ */
+export const PREMIUM_INCLUDED = true;
+
 export const FREE_NOTES_PER_DAY = 3;
 export const PREMIUM_PRICE_LABEL = '$4.99';
 

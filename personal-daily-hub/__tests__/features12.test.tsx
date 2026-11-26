@@ -13,6 +13,7 @@ jest.setTimeout(30_000);
 
 jest.mock('../src/lib/premium', () => ({
   ...jest.requireActual('../src/lib/premium'),
+  PREMIUM_INCLUDED: false, // these test the paywall kept for a later billing release
   purchasePremiumMock: jest.fn(async () => true),
 }));
 

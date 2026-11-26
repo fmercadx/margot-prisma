@@ -16,9 +16,9 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { DEFAULT_CATEGORY, isBudget, isCategory, MONTHLY_BUDGET_STEPS_CENTS } from './categories';
+import { DEFAULT_CATEGORY, isBudget, isCategory, MONTHLY_BUDGET_STEPS_CENTS, normalizeCategoryBudgets } from './categories';
 import { isSealed, plainCodec, type Codec } from './codec';
-import { isDateKey } from './date';
+import { isDateKey, weekStart } from './date';
 import { MAX_EXPENSE_CENTS } from './money';
 import {
   BILLS_MAX,
@@ -63,6 +63,7 @@ import {
   WATER_GOAL_MAX,
   WATER_GOAL_MIN,
   WATER_MAX,
+  WIND_DOWN_CHOICES,
   type Countdown,
   type DayLog,
   type Expense,
@@ -207,6 +208,9 @@ export function sanitizeSettings(v: unknown): Settings {
       : [...HOME_CARDS],
     homeHidden: Array.isArray(o.homeHidden) ? normalizeHomeHidden(o.homeHidden.slice(0, HOME_CARDS.length * 2)) : [],
     mockPremium: o.mockPremium === true,
+    windDownAt: isNum(o.windDownAt) && WIND_DOWN_CHOICES.includes(o.windDownAt) ? o.windDownAt : null,
+    categoryBudgets: normalizeCategoryBudgets(o.categoryBudgets),
+    reviewedWeek: isDateKey(o.reviewedWeek) ? weekStart(o.reviewedWeek) : null,
   };
 }
 

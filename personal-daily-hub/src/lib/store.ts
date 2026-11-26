@@ -8,6 +8,8 @@ import {
   isBudget,
   isCategory,
   MONTHLY_BUDGET_STEPS_CENTS,
+  normalizeCategoryBudgets,
+  type CategoryBudgets,
   type ExpenseCategory,
 } from './categories';
 import { addDays, isDateKey, lastNDays, parseDateKey, weekStart } from './date';
@@ -80,6 +82,9 @@ export type Settings = {
   // Premium unlocked with the mock purchase (premium.ts). Kept so it survives
   // restarts; a real build restores the entitlement from the store instead.
   mockPremium: boolean;
+  windDownAt: number | null; // minutes after midnight of the wind-down reminder; null = off
+  categoryBudgets: CategoryBudgets; // monthly spending limits by category, in cents
+  reviewedWeek: string | null; // the week (its Sunday) whose review was put away
 };
 
 /** The cards on the home screen, in their default order. */
@@ -157,7 +162,15 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
   homeOrder: [...HOME_CARDS],
   homeHidden: [],
   mockPremium: false,
+  windDownAt: null,
+  categoryBudgets: {},
+  reviewedWeek: null,
 });
+
+/** When the wind-down reminder can be set: 8:30 to 11:30 PM, in half hours (minutes after midnight). */
+export const WIND_DOWN_CHOICES: readonly number[] = [1230, 1260, 1290, 1320, 1350, 1380, 1410];
+/** Where it starts when first switched on: 10 PM. */
+export const WIND_DOWN_DEFAULT = 1320;
 
 /** The lengths a focus session can be set to, in minutes. */
 export const FOCUS_LENGTHS: readonly number[] = [15, 25, 45, 60];
@@ -559,6 +572,18 @@ export function reducer(state: HubState, action: Action): HubState {
         homeOrder: p.homeOrder === undefined ? cur.homeOrder : normalizeHomeOrder(p.homeOrder),
         homeHidden: p.homeHidden === undefined ? cur.homeHidden : normalizeHomeHidden(p.homeHidden),
         mockPremium: p.mockPremium === undefined ? cur.mockPremium : p.mockPremium === true,
+        windDownAt:
+          p.windDownAt === undefined
+            ? cur.windDownAt
+            : p.windDownAt === null
+              ? null
+              : WIND_DOWN_CHOICES.includes(p.windDownAt)
+                ? p.windDownAt
+                : cur.windDownAt,
+        categoryBudgets:
+          p.categoryBudgets === undefined ? cur.categoryBudgets : normalizeCategoryBudgets(p.categoryBudgets),
+        reviewedWeek:
+          p.reviewedWeek === undefined ? cur.reviewedWeek : isDateKey(p.reviewedWeek) ? weekStart(p.reviewedWeek) : null,
       };
       const same =
         next.waterGoal === cur.waterGoal &&
@@ -573,7 +598,10 @@ export function reducer(state: HubState, action: Action): HubState {
         next.focusLength === cur.focusLength &&
         next.homeOrder.join() === cur.homeOrder.join() &&
         next.homeHidden.join() === cur.homeHidden.join() &&
-        next.mockPremium === cur.mockPremium;
+        next.mockPremium === cur.mockPremium &&
+        next.windDownAt === cur.windDownAt &&
+        JSON.stringify(next.categoryBudgets) === JSON.stringify(cur.categoryBudgets) &&
+        next.reviewedWeek === cur.reviewedWeek;
       return same ? state : { ...state, settings: next };
     }
 

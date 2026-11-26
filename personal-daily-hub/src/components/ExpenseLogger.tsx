@@ -11,7 +11,7 @@ import {
 } from '../lib/categories';
 import { clockTime } from '../lib/date';
 import { parseAmountToCents } from '../lib/money';
-import type { MonthToDate } from '../lib/monthBudget';
+import { BUDGET_NEAR_SHARE, type CategoryBudgetUse, type MonthToDate } from '../lib/monthBudget';
 import { expenseName, EXPENSE_LABEL_MAX_LENGTH, ordinal, type Expense } from '../lib/store';
 import { colors, inputColors, HIT, radius, space, tint, type } from '../theme';
 import { Card } from './Card';
@@ -40,6 +40,8 @@ type Props = {
   dayWord?: string;
   /** This month so far against the monthly budget, or null for none. */
   month?: (MonthToDate & { budgetCents: number }) | null;
+  /** This month so far in each category that has a budget. */
+  categoryBudgets?: CategoryBudgetUse[];
 };
 
 export function ExpenseLogger(props: Props) {
@@ -91,6 +93,9 @@ export function ExpenseLogger(props: Props) {
         </Text>
         {budgetCents !== null ? <Budget spent={totalCents} budget={budgetCents} /> : null}
         {props.month ? <MonthBudget {...props.month} /> : null}
+        {props.categoryBudgets && props.categoryBudgets.length > 0 ? (
+          <CategoryBudgets rows={props.categoryBudgets} />
+        ) : null}
       </View>
 
       <View style={styles.form}>
@@ -312,6 +317,57 @@ function MonthBudget({
   );
 }
 
+/**
+ * Each category with a budget, against this month so far: a bar, what is
+ * spent of the limit, and a warning mark once it is close or over.
+ */
+function CategoryBudgets({ rows }: { rows: CategoryBudgetUse[] }) {
+  const { money } = useMoney();
+  return (
+    <View style={styles.catBudgets} testID="category-budgets">
+      <Text style={styles.totalLabel}>This month by category</Text>
+      {rows.map(({ category, spentCents, budgetCents }) => {
+        const Icon = CATEGORY_ICONS[category];
+        const over = spentCents > budgetCents;
+        const near = !over && spentCents >= budgetCents * BUDGET_NEAR_SHARE;
+        const name = CATEGORY_LABELS[category];
+        const text = over
+          ? `${money(spentCents - budgetCents)} over ${money(budgetCents)}`
+          : `${money(spentCents)} of ${money(budgetCents)}`;
+        return (
+          <View
+            key={category}
+            style={styles.catRow}
+            accessible
+            accessibilityLabel={`${name}: ${text} this month${near ? ', close to the limit' : ''}`}
+            testID={`category-budget-${category}`}
+          >
+            <Icon size={14} color={colors.textSecondary} strokeWidth={2.25} />
+            <Text style={styles.catName} numberOfLines={1}>
+              {name}
+            </Text>
+            <View style={[styles.track, styles.catTrack]}>
+              <View
+                style={[
+                  styles.fill,
+                  {
+                    width: `${Math.min(1, spentCents / budgetCents) * 100}%`,
+                    backgroundColor: over || near ? colors.warning : colors.expenses,
+                  },
+                ]}
+              />
+            </View>
+            {over || near ? <TriangleAlert size={12} color={colors.warning} strokeWidth={2.5} /> : null}
+            <Text style={[styles.catText, over && styles.overText]} numberOfLines={1}>
+              {text}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 const field = {
   minHeight: HIT + 4,
   backgroundColor: colors.cardRaised,
@@ -330,6 +386,11 @@ const styles = StyleSheet.create({
   budgetLine: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   budgetText: { ...type.caption, color: colors.textSecondary, flexShrink: 1 },
   overText: { color: colors.text, fontWeight: '600' },
+  catBudgets: { gap: 6, marginTop: space.md },
+  catRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 22 },
+  catName: { ...type.caption, color: colors.text, width: 68 },
+  catTrack: { flex: 1 },
+  catText: { ...type.caption, color: colors.textSecondary, fontVariant: ['tabular-nums'], textAlign: 'right' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: -space.xs },
   chip: {
     flexDirection: 'row',

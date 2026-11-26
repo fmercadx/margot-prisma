@@ -192,3 +192,9 @@ jest.mock('expo-haptics', () => ({
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium', Heavy: 'heavy' },
 }));
+
+// The app ships with everything included (PREMIUM_INCLUDED in premium.ts).
+// The free limits and paywall stay in the code for a later release with
+// real billing, so the suites test them switched on; tests of the shipped,
+// all-included app mock it back to true themselves.
+jest.mock('./src/lib/premium', () => ({ ...jest.requireActual('./src/lib/premium'), PREMIUM_INCLUDED: false }));

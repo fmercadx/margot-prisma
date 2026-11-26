@@ -9,18 +9,22 @@ A one-screen, dark-mode daily dashboard built with React Native and Expo
 | Today's focus | One line for the thing that matters most today; tap to change or clear it. A focus timer (15, 25, 45 or 60 minutes) counts down beside it, keeps running if the app is closed, rings with a local notification at the end, and adds the minutes to the day; stopping early keeps the whole minutes done |
 | Quick Capture | Timestamped notes and to-dos in a list that scrolls inside its card; tap to edit, tick a to-do off; pin up to five notes to the top of every day (a door code, a reminder) and unpin them back into a day; unfinished to-dos from the past week can be brought over to today; search every note, focus and expense label from any day |
 | Habits | Four core habits with cross-out on completion and day streaks, with a word of congratulations at 3, 7, 14, 30 and 60 days; choose the weekdays each habit is for (days off sit under "Not today" and never break a streak); skip a habit for a day when life gets in the way (it stops counting and its streak carries on); put habits in any order; each habit's panel shows its last four weeks a square a day (done, missed, skipped, day off), how many planned days it was done, and its longest streak; custom habits, which can be renamed (Premium) |
-| This week | Up to three goals for the week, Sunday to Saturday; tick them off as they get done; last week's unfinished ones can be brought over with one tap; searchable with everything else |
+| This week | Up to three goals for the week, Sunday to Saturday; tick them off as they get done; last week's unfinished ones can be brought over with one tap; searchable with everything else. At the top, until you put it away, last week in review: goals done, habits done, the steadiest habit, mood, sleep, focus and spending (only what was logged) |
 | Wellbeing | Glass-by-glass progress bar toward your water goal, with whether today is on pace for it (spread evenly from 8 AM to 8 PM), and optional reminders every two hours from 10 AM to 6 PM that stop for the day once the goal is reached; last night's sleep in half hours; 1–10 energy slider; five-face mood check-in |
-| Expenses | Amount, optional label and a category (food, transport, shopping, bills, fun, other); running total, what's left of an optional daily budget, the month so far against an optional monthly budget (with what each day left can take), and where the money went; recent expenses one tap away; "Repeat monthly" turns an expense into a monthly bill that is added again on the same day each month; an eye button that hides every amount on screen |
+| Expenses | Amount, optional label and a category (food, transport, shopping, bills, fun, other); running total, what's left of an optional daily budget, the month so far against an optional monthly budget (with what each day left can take), optional monthly budgets by category, each against the month so far, with a word when one passes 80% or goes over, and where the money went; recent expenses one tap away; "Repeat monthly" turns an expense into a monthly bill that is added again on the same day each month; an eye button that hides every amount on screen |
 | Journal | A few lines at the end of the day, with a different question each weekday, and "three good things", a short gratitude list; both searchable |
 | On this day | What you wrote a week, a month and a year ago: focus, good things, the first line of the journal (or a note). Hidden when there's nothing to show |
 | Coming up | Countdowns to the dates you're looking forward to: a trip, a birthday, a deadline |
 | Insights | Patterns in your own logs: energy and mood after more sleep or less, mood on days you did a habit, energy when you reached your water goal, the weekday you spend most (Premium) |
 | History | Day details can be shared as plain text through the share sheet. Weekly summary (water, sleep, energy, mood, habits done, spending, where most went), water / sleep / energy / mood / spending charts, a month calendar shaded by habits done or by mood, with the month's totals and where its money went, and every past day in full (Premium) |
-| Settings | Water goal, water reminders, monthly bills (change the day, or stop one), reminder time, daily and monthly budgets, focus session length, haptic feedback, which home-screen cards show and in what order, app lock and how soon it locks again, export (optionally protected with a passphrase) and restore your data, expenses as a spreadsheet (CSV), erase everything |
+| Settings | Water goal, water reminders, a wind-down reminder each evening (8:30 to 11:30 PM), monthly bills (change the day, or stop one), reminder time, daily and monthly budgets, budgets by category, focus session length, haptic feedback, which home-screen cards show and in what order, app lock and how soon it locks again, export (optionally protected with a passphrase) and restore your data, expenses as a spreadsheet (CSV), erase everything |
 
 Deleting a note, a goal, an expense or a custom habit shows **Undo** for five
 seconds.
+
+Everything marked (Premium) is included for everyone in the current release:
+there are no purchases (`PREMIUM_INCLUDED` in `src/lib/premium.ts`; see
+Premium below).
 
 ## Security and privacy
 
@@ -33,11 +37,11 @@ What protects what, and why each is there:
 | App lock (optional) | Fingerprint, face or phone PIN at launch and after time in the background: 30 s by default, or at once, 1 min or 5 min. While on, Android shows a blank preview in recent apps and blocks screenshots (FLAG_SECURE); iOS blurs the app switcher. | `src/lib/appLock.ts`, `src/hooks/useAppLock.ts` |
 | No network | The release APK has **no INTERNET permission**, so Android itself refuses any connection. The app makes none anyway. | `app.config.js` |
 | No cloud backup | `allowBackup` is off, so the data never lands in a Google backup. Export is the explicit way to take a copy. | `app.json` |
-| Fewest permissions | Push, launcher-badge, storage and photo (`READ_MEDIA_IMAGES`) permissions are stripped; CI fails if one comes back. | `app.json`, APK workflow |
+| Fewest permissions | Push, launcher-badge, storage, photo (`READ_MEDIA_IMAGES`) and draw-over-other-apps (`SYSTEM_ALERT_WINDOW`) permissions are stripped; CI fails if one comes back. | `app.json`, APK workflow |
 | Passphrase-protected backups | Export can seal the file with AES-256-GCM under a key derived from a passphrase with scrypt (N = 2^15, r = 8, p = 1; `@noble/hashes`, audited, pure JS). The cost settings and salt are bound in as authenticated data, so editing them makes the file fail to open rather than open weaker. On restore, a file's cost settings are checked against hard limits (N ≤ 2^16, r ≤ 8, p ≤ 2, so at most 64 MB) before any work, so a crafted file can't freeze the phone. There is no recovery for a forgotten passphrase. | `src/lib/backupCrypto.ts` |
 | Spreadsheets can't run your labels | In the CSV export, a label starting with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with an apostrophe, so Excel, Sheets and Numbers show it as text instead of running it as a formula (CSV injection). Commas, quotes and line breaks are quoted per RFC 4180. | `src/lib/exportCsv.ts` |
-| Erase everything | Settings → Erase all data, after a confirmation (and the owner's fingerprint, face or PIN when app lock is on). Every stored value is removed, quarantined copies included, and then the encryption key is deleted from the Keystore / Keychain, so a copy of the database taken earlier can't be decrypted. A new key is made for whatever comes next. The daily reminder, water reminders and any focus-timer notification are cancelled and old export files are deleted too. | `erase` in `src/hooks/useDailyHub.ts` |
-| Lock-screen notifications say nothing personal | The daily reminder, water reminders and the focus timer's notification are fixed wording ("Focus session done", "Time for a glass of water"). None ever includes your focus, how much you drank, notes or anything else you logged, since a lock screen is read by whoever picks the phone up. All are scheduled on the phone; no push service is involved, and the iOS build carries no push entitlement. | `src/lib/reminders.ts` |
+| Erase everything | Settings → Erase all data, after a confirmation (and the owner's fingerprint, face or PIN when app lock is on). Every stored value is removed, quarantined copies included, and then the encryption key is deleted from the Keystore / Keychain, so a copy of the database taken earlier can't be decrypted. A new key is made for whatever comes next. The daily reminder, water reminders, the wind-down reminder and any focus-timer notification are cancelled and old export files are deleted too. | `erase` in `src/hooks/useDailyHub.ts` |
+| Lock-screen notifications say nothing personal | The daily reminder, water reminders, the wind-down reminder and the focus timer's notification are fixed wording ("Focus session done", "Time for a glass of water", "Time to wind down"). None ever includes your focus, how much you drank, notes or anything else you logged, since a lock screen is read by whoever picks the phone up. All are scheduled on the phone; no push service is involved, and the iOS build carries no push entitlement. | `src/lib/reminders.ts` |
 | Apple privacy manifest | The iOS app declares no tracking and no collected data types (nothing leaves the phone), plus the standard reasons for the system APIs React Native and Expo use. CI checks the built app's manifest. | `app.json` (`ios.privacyManifests`) |
 | Restore treats the file as hostile | A picked backup is size-capped (5 MB), must name this app and a format it knows, and passes the same sanitizers as stored data, with length caps on every string, per-day caps on notes and expenses, real non-future dates only, and at most ten years. Restoring only adds: nothing on the phone is overwritten, and the picker's plain-JSON copy is deleted from the cache once read. | `src/lib/importJson.ts`, `mergeBackup` in `store.ts` |
 
@@ -47,8 +51,9 @@ Limits worth knowing:
   add to the encryption. The key opens without a fingerprint, so a lock
   change or a new fingerprint can never make the data unreadable.
 - "Hide amounts" changes only what is drawn: it shows every amount of your
-  money, in Expenses, History and day details, and in what a screen reader
-  says, as "$•••". The amounts are stored (encrypted) as before.
+  money, in Expenses (budgets by category included), History, day details
+  and last week's review, and in what a screen reader says, as "$•••". The
+  message when a category nears or passes its budget never names an amount. The amounts are stored (encrypted) as before.
 - "Lock again after: at once" also locks after the share sheet or the file
   chooser, which briefly send the app to the background. The default 30 s
   grace period exists so export and restore don't ask twice.
@@ -128,9 +133,10 @@ Android specifics already handled:
 - Only the permissions the app uses. `android.blockedPermissions` in
   `app.json` strips what the template and libraries add but the app never
   needs: storage (it touches no files), Firebase push
-  (`c2dm.permission.RECEIVE`; the reminder is local), and 16 launcher-badge
+  (`c2dm.permission.RECEIVE`; the reminder is local), 16 launcher-badge
   permissions from expo-notifications' badge library (the app never sets a
-  badge). The APK build reads that list and fails if any of them reappears
+  badge), and the template's `SYSTEM_ALERT_WINDOW` ("display over other
+  apps", used only by the development menu). The APK build reads that list and fails if any of them reappears
   after a library update, or if the reminder's `POST_NOTIFICATIONS` /
   `RECEIVE_BOOT_COMPLETED` go missing. `WAKE_LOCK` and
   `ACCESS_NETWORK_STATE` stay: Firebase and Play-services code still in the
@@ -305,6 +311,16 @@ What keeps it safe (`src/hooks/useDailyHub.ts`, `src/lib/storage.ts`):
 
 ## Premium (mock)
 
+**In the current release everything is included.** `PREMIUM_INCLUDED` in
+`src/lib/premium.ts` is `true`: there is no Premium badge, no price and no
+paywall, and the Google Play listing declares no purchases. The free limits,
+the paywall and the mock purchase below stay in the code (and in the tests,
+which switch the flag off) for a later release with real billing. Turning
+paid Premium on means replacing the mock with Google Play Billing /
+StoreKit, setting the flag to `false`, and updating the Play Console
+declarations (content rating: digital purchases; sign-in details: payments)
+in the same release.
+
 Unlocking is a mock: the button says "Demo build — no payment is taken",
 waits a moment and unlocks. The unlock is then remembered on the phone (in
 settings, sealed like everything else), so it lasts through restarts,
@@ -343,7 +359,14 @@ Before release, replace that one function:
 - `ios.bundleIdentifier` is not set in `app.json`; EAS will ask for it.
 - Bump `android.versionCode` for every release you hand out; Android only
   installs an update over an older code.
-- The icon and splash images in `assets/` are Expo's template placeholders.
+- The icon is a ring of the six module colours around a check, drawn as one
+  SVG in `store/make-icons.cjs`, which renders every size: the app icon,
+  Android's adaptive foreground, background and monochrome layers, the
+  splash image, the notification icon, the favicon and the 512 px Play icon.
+- `store/` holds the Google Play listing: the descriptions, the icon, the
+  1024x500 feature graphic and the screenshots, rendered from the web build
+  with demo data by `store/make-listing.cjs`. The privacy policy is
+  `PRIVACY.md`.
 
 ## Layout
 
@@ -376,11 +399,12 @@ src/lib/backupCrypto.ts     passphrase-protected backups: scrypt + AES-256-GCM
 src/lib/dayText.ts          one day as plain text, for sharing (pure)
 src/lib/haptics.ts          feedback taps, switchable, silent on web
 src/lib/mood.ts             the five mood words
-src/lib/reminders.ts        daily local reminder and the focus timer's end (reminders.web.ts stubs them)
+src/lib/reminders.ts        daily, water and wind-down reminders, the focus timer's end (reminders.web.ts stubs them)
 src/lib/waterPace.ts        how today's water compares with the clock (pure)
-src/lib/monthBudget.ts      the month so far against a monthly budget (pure)
+src/lib/monthBudget.ts      the month so far against a monthly budget, and by category (pure)
 src/lib/onThisDay.ts        which days "On this day" looks back to, and what to show (pure)
 src/lib/habitHistory.ts     one habit's last four weeks, planned vs done, longest streak (pure)
+src/lib/weekReview.ts       last week at a glance, for the top of "This week" (pure)
 src/components/homeCards.ts the home-screen cards' names, for arranging them
 src/lib/premium.ts          free limits, paywall copy, the mock purchase
 src/lib/utf8.ts             UTF-8 for the cipher, independent of Hermes

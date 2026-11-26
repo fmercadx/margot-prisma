@@ -41,3 +41,15 @@ export async function scheduleWaterReminders(_now: Date, _goalMetToday: boolean)
 }
 
 export async function cancelWaterReminders(): Promise<void> {}
+
+export function minutesLabel(minutes: number): string {
+  const h = Math.floor(minutes / 60) % 24;
+  const m = minutes % 60;
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+export async function scheduleWindDown(_minutes: number): Promise<EnableResult> {
+  return 'unsupported';
+}
+
+export async function cancelWindDown(): Promise<void> {}
