@@ -2,7 +2,7 @@
 
 **Developer:** Quiet Hearth Software
 **Effective:** November 26, 2026
-**Contact:** CONTACT_EMAIL
+**Contact:** the developer email on the app's Google Play page
 
 Personal Daily Hub is a daily planner and log: focus, notes and to-dos,
 habits, weekly goals, water, sleep, energy, mood, expenses, a journal and
@@ -95,4 +95,6 @@ before that version is released.
 
 ## Contact
 
-Questions about this policy or the app: **CONTACT_EMAIL**.
+Questions about this policy or the app: write to Quiet Hearth Software at
+the developer contact email shown on Personal Daily Hub's Google Play page
+(under "App support").
