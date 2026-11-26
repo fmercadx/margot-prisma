@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Personal Daily Hub",
-    "slug": "personal-daily-hub",
+    "slug": "fmercadx",
     "version": "1.12.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -115,6 +115,11 @@
         }
       ],
       "expo-sharing"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "3fc59778-68a3-4dae-8f6b-40020a9b7500"
+      }
+    }
   }
 }
