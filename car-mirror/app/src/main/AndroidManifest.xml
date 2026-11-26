@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Server sockets need INTERNET even though nothing leaves the phone's hotspot. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- To tell the networks the phone is a client of from the hotspot it serves (Hotspot.kt). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Keeps the phone screen on (dimmed) while mirroring; a screen that turns off has nothing to mirror. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Optional "Dim this phone while mirroring": brightness only, restored afterwards. -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <!--
+        Only for the opt-in "pause the picture while the car is moving": GPS speed, read while
+        mirroring, never stored or sent. Asked for when the user turns that switch on.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <!--
+        Only for the optional "start from your car's Bluetooth": to list the phone's paired
+        Bluetooth devices so the user can pick their car, and to notice when the phone connects
+        to it. Nothing about Bluetooth devices is stored beyond the one chosen, or sent anywhere.
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+
+    <!-- GPS is only needed for the optional driving pause; the app works without it. -->
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Long-press the app icon: "Start mirroring". -->
+            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
+        </activity>
+
+        <!--
+            One service does both jobs: it captures the screen (a media-projection foreground
+            service) and it is the VpnService that gives the phone an address the car's
+            browser will open. The VPN carries no traffic; see MirrorService.establishTunnel.
+            The location type is claimed only when the driving pause is on.
+        -->
+        <service
+            android:name=".MirrorService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection|location"
+            android:permission="android.permission.BIND_VPN_SERVICE">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
+        <!-- Touch control. Performs gestures only; see res/xml/touch_service.xml. -->
+        <service
+            android:name=".TouchService"
+            android:exported="true"
+            android:label="@string/touch_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/touch_service" />
+        </service>
+
+        <!--
+            Offers to start when the phone connects to the car's Bluetooth. ACL_CONNECTED is a
+            protected broadcast only the system can send, and one of the few still delivered
+            to a receiver in the manifest.
+        -->
+        <receiver
+            android:name=".CarBluetoothReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Quick Settings tile: start and stop mirroring. -->
+        <service
+            android:name=".MirrorTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_notification"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

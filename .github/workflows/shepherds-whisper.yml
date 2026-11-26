@@ -61,6 +61,19 @@ jobs:
       # telling a family their request was delivered when it was not.
       - run: npm run test:form
 
+      # The privacy page states what the code does with an enquiry. This fails
+      # if the page stops saying it — a policy that drifts from the code is
+      # worse than none.
+      - run: npm run test:privacy
+
+      # The Pages copy: a different base path, no SPA fallback and no server,
+      # so the tour form must fall back rather than error. Built from the repo
+      # root because that is where dist/ lives.
+      - run: npm run build:whisper
+        working-directory: .
+
+      - run: npm run test:pages
+
       - name: Check the built site actually serves
         run: |
           PORT=8080 node server.mjs &

@@ -1,0 +1,185 @@
+name: car-mirror app
+
+# Path-filtered like the other products' workflows, so nothing outside
+# car-mirror/ runs this. It builds on pushes to any branch (not only main)
+# because each build publishes the installable APK as a release; a branch
+# build is marked pre-release.
+on:
+  push:
+    paths:
+      - 'car-mirror/**'
+      - '.github/workflows/car-mirror.yml'
+  workflow_dispatch:
+
+# Every action below is pinned to a full commit SHA (its version tag in the comment), so a
+# moved or hijacked tag can't change what runs with permission to publish releases.
+permissions:
+  contents: read
+
+concurrency:
+  group: car-mirror-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: car-mirror
+
+jobs:
+  # The path filter alone isn't enough: GitHub also ran this for a new branch that changed
+  # nothing here (another product's work) and for force-pushes that changed nothing (a branch
+  # reset to main after a squash merge), each publishing a stray pre-release. Off main, build
+  # only when the branch itself changed car-mirror since it left main.
+  scope:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0 # the merge base with main
+      - id: diff
+        working-directory: .
+        run: |
+          if [ "$GITHUB_REF" = "refs/heads/main" ] || [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          elif git diff --quiet origin/main...HEAD -- car-mirror .github/workflows/car-mirror.yml; then
+            echo "This branch hasn't changed car-mirror since it left main: nothing to build."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: scope
+    if: needs.scope.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # publishing the APK as a release
+    timeout-minutes: 30
+    env:
+      # Set once the Google Play upload key is added as repo secrets; see car-mirror/README.md.
+      HAS_UPLOAD_KEY: ${{ secrets.CAR_MIRROR_UPLOAD_KEYSTORE != '' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4.4.3
+      # Frame hub, HTTP server, pairing, encryption, video packing. Plain JVM, no Android SDK.
+      # Where the runner has ffmpeg, it also decodes the MP4 that video mode packs.
+      - run: FFMPEG="$(command -v ffmpeg || true)" ./gradlew -PcoreOnly :core:test --console=plain
+
+      # The page the car's browser loads, driven in Chromium against a fake
+      # phone: draws frames, letterboxes, recovers from a dropped connection,
+      # sends taps and swipes to the right spot, blanks while paused, and makes
+      # no request off the phone. See tools/viewer-smoke.cjs.
+      - name: Viewer page in Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright@1.49.1
+          npx playwright install --with-deps chromium
+          CONTROL="$PWD/build/smoke-control"
+          ./gradlew -PcoreOnly :core:demoServer --args="8090 --control $CONTROL" --console=plain > demo.log 2>&1 &
+          DEMO=$!
+          for i in $(seq 1 180); do grep -q READY demo.log && break; sleep 1; done
+          node tools/viewer-smoke.cjs http://127.0.0.1:8090/ --control "$CONTROL" || { cat demo.log; exit 1; }
+          kill $DEMO || true
+
+      # Video mode: the fake phone streams H.264 and the page plays it through Media Source
+      # Extensions. Playwright's Chromium may lack H.264; the test then uses the runner's
+      # Google Chrome. See tools/video-smoke.cjs.
+      - name: Video mode in a browser
+        run: |
+          CONTROL="$PWD/build/video-control"
+          ./gradlew -PcoreOnly :core:demoServer --args="8091 --control $CONTROL --video" --console=plain > video-demo.log 2>&1 &
+          DEMO=$!
+          for i in $(seq 1 180); do grep -q READY video-demo.log && break; sleep 1; done
+          node tools/video-smoke.cjs http://127.0.0.1:8091/ --control "$CONTROL" || { cat video-demo.log; exit 1; }
+          kill $DEMO || true
+
+      # The APK, signed with the owner's private key once it is in the repo's secrets (see
+      # README "Signing"), so nobody else can make an APK a phone accepts as an update. The
+      # same key signs the Google Play bundle, and the APK is what the Galaxy Store takes.
+      # Without the secrets (a fork, say) it falls back to the public test key, and the
+      # release says so. The key is written to the runner's temp folder and deleted after.
+      - name: Signed builds
+        env:
+          UPLOAD_KEYSTORE_BASE64: ${{ secrets.CAR_MIRROR_UPLOAD_KEYSTORE }}
+          CAR_MIRROR_UPLOAD_PASSWORD: ${{ secrets.CAR_MIRROR_UPLOAD_PASSWORD }}
+        run: |
+          N=${{ github.run_number }}
+          if [ "$HAS_UPLOAD_KEY" = true ]; then
+            export CAR_MIRROR_UPLOAD_KEYSTORE="$RUNNER_TEMP/upload.keystore"
+            echo "$UPLOAD_KEYSTORE_BASE64" | base64 -d > "$CAR_MIRROR_UPLOAD_KEYSTORE"
+            ./gradlew :app:assembleRelease :app:bundleRelease -PplayUpload -PbuildNumber=$N --console=plain
+            rm -f "$CAR_MIRROR_UPLOAD_KEYSTORE"
+            cp app/build/outputs/bundle/release/app-release.aab car-mirror-$N.aab
+            echo "SIGNING_NOTE=Signed with the owner's private key." >> "$GITHUB_ENV"
+          else
+            ./gradlew :app:assembleRelease -PbuildNumber=$N --console=plain
+            echo "SIGNING_NOTE=Signed with the public test key: the private key isn't in this repo's secrets yet." >> "$GITHUB_ENV"
+          fi
+          cp app/build/outputs/apk/release/app-release.apk car-mirror-$N.apk
+
+      # Opens the real phone screen in Robolectric in each state (ready, waiting, paused,
+      # light and dark), checks the right controls show, and saves a picture of each.
+      # The pictures go on the release as preview-*.png.
+      - name: Phone screen previews
+        run: |
+          ./gradlew :app:testDebugUnitTest --console=plain
+          for f in app/build/screenshots/*.png; do
+            name=$(basename "$f")
+            case "$name" in
+              store-*) cp "$f" "$name" ;;          # 1080x1920 Play Store screenshots
+              *) cp "$f" "preview-$name" ;;        # full-page previews for review
+            esac
+          done
+          ls -l preview-*.png store-*.png
+
+      # Everything a store listing needs, zipped onto the release: captioned screenshots made
+      # from this build's store-*.png, the icon and banner, the listing text one file per box,
+      # the Play Console answers and the submission checklist.
+      - name: Store kit
+        run: |
+          sudo apt-get install -y fonts-inter > /dev/null || echo "fonts-inter unavailable: captions use a fallback font"
+          node tools/store-kit.cjs --shots . --out store-kit
+          (cd store-kit && zip -qr ../car-mirror-store-kit-${{ github.run_number }}.zip .)
+          cp store-kit/screenshots/listing-*.png .
+          ls -l car-mirror-store-kit-*.zip listing-*.png
+
+      # Paths below are repo-root relative: `defaults.run` does not apply to `uses:` steps.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: car-mirror-apk
+          path: car-mirror/car-mirror-${{ github.run_number }}.apk
+
+      # The Google Play bundle: a workflow artifact, kept off the public release.
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: env.HAS_UPLOAD_KEY == 'true'
+        with:
+          name: car-mirror-play-bundle
+          path: car-mirror/car-mirror-*.aab
+
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          tag_name: car-mirror-build-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: Car Mirror build ${{ github.run_number }}
+          prerelease: ${{ github.ref != 'refs/heads/main' }}
+          files: |
+            car-mirror/car-mirror-${{ github.run_number }}.apk
+            car-mirror/preview-*.png
+            car-mirror/store-*.png
+            car-mirror/listing-*.png
+            car-mirror/car-mirror-store-kit-*.zip
+          body: |
+            Open this page on your Android phone and tap **car-mirror-${{ github.run_number }}.apk** below to install it.
+            Installing over an earlier build keeps your settings. Setup steps: car-mirror/README.md.
+            ${{ env.SIGNING_NOTE }}
+            The preview-*.png files show what each screen of this build looks like. To sell it,
+            download **car-mirror-store-kit-${{ github.run_number }}.zip**: captioned listing
+            screenshots (listing-*.png, also attached here), icon, banner, listing text and a
+            step-by-step checklist.
+
+            Built from ${{ github.sha }} on `${{ github.ref_name }}`.

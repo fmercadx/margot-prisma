@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Takeoff Counter</title>
+<!-- Inline so the page makes exactly zero requests it did not intend to. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%231f4d3d'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%23f7f8f6' stroke-width='2.4'/%3E%3Cpath d='M13 9v14M19 9v14' stroke='%23f7f8f6' stroke-width='2.4'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --paper:#f7f8f6; --card:#fff; --card2:#eef1ed;
+    --ink:#161a17; --ink2:#4d574f; --ink3:#7d8880;
+    --line:#dbe0da; --line2:#b6bfb7;
+    --pine:#1f4d3d; --pineS:#e5efe9;
+    --brass:#8a6a1f; --brassS:#f7f0dd;
+    --ox:#8f2f28; --oxS:#f9eae8;
+    --review:#eb7800;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --disp:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme=light]){
+      --paper:#101310; --card:#181c19; --card2:#212722;
+      --ink:#e8ebe7; --ink2:#9ba69d; --ink3:#727d75;
+      --line:#2a312c; --line2:#3d463f;
+      --pine:#7fc4a6; --pineS:#152420;
+      --brass:#d3ab5b; --brassS:#282116;
+      --ox:#e59189; --oxS:#2a1a18;
+    }
+  }
+  :root[data-theme=dark]{
+    --paper:#101310; --card:#181c19; --card2:#212722;
+    --ink:#e8ebe7; --ink2:#9ba69d; --ink3:#727d75;
+    --line:#2a312c; --line2:#3d463f;
+    --pine:#7fc4a6; --pineS:#152420;
+    --brass:#d3ab5b; --brassS:#282116;
+    --ox:#e59189; --oxS:#2a1a18;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:var(--sans);font-size:15px;line-height:1.5;
+    -webkit-font-smoothing:antialiased;display:flex;flex-direction:column}
+  a{color:var(--pine)}
+  button,input,select{font:inherit;color:inherit}
+  a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{
+    outline:2px solid var(--pine);outline-offset:2px}
+  .hide{display:none!important}
+
+  header.bar{display:flex;align-items:center;justify-content:space-between;gap:1rem;
+    flex-wrap:wrap;padding:.7rem 1rem;border-bottom:1px solid var(--line);background:var(--card)}
+  .brand{font-family:var(--disp);font-size:1.25rem;font-weight:600;letter-spacing:-.015em}
+  .brand span{font-family:var(--mono);font-size:.56rem;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--ink3);display:block;margin-top:.1rem}
+  .rt{font-family:var(--mono);font-size:.62rem;letter-spacing:.11em;
+    text-transform:uppercase;color:var(--ink3);display:flex;align-items:center;gap:.5rem}
+  .dot{width:.5rem;height:.5rem;border-radius:50%;background:var(--line2);flex:none}
+  .rt.loading .dot,.rt.busy .dot{background:var(--brass);animation:pulse 1.1s ease-in-out infinite}
+  .rt.ready .dot{background:var(--pine)}
+  .rt.failed .dot{background:var(--ox)}
+  @keyframes pulse{0%,100%{opacity:.25}50%{opacity:1}}
+  .draft{font-family:var(--mono);font-size:.6rem;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ox);border:1px solid currentColor;border-radius:3px;padding:.1rem .4rem}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.4rem;
+    border:1px solid var(--line2);background:var(--card);border-radius:6px;
+    padding:.45rem .8rem;cursor:pointer;font-size:.9rem;min-height:2.25rem}
+  .btn:hover{border-color:var(--ink3)}
+  .btn.primary{background:var(--pine);border-color:var(--pine);color:var(--paper)}
+  .btn.on{background:var(--pineS);border-color:var(--pine);color:var(--pine)}
+  .btn[disabled]{opacity:.45;cursor:default}
+  .btn.small{padding:.2rem .55rem;min-height:1.8rem;font-size:.82rem}
+
+  /* Before a drawing is open */
+  .intro{max-width:44rem;margin:0 auto;padding:3rem 1.25rem 4rem}
+  h1{font-family:var(--disp);font-size:1.9rem;line-height:1.15;letter-spacing:-.02em;
+    font-weight:600;margin:0 0 .6rem}
+  .lede{color:var(--ink2);font-size:1.02rem}
+  .drop{margin:1.6rem 0;border:1.5px dashed var(--line2);border-radius:10px;padding:2rem 1rem;
+    text-align:center;background:var(--card)}
+  .drop.over{border-color:var(--pine);background:var(--pineS)}
+  .drop p{margin:.6rem 0 0;color:var(--ink3);font-size:.88rem}
+  ol.steps{padding-left:1.2rem;color:var(--ink2)}
+  ol.steps li{margin:.3rem 0}
+  .note{font-size:.88rem;color:var(--ink2);background:var(--card2);border-radius:8px;padding:.7rem .9rem}
+
+  /* Working */
+  .ws{flex:1;display:grid;grid-template-columns:9.5rem minmax(0,1fr) 21rem;min-height:0}
+  .sheets{border-right:1px solid var(--line);overflow:auto;padding:.5rem;background:var(--card)}
+  .sheets button{display:block;width:100%;text-align:left;border:0;background:none;cursor:pointer;
+    padding:.4rem .5rem;border-radius:5px;font-size:.86rem}
+  .sheets button:hover{background:var(--card2)}
+  .sheets button.cur{background:var(--pineS);color:var(--pine);font-weight:600}
+  .sheets small{display:block;font-family:var(--mono);font-size:.62rem;color:var(--ink3)}
+  .viewer{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .tools{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;padding:.45rem .6rem;
+    border-bottom:1px solid var(--line);background:var(--card)}
+  .tools .hint{font-size:.84rem;color:var(--ink2);margin-left:.4rem}
+  .tools .hint.act{color:var(--pine);font-weight:600}
+  .scroller{flex:1;overflow:auto;background:var(--card2);position:relative;min-height:0}
+  .stage{position:relative;margin:0 auto}
+  .stage canvas{display:block;background:#fff}
+  .stage svg{position:absolute;inset:0;width:100%;height:100%}
+  .stage.picking svg{cursor:crosshair}
+  .busy-veil{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    background:color-mix(in srgb,var(--paper) 55%,transparent);font-size:.92rem;color:var(--ink2)}
+  .panel{border-left:1px solid var(--line);overflow:auto;padding:.9rem;background:var(--card)}
+  .panel h2{font-family:var(--disp);font-size:1.05rem;font-weight:600;margin:1.2rem 0 .5rem}
+  .panel h2:first-child{margin-top:0}
+  .row{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
+  .field{flex:1;min-width:8rem;border:1px solid var(--line2);border-radius:6px;padding:.4rem .55rem;
+    background:var(--paper)}
+  .items{list-style:none;margin:.6rem 0 0;padding:0}
+  .items li{display:flex;align-items:center;gap:.5rem;padding:.35rem 0;border-bottom:1px solid var(--line);
+    font-size:.88rem}
+  .sw{width:.8rem;height:.8rem;border-radius:2px;flex:none}
+  .items .nm{flex:1;min-width:0;overflow-wrap:anywhere}
+  .items small{color:var(--ink3);font-family:var(--mono);font-size:.64rem}
+  .msg{font-size:.84rem;margin:.5rem 0;color:var(--ink2)}
+  .msg.err{color:var(--ox)}
+  table.res{width:100%;border-collapse:collapse;font-size:.86rem;margin-top:.4rem}
+  table.res th,table.res td{text-align:left;padding:.3rem .25rem;border-bottom:1px solid var(--line)}
+  table.res td.n,table.res th.n{text-align:right;font-variant-numeric:tabular-nums}
+  table.res tr.sub td{color:var(--ink3);font-size:.8rem;padding-top:.1rem}
+  .detail{margin-top:.8rem;border:1px solid var(--line);border-radius:8px;padding:.6rem .7rem;font-size:.86rem;
+    background:var(--paper)}
+  .detail dl{display:grid;grid-template-columns:auto 1fr;gap:.15rem .7rem;margin:.4rem 0}
+  .detail dt{color:var(--ink3)}
+  .detail dd{margin:0;overflow-wrap:anywhere}
+  .notes{font-size:.82rem;color:var(--brass);background:var(--brassS);border-radius:6px;padding:.5rem .6rem;margin-top:.6rem}
+  .notes p{margin:.15rem 0}
+  .allow{display:grid;gap:.25rem;font-size:.84rem;color:var(--ink2);margin:.4rem 0}
+  .allow input{width:4.2rem;border:1px solid var(--line2);border-radius:5px;padding:.15rem .3rem;background:var(--paper)}
+  .check{display:flex;gap:.4rem;align-items:center;font-size:.84rem;color:var(--ink2)}
+  .sub-panel{margin-top:.5rem;padding:.55rem;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
+  table.res tr.pick{cursor:pointer}
+  table.res tr.pick:hover td{background:var(--card2)}
+  table.res tr.sel td{background:var(--pineS)}
+  .feet{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .items input.cond{width:3rem;border:1px solid var(--line2);border-radius:5px;padding:.1rem .25rem;background:var(--paper)}
+  footer{border-top:1px solid var(--line);padding:.55rem 1rem;font-size:.78rem;color:var(--ink3);
+    display:flex;gap:1rem;flex-wrap:wrap;justify-content:space-between;background:var(--card)}
+
+  @media (max-width: 900px){
+    body{display:block}
+    .ws{display:block}
+    .sheets{border-right:0;border-bottom:1px solid var(--line);display:flex;gap:.3rem;overflow-x:auto;
+      white-space:nowrap}
+    .sheets button{display:inline-block;width:auto;flex:none}
+    .scroller{height:62vh}
+    .panel{border-left:0;border-top:1px solid var(--line)}
+  }
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="brand">Takeoff counter<span>Count symbols from one example</span></div>
+  <div class="row">
+    <span class="draft" title="Every count and length is a candidate for an estimator to confirm">Draft</span>
+    <span class="rt loading" id="rt" role="status" aria-live="polite"><span class="dot"></span><span id="rtText">Starting</span></span>
+  </div>
+</header>
+
+<section class="intro" id="intro">
+  <h1>Click one symbol. Count every copy.</h1>
+  <p class="lede">Open an electrical drawing set exported from CAD, click one outlet of each kind,
+    and get a count for every sheet, with each copy marked on the drawing, and feet of conduit
+    and wire for every circuit.</p>
+  <div class="drop" id="drop">
+    <label class="btn primary" for="picker">Open a drawing set (PDF)</label>
+    <input type="file" id="picker" accept="application/pdf,.pdf" class="hide">
+    <p>or drop the PDF here</p>
+  </div>
+  <ol class="steps">
+    <li>Pick a sheet, type a name like <em>Duplex receptacle</em>, and click one on the drawing.</li>
+    <li>Add one example of each kind you want counted.</li>
+    <li>Press <strong>Count</strong>. Green, blue and other colours are counted; orange needs your eye.</li>
+    <li>Click any box to count or drop it. Circuits are measured from the counted devices, at the
+      scale printed on the sheet; trace or follow any other run.</li>
+    <li>Download the spreadsheet: counts, circuits, and feet of conduit and wire.</li>
+  </ol>
+  <p class="note">The drawing is read here, in your browser. It is never uploaded anywhere.
+    The first visit downloads about 30&nbsp;MB of tools; after that it starts quickly.
+    Scanned drawings can't be counted: the PDF has to come from CAD.</p>
+</section>
+
+<div class="ws hide" id="ws">
+  <nav class="sheets" id="sheets" aria-label="Sheets"></nav>
+  <div class="viewer">
+    <div class="tools">
+      <button class="btn small" id="zoomOut" aria-label="Zoom out">−</button>
+      <button class="btn small" id="zoomFit">Fit</button>
+      <button class="btn small" id="zoomIn" aria-label="Zoom in">+</button>
+      <span class="hint" id="hint">Drag to scroll. Zoom in to click small symbols.</span>
+    </div>
+    <div class="scroller" id="scroller">
+      <div class="stage" id="stage">
+        <canvas id="canvas"></canvas>
+        <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+      <div class="busy-veil hide" id="veil"><span id="veilText">Working…</span></div>
+    </div>
+  </div>
+  <aside class="panel">
+    <h2>What to count</h2>
+    <div class="row">
+      <input class="field" id="itemName" placeholder="e.g. Duplex receptacle" aria-label="Item name">
+    </div>
+    <div class="row" style="margin-top:.4rem">
+      <button class="btn small" id="pick">Click one on the drawing</button>
+      <button class="btn small" id="boxPick">Drag a box</button>
+    </div>
+    <p class="msg" id="itemMsg"></p>
+    <ul class="items" id="items"></ul>
+
+    <h2>Count</h2>
+    <div class="row">
+      <select class="field" id="scope" aria-label="Where to count">
+        <option value="sheet">This sheet</option>
+        <option value="all">All sheets</option>
+      </select>
+      <button class="btn primary" id="count" disabled>Count</button>
+    </div>
+    <p class="msg" id="countMsg"></p>
+
+    <div id="results" class="hide">
+      <h2>Results</h2>
+      <table class="res" id="resTable"></table>
+      <div class="notes hide" id="notes"></div>
+      <div class="row" style="margin-top:.7rem">
+        <button class="btn small" id="nextReview">Next to check</button>
+      </div>
+      <div class="detail hide" id="detail"></div>
+    </div>
+
+    <div id="circuitsBox" class="hide">
+      <h2>Circuits</h2>
+      <p class="msg" id="circSummary"></p>
+      <div class="allow">
+        <label>Conduit runs at <input type="number" id="aHeight" value="10" step="0.5" min="0"> ft</label>
+        <label>Devices at <input type="number" id="aDevice" value="1.5" step="0.25" min="0"> ft unless marked</label>
+        <label>Make-up <input type="number" id="aMakeup" value="1" step="0.5" min="0"> ft of wire per box</label>
+        <label>Waste <input type="number" id="aWaste" value="10" step="1" min="0"> %</label>
+      </div>
+      <label class="check"><input type="checkbox" id="showCirc" checked> Show circuit runs on the drawing</label>
+      <div class="notes hide" id="circNotes"></div>
+      <div class="row" id="circActions" style="margin-top:.5rem">
+        <button class="btn small hide" id="circUpdate">Update circuits</button>
+        <button class="btn small" id="wirePick" title="If this plan draws its wiring and the circuits look wrong, click one drawn wire">Use a drawn wire</button>
+        <button class="btn small" id="useLabels" title="Group devices by the circuit label beside each one">Use labels</button>
+      </div>
+      <div id="panelList"></div>
+      <table class="res" id="circTable"></table>
+    </div>
+
+    <h2>Lengths</h2>
+    <p class="msg" id="scaleLine">Open a sheet to read its scale.</p>
+    <div class="row">
+      <button class="btn small" id="scaleChange" aria-expanded="false">Change scale</button>
+    </div>
+    <div id="scaleEdit" class="sub-panel hide">
+      <div class="row">
+        <input class="field" id="scaleText" placeholder="e.g. 1/8&quot; = 1'-0&quot;" aria-label="Scale as printed">
+        <button class="btn small" id="scaleSet">Set</button>
+      </div>
+      <div class="row" style="margin-top:.35rem">
+        <button class="btn small" id="scalePts">Click two points a known distance apart</button>
+        <button class="btn small" id="scaleClear">Use the printed scale</button>
+      </div>
+      <div class="row hide" id="scaleFeetRow" style="margin-top:.35rem">
+        <input class="field" type="number" id="scaleFeet" min="0" step="any" placeholder="Feet between them" aria-label="Feet between the two points">
+        <button class="btn small" id="scaleFeetSet">Set</button>
+      </div>
+    </div>
+    <div class="row" style="margin-top:.6rem">
+      <input class="field" id="runName" placeholder="Name, e.g. Homerun to panel A" aria-label="Run name">
+    </div>
+    <div class="row" style="margin-top:.4rem">
+      <button class="btn small" id="trace">Trace a run</button>
+      <button class="btn small" id="follow">Follow a line</button>
+      <button class="btn small hide" id="traceDone">Finish</button>
+    </div>
+    <p class="msg" id="runMsg"></p>
+    <ul class="items" id="runs"></ul>
+
+    <div class="row hide" id="dlBox" style="margin-top:1.2rem">
+      <button class="btn primary" id="download">Download spreadsheet</button>
+    </div>
+  </aside>
+</div>
+
+<footer>
+  <span>Counts and lengths are candidates. Check every item before you bid.</span>
+  <span>Your drawing never leaves this computer.</span>
+</footer>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

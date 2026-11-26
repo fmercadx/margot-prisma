@@ -39,7 +39,20 @@ jobs:
       # Vite clears dist, so building it first would delete it.
       - run: npm run build:analyzer
 
-      # The plan takeoff tool is another page, under dist/plan-takeoff. It has its
+      # The takeoff counter is a third self-contained page, under dist/takeoff,
+      # built the same way: Python in WebAssembly, every file same-origin. Its
+      # numpy and cryptography wheels come from the Pyodide CDN at build time,
+      # checked against pyodide-lock.json; nothing is fetched at run time.
+      - run: npm run build:takeoff
+
+      # The adult foster home site is a fourth page, under dist/shepherds-whisper.
+      # Its real home is Railway, which runs its server and so has a working tour
+      # form; the Pages copy is static, so that endpoint is absent and the form
+      # falls back to a prefilled email. The script handles the subpath base and
+      # writes privacy/index.html, since Pages has no SPA fallback.
+      - run: npm run build:whisper
+
+      # The plan takeoff tool is a fifth page, under dist/plan-takeoff. It has its
       # own package.json, and its Vite config writes into this dist/ directly.
       # Same ordering rule as the analyzer: after `npm run build`.
       - run: npm ci

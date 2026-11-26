@@ -1,0 +1,221 @@
+name: personal-daily-hub iOS
+
+# Builds the app for the iOS Simulator on a Mac and runs it there, so the
+# iPhone version is checked on every push the way the Android one is.
+# `expo prebuild` generates ios/ from app.json (it is never committed), then
+# CocoaPods and Xcode build it. A Simulator build needs no Apple account: it is
+# signed ad hoc, which it must be, since an unsigned app gets no Keychain and
+# the app then (rightly) refuses to save. Putting the app on an iPhone needs a
+# real signature, which is EAS's job (eas.json,
+# and "On an iPhone" in the README).
+#
+# The `simulator` job checks the built app's Info.plist, entitlements and
+# privacy manifest, then installs it on an iPhone simulator and drives it with
+# Maestro (scripts/ios_smoke.py): launch, add a note, close and reopen,
+# confirm the note survived and is stored encrypted, and check for crashes.
+# It only uploads artifacts; it publishes nothing.
+on:
+  push:
+    paths:
+      - 'personal-daily-hub/**'
+      - '.github/workflows/personal-daily-hub-ios.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: personal-daily-hub-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: personal-daily-hub
+
+jobs:
+  simulator:
+    runs-on: macos-26
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: personal-daily-hub/package-lock.json
+
+      # Expo SDK 58's ExpoModulesJSI needs a recent Swift: Xcode 16.4 can't read its
+      # package (Swift 6.2 tools), and Xcode 26.3 rejects one of its data-race
+      # checks. The runner's default Xcode can be older, so take the newest it has.
+      - name: Use the newest Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_[0-9]*.app | sort -V | tail -1)
+          sudo xcode-select -s "$xcode"
+          xcodebuild -version
+
+      - name: Toolchain
+        run: |
+          ls -d /Applications/Xcode*.app
+          xcode-select -p
+          xcodebuild -version
+          swift --version
+          pod --version
+          xcrun simctl list runtimes
+
+      - run: npm ci
+
+      - run: npx expo prebuild --platform ios --no-install
+        env:
+          CI: '1'
+
+      - name: Install pods
+        working-directory: personal-daily-hub/ios
+        run: pod install
+
+      # One iPhone simulator, chosen now so the build targets only its architecture.
+      - name: Pick a simulator
+        run: |
+          udid=$(python3 - <<'PY'
+          import json, subprocess
+          data = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '-j']))
+          best = None
+          for runtime, devices in data['devices'].items():
+              if 'iOS' not in runtime:
+                  continue
+              version = tuple(int(x) for x in runtime.rsplit('iOS-', 1)[-1].split('-') if x.isdigit())
+              for d in devices:
+                  if d['name'].startswith('iPhone') and (best is None or version > best[0]):
+                      best = (version, d)
+                      break
+          print(best[1]['udid'])
+          PY
+          )
+          echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
+          xcrun simctl list devices | grep "$udid"
+
+      # Separately, so a package that won't resolve says why in full.
+      - name: Resolve Swift packages
+        working-directory: personal-daily-hub/ios
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -workspace PersonalDailyHub.xcworkspace \
+            -scheme PersonalDailyHub \
+            -derivedDataPath build
+
+      - name: Build for the iOS Simulator
+        working-directory: personal-daily-hub/ios
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace PersonalDailyHub.xcworkspace \
+            -scheme PersonalDailyHub \
+            -configuration Release \
+            -destination "id=$SIM_UDID" \
+            -derivedDataPath build \
+            ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGN_IDENTITY=- \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM= \
+            build > xcodebuild.log 2>&1 && ok=1 || ok=0
+          grep -E '^\*\* ' xcodebuild.log || true
+          if [ "$ok" != 1 ] || [ ! -f build/Build/Products/Release-iphonesimulator/PersonalDailyHub.app/Info.plist ]; then
+            echo "::error::The iOS build failed"
+            echo "----- errors, with context -----"
+            grep -n -B3 -A25 -E 'error:|Could not resolve|PhaseScriptExecution failed|Command PhaseScriptExecution' xcodebuild.log | head -400
+            echo "----- last 120 lines -----"
+            tail -120 xcodebuild.log
+            exit 1
+          fi
+
+      - name: Check the app is the one we meant to build
+        run: |
+          app=ios/build/Build/Products/Release-iphonesimulator/PersonalDailyHub.app
+          plist="$app/Info.plist"
+          get() { /usr/libexec/PlistBuddy -c "Print :$1" "$plist"; }
+          echo "Bundle: $(get CFBundleIdentifier)  Version: $(get CFBundleShortVersionString) ($(get CFBundleVersion))"
+          test "$(get CFBundleIdentifier)" = com.fmercadx.personaldailyhub
+          test "$(get CFBundleShortVersionString)" = "$(node -p "require('./app.json').expo.version")"
+          test "$(get CFBundleVersion)" = "$(node -p "require('./app.json').expo.ios.buildNumber")"
+
+          # App lock needs the Face ID prompt text, or iOS refuses Face ID.
+          get NSFaceIDUsageDescription
+
+          # Local notifications only: no push entitlement, no remote-notification
+          # background mode (a free Apple ID can't sign push, and the app never uses it).
+          if grep -q aps-environment ios/PersonalDailyHub/PersonalDailyHub.entitlements; then
+            echo "::error::The app asks for the push entitlement"; exit 1
+          fi
+
+          # Signed (ad hoc), or the Keychain is closed to it; and the signature
+          # carries no push entitlement either.
+          codesign --verify "$app" || { echo "::error::The app is not signed"; exit 1; }
+          codesign -dv "$app" 2>&1 | grep -E '^(Identifier|Signature)='
+          if codesign -d --entitlements - "$app" 2>/dev/null | grep -q aps-environment; then
+            echo "::error::The signed app carries the push entitlement"; exit 1
+          fi
+          if get UIBackgroundModes 2>/dev/null | grep -q remote-notification; then
+            echo "::error::The app declares remote-notification background mode"; exit 1
+          fi
+
+          # The privacy manifest says no tracking and nothing collected.
+          manifest="$app/PrivacyInfo.xcprivacy"
+          test -f "$manifest" || { echo "::error::No PrivacyInfo.xcprivacy in the app"; exit 1; }
+          test "$(/usr/libexec/PlistBuddy -c 'Print :NSPrivacyTracking' "$manifest")" = false
+          if /usr/libexec/PlistBuddy -c 'Print :NSPrivacyCollectedDataTypes:0' "$manifest" 2>/dev/null; then
+            echo "::error::The privacy manifest declares collected data"; exit 1
+          fi
+          {
+            echo "### Personal Daily Hub for iOS (Simulator build)"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Bundle | \`$(get CFBundleIdentifier)\` |"
+            echo "| Version | $(get CFBundleShortVersionString) ($(get CFBundleVersion)) |"
+            echo "| Size | $(du -sh "$app" | cut -f1) |"
+            echo "| Push entitlement | none |"
+            echo "| Privacy manifest | no tracking, nothing collected |"
+            echo
+            echo "Screenshots from the Simulator are in **personal-daily-hub-ios-smoke** below."
+            echo "This build runs only in the Simulator; an iPhone needs a signed build (see the README)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install Maestro
+        working-directory: .
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Run it in the iOS Simulator
+        env:
+          MAESTRO_CLI_NO_ANALYTICS: '1'
+        run: |
+          maestro --version
+          python3 scripts/ios_smoke.py \
+            --app ios/build/Build/Products/Release-iphonesimulator/PersonalDailyHub.app \
+            --udid "$SIM_UDID" --out ../ios-smoke
+
+      - name: Zip the Simulator app
+        if: always()
+        run: |
+          mkdir -p ../ios-app
+          if [ -d ios/build/Build/Products/Release-iphonesimulator/PersonalDailyHub.app ]; then
+            (cd ios/build/Build/Products/Release-iphonesimulator && zip -qry "$GITHUB_WORKSPACE/ios-app/PersonalDailyHub-simulator.zip" PersonalDailyHub.app)
+          fi
+          cp ios/xcodebuild.log ../ios-app/ 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: personal-daily-hub-ios-smoke
+          path: ios-smoke/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: personal-daily-hub-ios-simulator-app
+          path: ios-app/
+          if-no-files-found: warn
+          retention-days: 30

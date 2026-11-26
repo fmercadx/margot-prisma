@@ -15,13 +15,16 @@
     "smoke": "node smoke.mjs",
     "standalone": "node standalone.mjs",
     "test": "node --test test-tour-request.mjs",
-    "test:form": "node test-form.mjs"
+    "test:form": "node test-form.mjs",
+    "test:privacy": "node test-privacy.mjs",
+    "test:pages": "node test-pages.mjs"
   },
   "dependencies": {
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.4",
