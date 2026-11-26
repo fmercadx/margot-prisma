@@ -36,6 +36,7 @@ import {
   stepBudget,
 } from '../lib/categories';
 import { formatCents } from '../lib/money';
+import { PREMIUM_INCLUDED } from '../lib/premium';
 import { hourLabel, minutesLabel } from '../lib/reminders';
 import { ordinal, type Bill, type MergeStats } from '../lib/store';
 import {
@@ -300,7 +301,7 @@ export function SettingsSheet(p: Props) {
               })}
             </Section>
 
-            {s.mockPremium ? (
+            {s.mockPremium && !PREMIUM_INCLUDED ? (
               <Section title="Premium">
                 <Pressable
                   onPress={() => p.onChange({ mockPremium: false })}

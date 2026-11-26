@@ -1,0 +1,36 @@
+Personal Daily Hub puts your whole day on one calm, dark screen, and keeps it on your phone.
+
+Focus
+• Today's focus: one line for what matters most, with a focus timer (15 to 60 minutes) that notifies you when it ends, even if the app is closed.
+• This week: up to three goals for the week, and a short look back at last week.
+
+Capture
+• Quick notes and to-dos. Bring unfinished to-dos over to today.
+• Pin up to five notes to the top of every day.
+• Search everything you've written.
+
+Habits
+• Four built-in habits, or create your own.
+• Choose which days each habit is for, skip a day without breaking the streak, and see each habit's last four weeks.
+
+Wellbeing
+• Water, sleep, energy and a five-face mood check-in.
+• Optional water reminders and an evening wind-down reminder.
+
+Money
+• Log expenses by category, with daily, monthly and per-category budgets.
+• Monthly bills that add themselves, and a button that hides every amount.
+
+Reflect
+• A short daily journal with a different question each weekday, plus three good things.
+• On this day: what you wrote a week, a month and a year ago.
+• History charts, a month calendar shaded by habits or by mood, and insights from your own logs.
+• Countdowns to the dates you're looking forward to.
+
+Private by design
+• Everything stays on your phone, encrypted with AES-256. No account, no ads, no tracking, no analytics.
+• The app has no permission to use the internet.
+• Optional app lock with your fingerprint, face or PIN.
+• Export a backup (optionally protected with a passphrase), restore it, or erase everything.
+
+Make it yours: show, hide and reorder the cards on your home screen.

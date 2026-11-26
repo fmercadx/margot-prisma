@@ -55,6 +55,7 @@ import {
   canAddCustomHabit,
   canAddNote,
   FREE_NOTES_PER_DAY,
+  PREMIUM_INCLUDED,
   purchasePremiumMock,
   type PaywallReason,
 } from '../lib/premium';
@@ -153,7 +154,8 @@ export default function HomeScreen() {
   // and cleared by Erase everything, so it survives a restart, including
   // Android closing the app in the background. A real build would restore
   // this from the App Store / Play Store entitlement instead.
-  const isPremium = state.settings.mockPremium;
+  // Everything is included at launch (PREMIUM_INCLUDED); the paywall stays for later billing.
+  const isPremium = PREMIUM_INCLUDED || state.settings.mockPremium;
   const [paywall, setPaywall] = useState<PaywallReason | null>(null);
   // What the person was trying to do when the paywall opened, so unlocking
   // finishes it for them instead of making them do it twice.
@@ -1185,6 +1187,7 @@ export default function HomeScreen() {
           <View style={styles.column}>
             <Header
               isPremium={isPremium}
+              showPremium={!PREMIUM_INCLUDED}
               onPremiumPress={() => openPaywall('upgrade')}
               reminder={{
                 supported: remindersSupported,

@@ -2,14 +2,14 @@
   "expo": {
     "name": "Personal Daily Hub",
     "slug": "personal-daily-hub",
-    "version": "1.12.0",
+    "version": "1.12.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#121212",
     "ios": {
       "bundleIdentifier": "com.fmercadx.personaldailyhub",
-      "buildNumber": "13",
+      "buildNumber": "14",
       "supportsTablet": true,
       "privacyManifests": {
         "NSPrivacyTracking": false,
@@ -48,7 +48,7 @@
     },
     "android": {
       "package": "com.fmercadx.personaldailyhub",
-      "versionCode": 13,
+      "versionCode": 14,
       "allowBackup": false,
       "adaptiveIcon": {
         "backgroundColor": "#121212",
@@ -76,7 +76,8 @@
         "com.sonyericsson.home.permission.BROADCAST_BADGE",
         "com.sonymobile.home.permission.PROVIDER_INSERT_BADGE",
         "me.everything.badger.permission.BADGE_COUNT_READ",
-        "me.everything.badger.permission.BADGE_COUNT_WRITE"
+        "me.everything.badger.permission.BADGE_COUNT_WRITE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
       ],
       "predictiveBackGestureEnabled": false
     },

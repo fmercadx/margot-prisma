@@ -22,6 +22,10 @@ A one-screen, dark-mode daily dashboard built with React Native and Expo
 Deleting a note, a goal, an expense or a custom habit shows **Undo** for five
 seconds.
 
+Everything marked (Premium) is included for everyone in the current release:
+there are no purchases (`PREMIUM_INCLUDED` in `src/lib/premium.ts`; see
+Premium below).
+
 ## Security and privacy
 
 What protects what, and why each is there:
@@ -33,7 +37,7 @@ What protects what, and why each is there:
 | App lock (optional) | Fingerprint, face or phone PIN at launch and after time in the background: 30 s by default, or at once, 1 min or 5 min. While on, Android shows a blank preview in recent apps and blocks screenshots (FLAG_SECURE); iOS blurs the app switcher. | `src/lib/appLock.ts`, `src/hooks/useAppLock.ts` |
 | No network | The release APK has **no INTERNET permission**, so Android itself refuses any connection. The app makes none anyway. | `app.config.js` |
 | No cloud backup | `allowBackup` is off, so the data never lands in a Google backup. Export is the explicit way to take a copy. | `app.json` |
-| Fewest permissions | Push, launcher-badge, storage and photo (`READ_MEDIA_IMAGES`) permissions are stripped; CI fails if one comes back. | `app.json`, APK workflow |
+| Fewest permissions | Push, launcher-badge, storage, photo (`READ_MEDIA_IMAGES`) and draw-over-other-apps (`SYSTEM_ALERT_WINDOW`) permissions are stripped; CI fails if one comes back. | `app.json`, APK workflow |
 | Passphrase-protected backups | Export can seal the file with AES-256-GCM under a key derived from a passphrase with scrypt (N = 2^15, r = 8, p = 1; `@noble/hashes`, audited, pure JS). The cost settings and salt are bound in as authenticated data, so editing them makes the file fail to open rather than open weaker. On restore, a file's cost settings are checked against hard limits (N ≤ 2^16, r ≤ 8, p ≤ 2, so at most 64 MB) before any work, so a crafted file can't freeze the phone. There is no recovery for a forgotten passphrase. | `src/lib/backupCrypto.ts` |
 | Spreadsheets can't run your labels | In the CSV export, a label starting with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with an apostrophe, so Excel, Sheets and Numbers show it as text instead of running it as a formula (CSV injection). Commas, quotes and line breaks are quoted per RFC 4180. | `src/lib/exportCsv.ts` |
 | Erase everything | Settings → Erase all data, after a confirmation (and the owner's fingerprint, face or PIN when app lock is on). Every stored value is removed, quarantined copies included, and then the encryption key is deleted from the Keystore / Keychain, so a copy of the database taken earlier can't be decrypted. A new key is made for whatever comes next. The daily reminder, water reminders, the wind-down reminder and any focus-timer notification are cancelled and old export files are deleted too. | `erase` in `src/hooks/useDailyHub.ts` |
@@ -129,9 +133,10 @@ Android specifics already handled:
 - Only the permissions the app uses. `android.blockedPermissions` in
   `app.json` strips what the template and libraries add but the app never
   needs: storage (it touches no files), Firebase push
-  (`c2dm.permission.RECEIVE`; the reminder is local), and 16 launcher-badge
+  (`c2dm.permission.RECEIVE`; the reminder is local), 16 launcher-badge
   permissions from expo-notifications' badge library (the app never sets a
-  badge). The APK build reads that list and fails if any of them reappears
+  badge), and the template's `SYSTEM_ALERT_WINDOW` ("display over other
+  apps", used only by the development menu). The APK build reads that list and fails if any of them reappears
   after a library update, or if the reminder's `POST_NOTIFICATIONS` /
   `RECEIVE_BOOT_COMPLETED` go missing. `WAKE_LOCK` and
   `ACCESS_NETWORK_STATE` stay: Firebase and Play-services code still in the
@@ -306,6 +311,16 @@ What keeps it safe (`src/hooks/useDailyHub.ts`, `src/lib/storage.ts`):
 
 ## Premium (mock)
 
+**In the current release everything is included.** `PREMIUM_INCLUDED` in
+`src/lib/premium.ts` is `true`: there is no Premium badge, no price and no
+paywall, and the Google Play listing declares no purchases. The free limits,
+the paywall and the mock purchase below stay in the code (and in the tests,
+which switch the flag off) for a later release with real billing. Turning
+paid Premium on means replacing the mock with Google Play Billing /
+StoreKit, setting the flag to `false`, and updating the Play Console
+declarations (content rating: digital purchases; sign-in details: payments)
+in the same release.
+
 Unlocking is a mock: the button says "Demo build — no payment is taken",
 waits a moment and unlocks. The unlock is then remembered on the phone (in
 settings, sealed like everything else), so it lasts through restarts,
@@ -344,7 +359,14 @@ Before release, replace that one function:
 - `ios.bundleIdentifier` is not set in `app.json`; EAS will ask for it.
 - Bump `android.versionCode` for every release you hand out; Android only
   installs an update over an older code.
-- The icon and splash images in `assets/` are Expo's template placeholders.
+- The icon is a ring of the six module colours around a check, drawn as one
+  SVG in `store/make-icons.cjs`, which renders every size: the app icon,
+  Android's adaptive foreground, background and monochrome layers, the
+  splash image, the notification icon, the favicon and the 512 px Play icon.
+- `store/` holds the Google Play listing: the descriptions, the icon, the
+  1024x500 feature graphic and the screenshots, rendered from the web build
+  with demo data by `store/make-listing.cjs`. The privacy policy is
+  `PRIVACY.md`.
 
 ## Layout
 
