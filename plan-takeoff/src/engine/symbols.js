@@ -1,161 +1,242 @@
 // Count repeated symbols.
 //
-// A plant symbol on a CAD export is the same geometry stamped at many places.
-// So: describe each path by its shape relative to its own corner, rounded to
-// half a point, and anything that appears twice or more is a symbol.
+// Two steps. First, loose paths that touch or overlap are clustered into
+// units, so a circle with a cross, or a flower of five petals, is one thing.
+// A CAD block kept as a form XObject is already one unit. Second, each unit
+// is keyed by the multiset of its parts' rotation-invariant signatures
+// (`signature.js`), so copies placed at any angle match, and units with the
+// same key are one symbol.
 //
-// Two complications, both handled here:
+// Clustering by touch has a known failure: in a massed planting the symbols
+// overlap each other and chain into blobs. The legend-driven count in
+// `legend.js` does not depend on it; this is the fallback for a sheet with no
+// legend, and the source of the "other repeated shapes" list.
 //
-//  · A symbol is usually several paths — a circle and a cross, say. When the
-//    exporter kept the CAD block as a form XObject, `paths.js` has already
-//    tagged every path with the instance it came from and the whole instance
-//    is fingerprinted as one unit. When the block was flattened into loose
-//    paths, the parts are grouped separately at first and merged afterwards
-//    if every instance of one sits at a constant offset from an instance of
-//    the other ("co-location").
-//
-//  · Hatch lines of equal length look like a repeated symbol. A bare straight
-//    segment never forms a symbol on its own; it can only join one as a part.
-//
-// Not handled: the same block placed mirrored, rotated or at another scale.
-// Those count as different symbols. And the legend's own copy of a symbol
-// counts as an instance, so a sheet with its legend on it over-counts by one.
+// The legend's own copy of a symbol still counts as an instance here; the
+// legend pass excludes it when it can.
 
-import { bboxOf, bboxUnion, bboxCenter, bboxSize } from './measure.js';
+import { bboxUnion, bboxCenter, bboxSize } from './measure.js';
+import { pathSignature } from './signature.js';
 
-const Q = 2; // quantisation: 1/Q point
-
-function pathKey(path, origin) {
-  const parts = [];
-  for (const sp of path.subpaths) {
-    const pts = sp.points.map(([x, y]) =>
-      `${Math.round((x - origin[0]) * Q)},${Math.round((y - origin[1]) * Q)}`);
-    parts.push((sp.closed ? 'c' : 'o') + pts.join(' '));
-  }
-  return (path.fill ? 'F' : '') + (path.stroke ? 'S' : '') + '|' + parts.join('|');
-}
+const MAX_UNIT = 96; // pt; a plant symbol or a small block, never a bed
 
 function isBareSegment(path) {
   return path.subpaths.length === 1 && path.subpaths[0].points.length === 2
     && !path.subpaths[0].closed && !path.fill;
 }
 
-function unitFromPaths(ps) {
+function makeUnit(ps, sigOf) {
   let bbox = ps[0].bbox;
   for (let i = 1; i < ps.length; i++) bbox = bboxUnion(bbox, ps[i].bbox);
-  const origin = [bbox[0], bbox[1]];
-  const key = ps.map((p) => pathKey(p, origin)).sort().join('#');
+  const sigs = ps.map((p) => sigOf(p)).sort();
+  const [w, h] = bboxSize(bbox);
   return {
     pathIds: ps.map((p) => p.id),
+    paths: ps,
     bbox,
     center: bboxCenter(bbox),
-    key,
-    bare: ps.length === 1 && isBareSegment(ps[0]),
+    key: sigs.join('#'),
+    sigs,
+    size: [w, h],
+    bare: ps.every(isBareSegment),
   };
 }
 
 /**
- * @returns {Symbol[]} sorted by count, descending.
- * Symbol: { key, count, parts, size: [w, h], instances: [{center, bbox, pathIds}] }
+ * Cluster paths into symbol-sized units. XObject instances small enough are
+ * units as drawn; everything else is clustered by bounding-box contact.
+ * @returns {{units: Unit[], sigOf: (p: Path) => string}}
  */
-export function findSymbols(paths, { minSize = 1.5, maxSize = 144, minCount = 2 } = {}) {
-  // 1. Units: one per XObject instance, one per loose path.
-  const byXObject = new Map();
+export function clusterUnits(paths, { maxUnit = MAX_UNIT, touch = 0.75 } = {}) {
+  const sigCache = new Map();
+  const sigOf = (p) => {
+    let s = sigCache.get(p.id);
+    if (s === undefined) { s = pathSignature(p); sigCache.set(p.id, s); }
+    return s;
+  };
+
   const units = [];
+  const loose = [];
+  const byX = new Map();
   for (const p of paths) {
+    const [w, h] = bboxSize(p.bbox);
+    if (w > maxUnit || h > maxUnit) { continue; }
     if (p.xobject != null) {
-      if (!byXObject.has(p.xobject)) byXObject.set(p.xobject, []);
-      byXObject.get(p.xobject).push(p);
+      if (!byX.has(p.xobject)) byX.set(p.xobject, []);
+      byX.get(p.xobject).push(p);
     } else {
-      units.push(unitFromPaths([p]));
+      loose.push(p);
     }
   }
-  for (const ps of byXObject.values()) units.push(unitFromPaths(ps));
+  for (const ps of byX.values()) {
+    const u = makeUnit(ps, sigOf);
+    if (u.size[0] <= maxUnit && u.size[1] <= maxUnit) units.push(u);
+    else loose.push(...ps);
+  }
 
-  // 2. Size filter: symbols are small; a border or a bed outline is not one.
-  const fits = (b) => {
-    const [w, h] = bboxSize(b);
-    return w <= maxSize && h <= maxSize && (w >= minSize || h >= minSize);
+  // Grid index over loose paths for neighbour lookup.
+  const cell = 16;
+  const grid = new Map();
+  const cellsOf = (b) => {
+    const out = [];
+    for (let gx = Math.floor((b[0] - touch) / cell); gx <= Math.floor((b[2] + touch) / cell); gx++) {
+      for (let gy = Math.floor((b[1] - touch) / cell); gy <= Math.floor((b[3] + touch) / cell); gy++) {
+        out.push(gx + ',' + gy);
+      }
+    }
+    return out;
   };
+  loose.forEach((p, i) => {
+    for (const c of cellsOf(p.bbox)) {
+      if (!grid.has(c)) grid.set(c, []);
+      grid.get(c).push(i);
+    }
+  });
+  const parent = loose.map((_, i) => i);
+  const cbox = loose.map((p) => p.bbox.slice());
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const touches = (a, b) => !(a[2] + touch < b[0] || b[2] + touch < a[0] || a[3] + touch < b[1] || b[3] + touch < a[1]);
+
+  for (let i = 0; i < loose.length; i++) {
+    const seen = new Set();
+    for (const c of cellsOf(loose[i].bbox)) {
+      for (const j of grid.get(c)) {
+        if (j <= i || seen.has(j)) continue;
+        seen.add(j);
+        if (!touches(loose[i].bbox, loose[j].bbox)) continue;
+        const ri = find(i), rj = find(j);
+        if (ri === rj) continue;
+        const merged = bboxUnion(cbox[ri], cbox[rj]);
+        const [w, h] = bboxSize(merged);
+        if (w > maxUnit || h > maxUnit) continue;
+        parent[rj] = ri;
+        cbox[ri] = merged;
+      }
+    }
+  }
+  const groups = new Map();
+  loose.forEach((p, i) => {
+    const r = find(i);
+    if (!groups.has(r)) groups.set(r, []);
+    groups.get(r).push(p);
+  });
+  for (const ps of groups.values()) units.push(makeUnit(ps, sigOf));
+  return { units, sigOf };
+}
+
+/**
+ * Symbols: shapes that repeat. Each loose path is its own unit here (a petal,
+ * a circle, a cross), and a small XObject instance is one unit; clustering by
+ * touch is not used because on a real sheet a symbol drawn inside a hatched
+ * bed touches the hatch lines. A symbol made of several loose parts shows as
+ * several groups; `legend.js` resolves that where there is a legend.
+ *
+ * @returns {Symbol[]} sorted by count, descending.
+ * Symbol: { key, sigs, count, parts, size, minor, instances: [{center, bbox, pathIds}] }
+ */
+export function findSymbols(paths, { minSize = 1.5, minCount = 2, maxUnit = MAX_UNIT, sigOf: sigIn } = {}) {
+  const sigCache = new Map();
+  const sigOf = sigIn || ((p) => {
+    let s = sigCache.get(p.id);
+    if (s === undefined) { s = pathSignature(p); sigCache.set(p.id, s); }
+    return s;
+  });
+  const units = [];
+  const byX = new Map();
+  for (const p of paths) {
+    const [w, h] = bboxSize(p.bbox);
+    if (w > maxUnit || h > maxUnit) continue;
+    if (p.xobject != null) {
+      if (!byX.has(p.xobject)) byX.set(p.xobject, []);
+      byX.get(p.xobject).push(p);
+    } else if (!isBareSegment(p)) {
+      units.push(makeUnit([p], sigOf));
+    }
+  }
+  for (const ps of byX.values()) {
+    const u = makeUnit(ps, sigOf);
+    if (u.size[0] <= maxUnit && u.size[1] <= maxUnit) units.push(u);
+  }
   const groups = new Map();
   for (const u of units) {
-    if (!fits(u.bbox)) continue;
+    if (u.size[0] < minSize && u.size[1] < minSize) continue;
     if (!groups.has(u.key)) groups.set(u.key, []);
     groups.get(u.key).push(u);
   }
-
-  // 3. Candidate groups: repeated at least minCount times.
-  let cands = [];
+  const out = [];
   for (const [key, insts] of groups) {
     if (insts.length < minCount) continue;
-    cands.push({
-      key,
-      bare: insts[0].bare,
-      instances: insts.map((u) => ({ center: u.center, bbox: u.bbox, pathIds: u.pathIds.slice() })),
-      area: bboxSize(insts[0].bbox).reduce((a, b) => a * b, 1),
-    });
-  }
-  // Bigger shapes anchor; parts attach to them.
-  cands.sort((a, b) => b.area - a.area);
-
-  // 4. Co-location merge for flattened multi-path symbols.
-  const TOL = 0.3;
-  const merged = new Set();
-  for (let i = 0; i < cands.length; i++) {
-    if (merged.has(i)) continue;
-    const A = cands[i];
-    for (let j = i + 1; j < cands.length; j++) {
-      if (merged.has(j)) continue;
-      const B = cands[j];
-      if (B.instances.length !== A.instances.length) continue;
-      // Pair each A instance with its nearest B instance; offsets must agree.
-      const used = new Set();
-      let offset = null, ok = true;
-      const pairs = [];
-      for (const a of A.instances) {
-        let best = -1, bestD = Infinity;
-        B.instances.forEach((b, k) => {
-          if (used.has(k)) return;
-          const d = Math.hypot(b.center[0] - a.center[0], b.center[1] - a.center[1]);
-          if (d < bestD) { bestD = d; best = k; }
-        });
-        if (best < 0) { ok = false; break; }
-        const b = B.instances[best];
-        const off = [b.center[0] - a.center[0], b.center[1] - a.center[1]];
-        if (offset === null) offset = off;
-        else if (Math.abs(off[0] - offset[0]) > TOL || Math.abs(off[1] - offset[1]) > TOL) { ok = false; break; }
-        // A part must overlap or touch the anchor's footprint, with some slack.
-        const [aw, ah] = bboxSize(a.bbox);
-        if (Math.abs(off[0]) > aw + 4 || Math.abs(off[1]) > ah + 4) { ok = false; break; }
-        used.add(best);
-        pairs.push([a, b]);
-      }
-      if (!ok) continue;
-      for (const [a, b] of pairs) {
-        a.pathIds.push(...b.pathIds);
-        a.bbox = bboxUnion(a.bbox, b.bbox);
-      }
-      merged.add(j);
-    }
-  }
-
-  // 5. Bare segments that found no anchor are not symbols.
-  const out = [];
-  cands.forEach((c, i) => {
-    if (merged.has(i) || c.bare) return;
-    const parts = c.instances[0].pathIds.length;
-    let bbox = c.instances[0].bbox;
-    for (const inst of c.instances) inst.center = bboxCenter(inst.bbox);
+    const size = insts[0].size;
     out.push({
-      key: c.key,
-      count: c.instances.length,
-      parts,
-      size: bboxSize(bbox),
-      instances: c.instances,
+      key,
+      sigs: insts[0].sigs,
+      count: insts.length,
+      parts: insts[0].paths.length,
+      size,
+      // Too small to be a plant symbol: dash pieces, dots, tick marks.
+      minor: Math.max(size[0], size[1]) < 3,
+      instances: insts.map((u) => ({ center: u.center, bbox: u.bbox, pathIds: u.pathIds.slice() })),
     });
-  });
+  }
+  mergeCoLocated(out);
   out.sort((a, b) => b.count - a.count);
   return out;
 }
 
-export { bboxOf };
+/**
+ * A symbol flattened into loose parts shows as several groups with about the
+ * same count. When nearly every instance of one group has an instance of the
+ * other within reach, and the other way round, they are parts of one symbol.
+ * Reach is the larger part's size, so this holds for rotated copies too.
+ */
+function mergeCoLocated(symbols) {
+  symbols.sort((a, b) => (b.size[0] * b.size[1]) - (a.size[0] * a.size[1]));
+  const gone = new Set();
+  const nearestIndex = (s) => {
+    const cell = 8, grid = new Map();
+    s.instances.forEach((inst, i) => {
+      const k = `${Math.floor(inst.center[0] / cell)},${Math.floor(inst.center[1] / cell)}`;
+      if (!grid.has(k)) grid.set(k, []);
+      grid.get(k).push(i);
+    });
+    return (pt, reach) => {
+      let best = -1, bestD = reach;
+      const r = Math.ceil(reach / cell);
+      const gx = Math.floor(pt[0] / cell), gy = Math.floor(pt[1] / cell);
+      for (let x = gx - r; x <= gx + r; x++) for (let y = gy - r; y <= gy + r; y++) {
+        for (const i of grid.get(`${x},${y}`) || []) {
+          const c = s.instances[i].center;
+          const d = Math.hypot(c[0] - pt[0], c[1] - pt[1]);
+          if (d <= bestD) { bestD = d; best = i; }
+        }
+      }
+      return best;
+    };
+  };
+  for (let i = 0; i < symbols.length; i++) {
+    if (gone.has(i) || symbols[i].minor) continue;
+    const A = symbols[i];
+    const reach = Math.max(A.size[0], A.size[1]) * 0.75 + 1;
+    for (let j = i + 1; j < symbols.length; j++) {
+      if (gone.has(j) || symbols[j].minor) continue;
+      const B = symbols[j];
+      if (Math.abs(A.count - B.count) > Math.max(1, 0.2 * A.count)) continue;
+      const findB = nearestIndex(B), findA = nearestIndex(A);
+      const used = new Set();
+      const pairs = [];
+      for (const a of A.instances) {
+        const k = findB(a.center, reach);
+        if (k >= 0 && !used.has(k)) { used.add(k); pairs.push([a, B.instances[k]]); }
+      }
+      let back = 0;
+      for (const b of B.instances) if (findA(b.center, reach) >= 0) back++;
+      if (pairs.length < 0.85 * A.count || back < 0.85 * B.count) continue;
+      for (const [a, b] of pairs) a.pathIds.push(...b.pathIds);
+      A.parts += B.parts;
+      A.sigs = A.sigs.concat(B.sigs);
+      A.key += '+' + B.key;
+      gone.add(j);
+    }
+  }
+  for (let j = symbols.length - 1; j >= 0; j--) if (gone.has(j)) symbols.splice(j, 1);
+}

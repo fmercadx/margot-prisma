@@ -21,14 +21,33 @@ two tools or become one is an open decision.
 
 | On the sheet | How it is read | Reported as |
 | --- | --- | --- |
-| A symbol stamped many times (tree, shrub, light, outlet) | Each path is fingerprinted by its shape; repeats are counted. A CAD block kept as a form XObject counts as one unit; a block flattened into loose paths is reassembled by co-location | **Symbols**, a count each |
-| Hatching with no boundary (sod, gravel, pavers) | Parallel lines are binned by angle and joined to their neighbours one spacing apart; area ≈ Σ line length × spacing | **Hatched areas**, sq ft |
+| The legend: a symbol with its name to the right | Each label line's symbol is read as a template. On the plan, its parts are matched by a rotation-invariant fingerprint and assembled around an anchor part, so copies placed at any angle count and a lone circle of the same size does not | **Plants**, a named count each |
+| The plant schedule (on this or another sheet) | A row that ends in a whole number is a quantity; it is matched to the legend entry by name or code | A chip on the row: agrees, or `schedule N` |
+| A symbol stamped many times with no legend entry | Rotation-invariant fingerprint; loose parts whose instances sit together are merged | **Other repeated shapes**, collapsed, for the estimator to name |
+| A legend swatch of parallel lines, or of repeated motifs | Names hatched areas by angle and spacing; estimates a motif pattern's area from motif counts | **Hatched and patterned areas**, sq ft, named |
+| Hatching with no boundary (sod, gravel, pavers) | Parallel lines are binned by angle and joined to their neighbours one spacing apart; pieces a few spacings apart are one area; area ≈ Σ line length × spacing | **Hatched areas**, sq ft |
 | A closed shape, filled or outlined (a bed, a patio) | Shoelace on the polygon; holes subtract | **Outlined areas**, sq ft |
 | An open line (edging, pipe, fence) | Segments of one style that meet end to end are chained back into a polyline; grouped by line style | **Lines**, lin ft |
-| The scale note in the title block | `1" = 20'-0"`, `1/8" = 1'-0"`, `1:240` | Feet per point, or **Calibrate** by clicking two points a known distance apart |
+| The scale: a note or a graphic bar | `1" = 20'-0"`, `1/8" = 1'-0"`, `1:240`; or the drawn ruler, read from its labels and its length | Feet per point, or **Calibrate** by clicking two points a known distance apart |
+
+A sheet stored rotated (a portrait page displayed landscape) is read upright.
 
 Click a row to see what it refers to on the plan. Rename rows, untick what you
 don't want, download or copy a CSV.
+
+### Tested on real sheets
+
+Two public bid sets: Lake County FL's roundabout landscape plan and the City
+of Madison's 2019 parks landscaping set. All four planting sheets were vector.
+Where the legend is drawn the way the plan is, the count lands: 95 of 95
+dwarf yaupon on Lake County L1 against the schedule, 10 of 10 trees and 9 of
+9 flowers on the synthetic sheet. Where the legend is drawn at another size
+(Lake County's podocarpus, 9 pt in the legend and 4 pt on the plan) or more
+detailed than the plan (Madison's starbursts), the named count is wrong and
+the schedule chip says so; when an unnamed repeated shape matches the
+schedule's quantity, the row says that too. Madison's schedule is a pasted
+image, so it cannot be read. Lake County's graphic scale bar is drawn as
+outlines, not text, so that sheet needs calibration.
 
 The page opens on a bundled sample sheet (the synthetic test plan, emitted
 beside `index.html` at build time) so the first view shows the tool working.
@@ -39,10 +58,11 @@ beside `index.html` at build time) so the first view shows the tool working.
 - **Scanned plans.** A raster sheet has no paths. It renders, and the lists
   stay empty. That is the half of the problem that needs a trained vision
   model, and it is out of scope here on purpose.
-- **Mirrored, rotated or rescaled copies of a block** count as a different
-  symbol.
-- **The legend** is on the sheet too, so a symbol that appears 7 times on the
-  plan shows 8 when the legend is on the same page.
+- **A legend drawn at another size than the plan, or in more detail,** does
+  not match it; the schedule chip and the unnamed-shape suggestion are the
+  fallback.
+- **Overlapping symbols in a massed bed** share parts with their neighbours;
+  counts there are approximate.
 - **Cross-hatch** reports once per angle, so it double-counts.
 - **Title blocks** come through as outlined rectangles. They are unticked by
   default; delete or ignore them.
@@ -60,10 +80,14 @@ sets are confidential; this is a feature, not an implementation detail.
 
 | Path | Role |
 | --- | --- |
-| `src/engine/paths.js` | pdf.js operator list → painted paths in page space, with the transform stack, form XObjects and layers tracked |
-| `src/engine/scale.js` | Scale notation, calibration |
-| `src/engine/symbols.js` | Fingerprint and count repeated shapes |
-| `src/engine/hatch.js` | Hatch regions and their area |
+| `src/engine/paths.js` | pdf.js operator list → painted paths in the upright frame, with the transform stack, form XObjects and layers tracked |
+| `src/engine/text.js` | Text rows and lines with positions |
+| `src/engine/scale.js`, `scalebar.js` | Scale notation and calibration; the graphic scale bar |
+| `src/engine/signature.js` | The rotation-invariant shape fingerprint |
+| `src/engine/legend.js` | Read the legend; count symbols and measure patterns by it |
+| `src/engine/schedule.js` | Plant schedule rows and matching |
+| `src/engine/symbols.js` | Repeated shapes with no legend entry |
+| `src/engine/hatch.js` | Hatch regions, their area, their legend names |
 | `src/engine/regions.js` | Closed polygons |
 | `src/engine/lines.js` | Open polylines, chained and grouped by style |
 | `src/engine/takeoff.js` | Runs the stages in order; each claims the paths it explains |
@@ -80,7 +104,7 @@ pdf.js, so it has no runtime dependency and can be tested against any shape.
 ```bash
 cd plan-takeoff
 npm ci
-npm test                       # 13 engine tests, Node only
+npm test                       # 20 engine tests, Node only
 npm run build                  # → ../dist/plan-takeoff
 cd ..
 python3 plan-takeoff/smoke.py --dist dist/plan-takeoff
@@ -94,11 +118,8 @@ plan set in the repository.
 
 ## Next
 
-In the order the report recommends:
-
-1. Run it on 15–20 real landscape plan sets and measure how many are vector.
-2. Exclude the legend region; read the plant schedule and reconcile it with
-   the counts.
-3. Use CAD layer names (already captured per path) to label rows automatically.
-4. Rotation- and scale-invariant symbol matching.
+1. More real sets: two are not a sample. Public-works bid sets are free.
+2. Scale-invariant template matching, for a legend drawn at another size.
+3. Read a graphic scale bar whose numbers are outlines, not text.
+4. Use CAD layer names (already captured per path) to label rows.
 5. Per-item pricing and a bid sheet export.

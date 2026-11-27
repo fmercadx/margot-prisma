@@ -203,7 +203,7 @@ cd takeoff && python -m pytest test_takeoff.py -q
 npm ci && npm run build:takeoff
 python3 takeoff/browser/smoke.py --dist dist/takeoff
 
-# Plan takeoff: 13 engine tests, build into dist/plan-takeoff, browser smoke test
+# Plan takeoff: 20 engine tests, build into dist/plan-takeoff, browser smoke test
 cd plan-takeoff && npm ci && npm test && npm run build && cd ..
 python3 plan-takeoff/smoke.py --dist dist/plan-takeoff
 

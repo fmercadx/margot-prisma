@@ -149,6 +149,15 @@ input, select { color: var(--ink); background: var(--panel); }
 .row .qty { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .row .unit { color: var(--muted); font-size: 0.8rem; width: 2.6rem; }
 .row .sub { grid-column: 3 / -1; color: var(--muted); font-size: 0.78rem; }
+.chip {
+  display: inline-block; padding: 0 0.4rem; border-radius: 999px; font-size: 0.72rem;
+  border: 1px solid var(--line); color: var(--ink); background: var(--panel); vertical-align: 1px;
+}
+.chip.ok { border-color: var(--accent); color: var(--accent); }
+.chip.warn { border-color: var(--mark); color: var(--mark); }
+.other { margin-top: 0.4rem; }
+.other summary { cursor: pointer; color: var(--muted); font-size: 0.82rem; }
+.other .rows { margin-top: 0.3rem; }
 
 .actions { display: flex; flex-direction: column; gap: 6px; }
 .actions .row-actions { margin-top: 0; }

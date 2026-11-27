@@ -103,11 +103,14 @@ function decode(data, curveSegments) {
  * Path: { id, subpaths: [{points, closed}], stroke, fill, lineWidth, dash,
  *         strokeColor, fillColor, hasCurves, bbox, xobject, layer }
  */
-export function extractPaths(opList, OPS, { curveSegments = 8 } = {}) {
+export function extractPaths(opList, OPS, { curveSegments = 8, transform = IDENTITY } = {}) {
   const { fnArray, argsArray } = opList;
   const paths = [];
 
-  let ctm = IDENTITY;
+  // `transform` is the frame everything is reported in: the identity for
+  // raw user space, or the page's upright frame (see takeoff.js) so a sheet
+  // stored rotated is analysed the way it is displayed.
+  let ctm = transform;
   const ctmStack = [];
   let gs = { lineWidth: 1, dash: false, strokeColor: '#000000', fillColor: '#000000' };
   const gsStack = [];
