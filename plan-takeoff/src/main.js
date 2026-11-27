@@ -7,7 +7,9 @@
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { Viewer } from './viewer.js';
-import { analyzePage } from './engine/takeoff.js';
+import { analyzePage, uprightFrame } from './engine/takeoff.js';
+import { textRows } from './engine/text.js';
+import { parseSchedule } from './engine/schedule.js';
 import { calibrate, describeScale } from './engine/scale.js';
 import { toCsv } from './engine/csv.js';
 
@@ -20,7 +22,8 @@ const el = {
   stage: $('stage'), empty: $('empty'), canvases: $('canvases'),
   results: $('results'), scaleText: $('scaleText'), scaleSelect: $('scaleSelect'),
   calibrate: $('calibrate'), calForm: $('calForm'), calFeet: $('calFeet'), calCancel: $('calCancel'),
-  symbols: $('symbols'), hatches: $('hatches'), regions: $('regions'), lines: $('lines'),
+  symbols: $('symbols'), other: $('other'), otherCount: $('otherCount'), otherWrap: $('otherWrap'),
+  hatches: $('hatches'), regions: $('regions'), lines: $('lines'),
   export: $('export'), copy: $('copy'), csvOut: $('csvOut'), sample: $('sample'),
 };
 
@@ -35,7 +38,8 @@ const state = {
   pageCount: 0,
   page: null,
   layerNames: null,
-  cache: new Map(),   // pageNo → { analysis, items, scale, names }
+  scheduleRows: [],   // from every sheet of the set
+  cache: new Map(),   // pageNo → { analysis, items, scale }
   analysis: null,
   items: [],
   scale: null,        // { feetPerPoint, label, source }
@@ -56,7 +60,7 @@ const fmt1 = (n) => n.toLocaleString('en-US', { minimumFractionDigits: 1, maximu
 function quantity(item) {
   const fpp = state.scale && state.scale.feetPerPoint;
   if (item.kind === 'count') return { text: fmtInt(item.qtyPt), unit: 'ea', value: item.qtyPt };
-  if (!fpp) return { text: '—', unit: item.kind === 'area' ? 'sq ft' : 'lin ft', value: null };
+  if (!fpp || item.qtyPt == null) return { text: '—', unit: item.kind === 'area' ? 'sq ft' : 'lin ft', value: null };
   if (item.kind === 'area') {
     const v = item.qtyPt * fpp * fpp;
     return { text: fmtInt(v), unit: 'sq ft', value: Math.round(v) };
@@ -75,14 +79,30 @@ function pathPolylines(analysis, ids) {
   return out;
 }
 
+const sourceText = { note: 'from the sheet', bar: 'from the graphic scale bar', calibrated: 'calibrated' };
+
 // ---------------------------------------------------------------- items
 
 function buildItems(analysis) {
   const items = [];
-  analysis.symbols.forEach((s, i) => {
+  // Plants the legend names, with the schedule's own count beside ours.
+  analysis.named.forEach((n, i) => {
+    const sub = [];
+    if (n.schedule != null && n.schedule !== n.count) sub.push(`schedule says ${fmtInt(n.schedule)}`);
+    if (n.suggestion) sub.push(`${fmtInt(n.suggestion.count)} copies of an unnamed ${Math.round(n.suggestion.size[0])}×${Math.round(n.suggestion.size[1])} pt shape match the schedule`);
     items.push({
-      id: `sym-${i}`, section: 'symbols', kind: 'count', name: `Symbol ${i + 1}`,
-      qtyPt: s.count, include: true,
+      id: `named-${i}`, section: 'symbols', kind: 'count', name: n.label, code: n.code,
+      qtyPt: n.count, include: true, schedule: n.schedule,
+      sub: sub.join(' · ') || 'from the legend',
+      sample: n.template.pathIds,
+      geom: () => ({ polylines: pathPolylines(analysis, n.pathIds), markers: n.centers, box: n.template.bbox }),
+    });
+  });
+  // Repeated shapes with no legend name: collapsed, for the estimator to name.
+  analysis.symbols.filter((s) => !s.claimed && !s.minor).forEach((s, i) => {
+    items.push({
+      id: `sym-${i}`, section: 'other', kind: 'count', name: `Shape ${i + 1}`,
+      qtyPt: s.count, include: false,
       sub: `${s.parts} path${s.parts === 1 ? '' : 's'} · ${Math.round(s.size[0])}×${Math.round(s.size[1])} pt`,
       sample: s.instances[0].pathIds,
       geom: () => ({
@@ -91,11 +111,20 @@ function buildItems(analysis) {
       }),
     });
   });
+  analysis.patterns.forEach((p, i) => {
+    items.push({
+      id: `pattern-${i}`, section: 'hatches', kind: 'area', name: p.label, code: p.code,
+      qtyPt: p.area, include: p.area != null,
+      sub: p.area == null ? 'pattern from the legend · strokes only, not measured' : `pattern from the legend · ${fmtInt(p.motifs)} motifs`,
+      geom: () => ({ polylines: pathPolylines(analysis, p.pathIds), box: p.template.bbox }),
+    });
+  });
   analysis.hatches.forEach((h, i) => {
     items.push({
-      id: `hatch-${i}`, section: 'hatches', kind: 'area', name: `Hatch ${i + 1} (${h.angle}°)`,
+      id: `hatch-${i}`, section: 'hatches', kind: 'area',
+      name: h.name || `Hatch ${i + 1} (${h.angle}°)`, code: h.code,
       qtyPt: h.area, include: true,
-      sub: `${h.count} lines, ${h.spacing.toFixed(1)} pt apart`,
+      sub: `${h.count} lines, ${h.spacing.toFixed(1)} pt apart${h.pieces > 1 ? `, ${h.pieces} pieces` : ''}${h.name ? ' · from the legend swatch' : ''}`,
       geom: () => ({ polylines: pathPolylines(analysis, h.lineIds) }),
     });
   });
@@ -133,7 +162,6 @@ function drawThumb(canvas, analysis, ids) {
   const s = Math.min((w - 2 * pad) / Math.max(x1 - x0, 1e-6), (h - 2 * pad) / Math.max(y1 - y0, 1e-6));
   ctx.clearRect(0, 0, w, h);
   ctx.strokeStyle = '#1b1b1b';
-  ctx.lineWidth = 1;
   ctx.setTransform(s, 0, 0, -s, w / 2 - s * (x0 + x1) / 2, h / 2 + s * (y0 + y1) / 2);
   ctx.lineWidth = 1 / s;
   for (const pl of pls) {
@@ -145,7 +173,7 @@ function drawThumb(canvas, analysis, ids) {
 }
 
 function renderRows() {
-  const sections = { symbols: el.symbols, hatches: el.hatches, regions: el.regions, lines: el.lines };
+  const sections = { symbols: el.symbols, other: el.other, hatches: el.hatches, regions: el.regions, lines: el.lines };
   for (const node of Object.values(sections)) node.replaceChildren();
   for (const item of state.items) {
     const row = document.createElement('div');
@@ -162,7 +190,7 @@ function renderRows() {
     const thumb = document.createElement('canvas');
     thumb.className = 'thumb';
     thumb.width = 26; thumb.height = 26;
-    if (item.section === 'symbols') drawThumb(thumb, state.analysis, item.sample);
+    if (item.sample) drawThumb(thumb, state.analysis, item.sample);
     else thumb.classList.add('blank');
 
     const name = document.createElement('input');
@@ -183,7 +211,16 @@ function renderRows() {
 
     const sub = document.createElement('span');
     sub.className = 'sub';
-    sub.textContent = item.sub;
+    if (item.schedule != null) {
+      const chip = document.createElement('span');
+      const ok = item.schedule === item.qtyPt;
+      chip.className = 'chip ' + (ok ? 'ok' : 'warn');
+      chip.textContent = ok ? `schedule ${fmtInt(item.schedule)} ✓` : `schedule ${fmtInt(item.schedule)}`;
+      chip.title = ok ? 'Our count agrees with the plant schedule' : 'Our count differs from the plant schedule';
+      sub.appendChild(chip);
+      sub.append(' ');
+    }
+    sub.append(item.sub);
 
     row.append(cb, thumb, name, qty, unit, sub);
     row.addEventListener('click', (e) => {
@@ -195,14 +232,17 @@ function renderRows() {
     });
     sections[item.section].appendChild(row);
   }
-  for (const node of Object.values(sections)) {
-    if (!node.children.length) {
+  for (const [key, node] of Object.entries(sections)) {
+    if (!node.children.length && key !== 'other') {
       const none = document.createElement('p');
       none.className = 'none';
-      none.textContent = state.analysis ? `None found on this sheet.` : '';
+      none.textContent = state.analysis ? 'None found on this sheet.' : '';
       node.appendChild(none);
     }
   }
+  const nOther = el.other.children.length;
+  el.otherCount.textContent = String(nOther);
+  el.otherWrap.hidden = nOther === 0;
   el.export.disabled = el.copy.disabled = !state.items.length;
 }
 
@@ -232,12 +272,12 @@ function renderScale() {
   if (s && s.source === 'calibrated') {
     el.scaleText.textContent = `Calibrated: ${describeScale(s.feetPerPoint)} (${s.label}).`;
   } else if (s) {
-    el.scaleText.textContent = `${describeScale(s.feetPerPoint)}, from the sheet: “${s.label}”.`;
+    el.scaleText.textContent = `${describeScale(s.feetPerPoint)}, ${sourceText[s.source] || s.source}: “${s.label}”.`;
     if (a.scales.length > 1) {
       el.scaleSelect.replaceChildren(...a.scales.map((c, i) => {
         const o = document.createElement('option');
         o.value = String(i);
-        o.textContent = `${describeScale(c.feetPerPoint)} — “${c.label}”`;
+        o.textContent = `${describeScale(c.feetPerPoint)} — ${sourceText[c.source] || c.source}: “${c.label}”`;
         o.selected = c === s;
         return o;
       }));
@@ -246,7 +286,7 @@ function renderScale() {
   } else {
     el.scaleText.textContent = a.notToScale
       ? 'The sheet says it is not to scale. Calibrate against a known dimension to measure anyway.'
-      : 'No scale statement found on this sheet. Calibrate: click two points a known distance apart.';
+      : 'No scale statement or graphic scale bar found on this sheet. Calibrate: click two points a known distance apart.';
   }
   if (s && s.source !== 'calibrated') {
     el.scaleText.textContent += ' If the PDF was printed at another sheet size, calibrate instead.';
@@ -314,8 +354,31 @@ el.scaleSelect.addEventListener('change', () => {
 
 // ---------------------------------------------------------------- pages
 
+/** Text items in the page's upright frame, the way the engine reads them. */
+function uprightItems(page, items) {
+  const { matrix } = uprightFrame(page.view, page.rotate);
+  const [ma, mb, mc, md, me, mf] = matrix;
+  return items.map((it) => {
+    if (!it.transform) return it;
+    const [a, b, c, d, e, f] = it.transform;
+    return { ...it, transform: [ma * a + mc * b, mb * a + md * b, ma * c + mc * d, mb * c + md * d, ma * e + mc * f + me, mb * e + md * f + mf] };
+  });
+}
+
+/** The plant schedule can sit on another sheet of the set: read every page's text once. */
+async function collectSchedule(pdf) {
+  const rows = [];
+  for (let n = 1; n <= pdf.numPages; n++) {
+    const page = await pdf.getPage(n);
+    const text = await page.getTextContent();
+    rows.push(...parseSchedule([{ rows: textRows(uprightItems(page, text.items)), page: n }]));
+  }
+  return rows;
+}
+
 async function showPage(n) {
   if (!state.pdf) return;
+  el.results.classList.remove('ready');
   state.pageNo = n;
   state.active = null;
   cancelCalibration();
@@ -334,7 +397,8 @@ async function showPage(n) {
     status(`Reading page ${n}…`);
     const [opList, text] = await Promise.all([page.getOperatorList(), page.getTextContent()]);
     const analysis = analyzePage({
-      opList, textItems: text.items, view: page.view, OPS: pdfjsLib.OPS, layerNames: state.layerNames,
+      opList, textItems: text.items, view: page.view, OPS: pdfjsLib.OPS, rotate: page.rotate,
+      layerNames: state.layerNames, scheduleRows: state.scheduleRows.filter((r) => r.page !== n),
     });
     c = { analysis, items: buildItems(analysis), scale: analysis.scale };
     state.cache.set(n, c);
@@ -344,8 +408,9 @@ async function showPage(n) {
   state.scale = c.scale;
   renderScale();
   renderRows();
-  const found = c.items.length;
-  status(`${state.fileName}, page ${n}: ${c.analysis.paths.length.toLocaleString('en-US')} paths, ${found} item${found === 1 ? '' : 's'}.`);
+  const named = c.analysis.named.length;
+  const found = c.items.filter((it) => it.section !== 'other').length;
+  status(`${state.fileName}, page ${n}: ${c.analysis.paths.length.toLocaleString('en-US')} paths, ${found} item${found === 1 ? '' : 's'}${named ? `, ${named} named by the legend` : ''}.`);
   el.results.classList.add('ready');
 }
 
@@ -373,6 +438,8 @@ async function openFile(file) {
       for (const [id, g] of Object.entries(groups)) state.layerNames[id] = g && g.name ? g.name : id;
     }
   } catch { /* no layers */ }
+  status('Reading the set for a plant schedule…');
+  try { state.scheduleRows = await collectSchedule(state.pdf); } catch { state.scheduleRows = []; }
   el.empty.classList.add('hide');
   for (const b of [el.zoomIn, el.zoomOut, el.zoomFit]) b.disabled = false;
   await showPage(1);
@@ -413,13 +480,14 @@ el.stage.addEventListener('drop', (e) => {
 // ---------------------------------------------------------------- export
 
 function buildCsv() {
-  const rows = [['Item', 'Type', 'Quantity', 'Unit', 'Page', 'Scale', 'Scale source']];
+  const rows = [['Item', 'Type', 'Quantity', 'Unit', 'Schedule qty', 'Page', 'Scale', 'Scale source']];
   const scaleLabel = state.scale ? describeScale(state.scale.feetPerPoint) : '';
   const source = state.scale ? state.scale.source : 'none';
   for (const item of state.items) {
     if (!item.include) continue;
     const q = quantity(item);
-    rows.push([item.name, item.kind, q.value == null ? '' : q.value, q.unit, state.pageNo, scaleLabel, source]);
+    rows.push([item.name, item.kind, q.value == null ? '' : q.value, q.unit,
+      item.schedule == null ? '' : item.schedule, state.pageNo, scaleLabel, source]);
   }
   return toCsv(rows);
 }

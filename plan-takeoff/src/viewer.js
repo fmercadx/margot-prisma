@@ -1,7 +1,8 @@
 // The plan on screen: pdf.js renders the page into one canvas, highlights go
 // on a second canvas laid over it, and the stage around them scrolls. Drag
-// pans; a click that did not drag is reported in PDF user space so the
-// calibration tool can use it.
+// pans; a click that did not drag is reported in the page's upright frame
+// (y up, origin at the displayed sheet's bottom-left: the frame the engine
+// reports in) so the calibration tool can use it.
 
 export class Viewer {
   constructor({ stage, canvases, pageCanvas, overlay }) {
@@ -12,6 +13,7 @@ export class Viewer {
     this.page = null;
     this.zoom = 1;
     this.viewport = null;
+    this.frame = null; // upright [0, 0, W, H]
     this.renderTask = null;
     this.highlight = null;
     this.markers = [];
@@ -36,8 +38,11 @@ export class Viewer {
   async show(page, zoom) {
     this.page = page;
     this.zoom = Math.min(zoom, this.maxZoom(page));
+    // The viewport applies the page's own rotation, so the canvas is the
+    // upright sheet and its size is the upright frame's.
     const viewport = page.getViewport({ scale: this.zoom });
     this.viewport = viewport;
+    this.frame = [0, 0, viewport.width / this.zoom, viewport.height / this.zoom];
     const dpr = this.dpr;
     for (const c of [this.pageCanvas, this.overlay]) {
       c.width = Math.floor(viewport.width * dpr);
@@ -75,7 +80,7 @@ export class Viewer {
     st.scrollTop = cy * this.zoom - st.clientHeight / 2;
   }
 
-  /** geom: { polylines: [[[x,y],...]], closed, fill, markers: [[x,y]] } or null */
+  /** geom: { polylines: [[[x,y],...]], closed, fill, markers: [[x,y]] } in the upright frame, or null */
   setHighlight(geom) {
     this.highlight = geom;
     this.drawOverlay();
@@ -90,10 +95,10 @@ export class Viewer {
     const ctx = this.overlay.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.overlay.width, this.overlay.height);
-    if (!this.viewport) return;
-    const t = this.viewport.transform;
-    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    ctx.transform(t[0], t[1], t[2], t[3], t[4], t[5]);
+    if (!this.frame) return;
+    // Upright frame (y up) → canvas pixels (y down).
+    const s = this.dpr * this.zoom;
+    ctx.setTransform(s, 0, 0, -s, 0, s * this.frame[3]);
     const lw = 2 / this.zoom;
 
     const h = this.highlight;
@@ -120,6 +125,11 @@ export class Viewer {
           ctx.stroke();
         }
       }
+      if (h.box) {
+        ctx.setLineDash([4 / this.zoom, 3 / this.zoom]);
+        ctx.strokeRect(h.box[0], h.box[1], h.box[2] - h.box[0], h.box[3] - h.box[1]);
+        ctx.setLineDash([]);
+      }
     }
     if (this.markers.length) {
       const r = 7 / this.zoom;
@@ -142,10 +152,10 @@ export class Viewer {
     }
   }
 
-  /** Client coordinates → PDF user space. */
+  /** Client coordinates → the upright frame. */
   toPdf(clientX, clientY) {
     const r = this.overlay.getBoundingClientRect();
-    return this.viewport.convertToPdfPoint(clientX - r.left, clientY - r.top);
+    return [(clientX - r.left) / this.zoom, this.frame[3] - (clientY - r.top) / this.zoom];
   }
 
   #wirePan() {
@@ -169,7 +179,7 @@ export class Viewer {
       st.classList.remove('panning');
       const a = active;
       active = null;
-      if (a.moved < 4 && this.viewport) {
+      if (a.moved < 4 && this.frame) {
         const pt = this.toPdf(e.clientX, e.clientY);
         for (const fn of this.clickHandlers) fn(pt);
       }

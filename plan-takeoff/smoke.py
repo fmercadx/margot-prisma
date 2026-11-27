@@ -83,23 +83,42 @@ def main(argv=None) -> int:
             if "1\" = 20'" not in scale:
                 failures.append(f"scale not read from the sheet: {scale!r}")
 
+            # The legend names the plants and the schedule is checked against them.
+            names = page.eval_on_selector_all("#symbols .row .name", "els => els.map(e => e.value)")
             counts = page.eval_on_selector_all("#symbols .row .qty", "els => els.map(e => e.textContent)")
-            for want in ("7", "12", "5"):
-                if want not in counts:
-                    failures.append(f"expected a symbol with count {want}; got {counts}")
-            hatch_rows = page.locator("#hatches .row").count()
-            if hatch_rows != 2:
-                failures.append(f"expected 2 hatched areas, got {hatch_rows}")
+            for want_name, want_count in (("QV LIVE OAK", "10"), ("SH SHRUB", "12"), ("BO BOULDER", "5"), ("PF PURPLE FLOWER", "9")):
+                if want_name not in names:
+                    failures.append(f"expected a plant row named {want_name!r}; got {names}")
+                elif counts[names.index(want_name)] != want_count:
+                    failures.append(f"{want_name}: expected count {want_count}, got {counts[names.index(want_name)]}")
+            chips = page.eval_on_selector_all("#symbols .row .chip", "els => els.map(e => e.className + '|' + e.textContent)")
+            if not any(c.startswith("chip ok") for c in chips) or not any(c.startswith("chip warn") for c in chips):
+                failures.append(f"expected both an agreeing and a disagreeing schedule chip; got {chips}")
+            hatch_names = page.eval_on_selector_all("#hatches .row .name", "els => els.map(e => e.value)")
+            if hatch_names.count("SD SOD") != 3:
+                failures.append(f"expected 3 sod areas named from the legend swatch, got {hatch_names}")
             if page.locator("#regions .row").count() < 2:
                 failures.append("expected at least 2 outlined areas")
             if page.locator("#lines .row").count() < 1:
                 failures.append("expected at least 1 line group")
 
+            # Page 2 is stored rotated and has a graphic scale bar, no written scale.
+            page.click("#next")
+            page.wait_for_selector("#results.ready", timeout=120_000)
+            scale2 = page.inner_text("#scaleText")
+            if "graphic scale bar" not in scale2 or "1\" = 20'" not in scale2:
+                failures.append(f"page 2 scale not read from the bar: {scale2!r}")
+            areas2 = page.eval_on_selector_all("#regions .row .qty", "els => els.map(e => e.textContent)")
+            if "800" not in areas2:
+                failures.append(f"page 2: expected an 800 sq ft rectangle; got {areas2}")
+            page.click("#prev")
+            page.wait_for_selector("#results.ready", timeout=120_000)
+
             # Clicking a row highlights it on the overlay.
             page.click("#symbols .row >> nth=0")
             active = page.get_attribute("#canvases", "data-active") or ""
-            if not active.startswith("sym-"):
-                failures.append(f"clicking a symbol row did not highlight it (active={active!r})")
+            if not active.startswith("named-"):
+                failures.append(f"clicking a plant row did not highlight it (active={active!r})")
 
             # Calibration: two clicks on the sheet, a distance, and the scale changes.
             page.click("#calibrate")

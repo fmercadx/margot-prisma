@@ -97,12 +97,47 @@ export function findHatch(paths, consumed, { minLines = 6, maxGap = 40 } = {}) {
       if (!groups.has(r)) groups.set(r, []);
       groups.get(r).push(i);
     });
+    const binRegions = [];
     for (const idx of groups.values()) {
-      if (idx.length < minLines) continue;
+      if (idx.length < Math.min(minLines, 3)) continue;
       const gaps = idx.map((i) => usedGap[i]).filter((g) => g != null).sort((a, b) => a - b);
       if (!gaps.length) continue;
       const spacing = gaps[Math.floor(gaps.length / 2)];
       const members = idx.map((i) => lines[i]);
+      binRegions.push({
+        angle: k,
+        spacing,
+        members,
+        bbox: bboxOf(members.flatMap((m) => [m.a, m.b])),
+      });
+    }
+    // A curved or narrow bed breaks the chain above into pieces. Pieces of
+    // the same pattern that lie within a few spacings of each other are one
+    // area; two beds of the same material that close together would be priced
+    // together anyway.
+    const rp = binRegions.map((_, i) => i);
+    const rfind = (i) => (rp[i] === i ? i : (rp[i] = rfind(rp[i])));
+    for (let i = 0; i < binRegions.length; i++) {
+      for (let j = i + 1; j < binRegions.length; j++) {
+        const a = binRegions[i], b = binRegions[j];
+        const ratio = a.spacing / b.spacing;
+        if (ratio > 1.25 || ratio < 0.8) continue;
+        const reach = 3 * Math.max(a.spacing, b.spacing);
+        if (a.bbox[2] + reach < b.bbox[0] || b.bbox[2] + reach < a.bbox[0]
+          || a.bbox[3] + reach < b.bbox[1] || b.bbox[3] + reach < a.bbox[1]) continue;
+        rp[rfind(i)] = rfind(j);
+      }
+    }
+    const merged = new Map();
+    binRegions.forEach((r, i) => {
+      const root = rfind(i);
+      if (!merged.has(root)) merged.set(root, []);
+      merged.get(root).push(r);
+    });
+    for (const parts of merged.values()) {
+      const members = parts.flatMap((r) => r.members);
+      if (members.length < minLines) continue;
+      const spacing = parts.reduce((s, r) => s + r.spacing * r.members.length, 0) / members.length;
       const total = members.reduce((s, l) => s + l.len, 0);
       regions.push({
         angle: k,
@@ -111,9 +146,32 @@ export function findHatch(paths, consumed, { minLines = 6, maxGap = 40 } = {}) {
         area: total * spacing,
         lineIds: members.map((m) => m.id),
         bbox: bboxOf(members.flatMap((m) => [m.a, m.b])),
+        pieces: parts.length,
       });
     }
   }
   regions.sort((a, b) => b.area - a.area);
   return regions;
+}
+
+/**
+ * Give hatch regions the name of the legend swatch they match, by angle and
+ * spacing. Mutates and returns `hatches`.
+ */
+export function nameHatches(hatches, entries) {
+  const swatches = entries.filter((e) => e.kind === 'hatch');
+  for (const h of hatches) {
+    let best = null, bestScore = Infinity;
+    for (const e of swatches) {
+      let dAng = Math.abs(h.angle - e.angle) % 180;
+      dAng = Math.min(dAng, 180 - dAng);
+      if (dAng > 3) continue;
+      const dSp = Math.abs(h.spacing - e.spacing) / e.spacing;
+      if (dSp > 0.25) continue;
+      const score = dAng + dSp * 10;
+      if (score < bestScore) { best = e; bestScore = score; }
+    }
+    if (best) { h.name = best.label; h.code = best.code; }
+  }
+  return hatches;
 }
