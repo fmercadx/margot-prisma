@@ -24,6 +24,8 @@ import { bboxSize, bboxCenter, bboxUnion, dist } from './measure.js';
 const CODE = /^[A-Z]{1,3}$/;
 // Section headers and column headings a plant legend carries; none names a symbol.
 const HEADER = /^(?:palms?|shrubs?|trees?|canopy trees?|groundcovers?|ground covers?|perennials?|grasses|vines|annuals|sod|legend|symbols?|sym|key|notes?|schedule|qty|quantity|size|remarks|comments|description|common name|botanical name|species|container)$/i;
+// Title-block and sheet words: a line carrying one names a drawing, not a plant.
+const TITLE = /\b(?:plans?|sheet|drawn|checked|designed|date|scale|project|revisions?|details?|section|title|issued|approved|contract|county|city|state|engineer|architect)\b/i;
 const isBare = (p) => p.subpaths.length === 1 && p.subpaths[0].points.length === 2 && !p.fill;
 const segLen = (p) => dist(p.subpaths[0].points[0], p.subpaths[0].points[1]);
 
@@ -73,7 +75,10 @@ function isPattern(tmpl, bbox) {
  * @returns {Entry[]}
  * Entry: { label, code, kind, bbox, pathIds, parts: Map<sig, m>, angle?, spacing? }
  */
-export function findLegend(paths, lines, sigOf, { maxGap = 40, maxSize = 60 } = {}) {
+export function findLegend(paths, lines, sigOf, { maxGap = 40, maxSize = 60, trace = null } = {}) {
+  // `trace`, when given, receives (label, reason) for every label line that
+  // did not become an entry: the way to see why a real sheet's legend was missed.
+  const reject = (ln, why) => { if (trace) trace(ln.str, why); };
   const freq = new Map();
   const small = [];
   for (const p of paths) {
@@ -87,15 +92,19 @@ export function findLegend(paths, lines, sigOf, { maxGap = 40, maxSize = 60 } = 
   // A legend label is a short name, not a sentence from the notes and not a
   // callout on the plan ("(16) GENISTA ..."): few words, real letters, no
   // clause punctuation, not a line of a paragraph.
+  const STOP = /\b(and|the|for|with|shall|be|of|to|is|are|was|were|has|have|been|made|this|these|that|by|in|on|at|from|or|not|all|any|must|per|see)\b/i;
+  const nameLike = (s) => /[A-WYZa-wyz]{3}/.test(s) && !/^\(?\d+\)?/.test(s) && !/\d$/.test(s)
+    && /^[A-Za-z('"“]/.test(s) && !/www\.|\.com\b|@/i.test(s) && !HEADER.test(s.trim()) && !TITLE.test(s)
+    && s.split(/\s+/).length <= 12 && !/[,;:]/.test(s) && !STOP.test(s);
   const labelLines = lines.filter((ln, i) => {
-    const s = ln.str;
-    if (!/[A-WYZa-wyz]{3}/.test(s) || /^\(?\d+\)?/.test(s) || /\d$/.test(s)) return false;
-    if (!/^[A-Za-z('"“]/.test(s) || /www\.|\.com\b|@/i.test(s) || HEADER.test(s.trim())) return false;
-    if (s.split(/\s+/).length > 8 || /[,;:]/.test(s) || /\b(and|the|for|with|shall|be|of|to)\b/i.test(s)) return false;
+    if (!nameLike(ln.str)) return false;
     const above = lines[i - 1], below = lines[i + 1];
-    const para = above && below && Math.abs(above.x0 - ln.x0) < 2 && Math.abs(below.x0 - ln.x0) < 2
-      && above.y - ln.y < 1.6 * ln.h && ln.y - below.y < 1.6 * ln.h && above.str.length > 25 && below.str.length > 25;
-    return !para;
+    const stacked = (o) => o && Math.abs(o.x0 - ln.x0) < 3 && Math.abs(o.y - ln.y) < 1.6 * ln.h;
+    // A line of a paragraph: long lines above and below at the same margin.
+    if (stacked(above) && stacked(below) && above.str.length > 25 && below.str.length > 25) return false;
+    // The second line of a two-line name: it belongs to the line above it.
+    if (stacked(above) && above.y > ln.y && nameLike(above.str)) return false;
+    return true;
   });
 
   const touches = (a, b, t) => !(a[2] + t < b[0] || b[2] + t < a[0] || a[3] + t < b[1] || b[3] + t < a[1]);
@@ -116,9 +125,9 @@ export function findLegend(paths, lines, sigOf, { maxGap = 40, maxSize = 60 } = 
     });
     // The seed: on the label's own line, nearest to it.
     const online = band.filter((p) => Math.abs((p.bbox[1] + p.bbox[3]) / 2 - cy) <= 0.75 * best.h + 3);
-    if (!online.length) continue;
+    if (!online.length) { reject(best, band.length ? 'no path centred on the label line' : 'no small path left of the label'); continue; }
     const seed = online.reduce((a, b) => (b.bbox[2] > a.bbox[2] ? b : a));
-    if (best.x0 - seed.bbox[2] > maxGap) continue;
+    if (best.x0 - seed.bbox[2] > maxGap) { reject(best, `nearest path is ${(best.x0 - seed.bbox[2]).toFixed(0)} pt away`); continue; }
     // The symbol: what the seed is connected to, then what lies inside that.
     const tmpl = [seed];
     let bbox = seed.bbox;
@@ -138,7 +147,16 @@ export function findLegend(paths, lines, sigOf, { maxGap = 40, maxSize = 60 } = 
     }
     // Alone: nothing else small within 3 pt of it. A legend is spaced out;
     // a symbol on the plan sits among other things.
-    if (small.some((p) => !inTmpl.has(p.id) && touches(bbox, p.bbox, 3))) continue;
+    // Alone, except for what a legend column itself puts there: a section
+    // underline, and the symbol of the row above or below when the rows are
+    // packed. A plan symbol has neighbours that are not on any label line.
+    const sameColumn = labelLines.filter((ln) => ln !== best && Math.abs(ln.x0 - best.x0) < 4);
+    const onAnotherRow = (p) => {
+      const pc = (p.bbox[1] + p.bbox[3]) / 2;
+      return sameColumn.some((ln) => Math.abs(pc - (ln.y + 0.5 * ln.h)) <= maxSize / 2 + 2);
+    };
+    const crowd = small.find((p) => !inTmpl.has(p.id) && touches(bbox, p.bbox, 3) && !isBare(p) && !onAnotherRow(p));
+    if (crowd) { reject(best, `another path within 3 pt of the symbol: ${crowd.subpaths.length} subpath(s) at (${crowd.bbox.map((v) => v.toFixed(0)).join(',')})`); continue; }
     const sigs = tmpl.map(sigOf);
 
     let kind = 'symbol', hatch = null;
@@ -146,11 +164,11 @@ export function findLegend(paths, lines, sigOf, { maxGap = 40, maxSize = 60 } = 
     else if ((hatch = hatchOf(tmpl))) kind = 'hatch';
     else {
       // A plant symbol has a closed shape, a curve or a polyline with turns in it; a few stray strokes do not.
-      if (!tmpl.some((p) => p.hasCurves || p.fill || p.subpaths.some((s) => s.closed || s.points.length >= 4))) continue;
-      // A one-word label on a one-path, straight-edged shape is a table cell, not a plant.
-      if (!/\s/.test(best.str) && best.str.length <= 4 && tmpl.length === 1 && !tmpl[0].hasCurves) continue;
+      if (!tmpl.some((p) => p.hasCurves || p.fill || p.subpaths.some((s) => s.closed || s.points.length >= 4))) { reject(best, 'no closed, curved or bent path'); continue; }
+      // A short one-word label ("PAD", "ITEM") on a straight-edged shape is a table cell or a site label, not a plant.
+      if (!/\s/.test(best.str) && best.str.length <= 5 && !tmpl.some((p) => p.hasCurves || p.fill)) { reject(best, 'short label on a straight-edged shape'); continue; }
       // Its parts must recur elsewhere, or it is a one-off (a north arrow with a label).
-      if (!sigs.some((s) => freq.get(s) >= 3)) continue;
+      if (!sigs.some((s) => freq.get(s) >= 3)) { reject(best, `no part recurs on the sheet (${tmpl.length} paths; occurrences ${sigs.map((s) => freq.get(s)).join('/')})`); continue; }
     }
     let label = best.str;
     // A second line of the same label, directly below and left-aligned.
