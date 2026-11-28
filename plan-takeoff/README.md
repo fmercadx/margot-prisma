@@ -37,17 +37,23 @@ don't want, download or copy a CSV.
 
 ### Tested on real sheets
 
-Two public bid sets: Lake County FL's roundabout landscape plan and the City
-of Madison's 2019 parks landscaping set. All four planting sheets were vector.
-Where the legend is drawn the way the plan is, the count lands: 95 of 95
-dwarf yaupon on Lake County L1 against the schedule, 10 of 10 trees and 9 of
-9 flowers on the synthetic sheet. Where the legend is drawn at another size
-(Lake County's podocarpus, 9 pt in the legend and 4 pt on the plan) or more
-detailed than the plan (Madison's starbursts), the named count is wrong and
-the schedule chip says so; when an unnamed repeated shape matches the
-schedule's quantity, the row says that too. Madison's schedule is a pasted
-image, so it cannot be read. Lake County's graphic scale bar is drawn as
-outlines, not text, so that sheet needs calibration.
+Three public bid sets, all vector: Lake County FL's roundabout landscape
+plan (CPH), the City of Madison's 2019 parks landscaping set, and a 2026
+Lake County procurement set for housing in Tavares FL (Halff), whose plant
+schedule sits on another sheet with the quantity column before the name.
+Where the legend is drawn the way the plan is, the count lands on the
+schedule's number: Tavares red maple 11, crape myrtle 28 and live oak 34;
+Lake County dwarf yaupon 95. Tavares magnolia came out 17 of 18 and Walter's
+viburnum 376 of 373. Where the legend is drawn at another size (Lake
+County's podocarpus, 9 pt in the legend and 4 pt on the plan) or in more
+detail than the plan (Madison's starbursts, Tavares's bald cypress), the
+named count is wrong or missing and the schedule chip says so; when an
+unnamed repeated shape matches the schedule's quantity, the row says that
+too. Madison's schedule is a pasted image, so it cannot be read. Lake
+County's graphic scale bar is drawn as outlines, not text, so that sheet
+needs calibration. A legend whose rows are packed, with big tree symbols
+nearly touching, reads; a palm section whose symbols are grouped with
+leaders rather than placed beside their names does not.
 
 The page opens on a bundled sample sheet (the synthetic test plan, emitted
 beside `index.html` at build time) so the first view shows the tool working.
